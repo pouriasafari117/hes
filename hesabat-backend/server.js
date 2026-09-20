@@ -29,6 +29,17 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'hesabat-backend', v: 1 }));
+app.get('/api/debug', async (req, res) => {
+  try {
+    const { pool } = require('./src/db');
+    const c1 = await pool.query('select 1 as ok');
+    const c2 = await pool.query('select count(*) as n from users');
+    const c3 = await pool.query('select proname from pg_proc where proname like \'fn_%\'');
+    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], funcs: c3.rows.map(r=>r.proname) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,1000) });
+  }
+});
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/institutions', require('./src/routes/institutions'));
 app.use('/api/institutions/:id/fields', require('./src/routes/fields'));
