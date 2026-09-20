@@ -1,0 +1,20 @@
+{
+  "name": "hesabat-backend",
+  "version": "1.0.0",
+  "description": "Hesabat Panel Backend API — PostgreSQL multi-tenant (RLS)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "node db/migrate.js",
+    "test": "node test/e2e.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
