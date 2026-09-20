@@ -34,18 +34,34 @@ app.use('/api/institutions', require('./src/routes/institutions'));
 app.use('/api/institutions/:id/fields', require('./src/routes/fields'));
 app.use('/api/institutions/:id/members', require('./src/routes/members'));
 
-/* سرو کردن فایل‌های پنل + لندینگ از همان سرور (برای دیپلوی تمیز یک‌جا) */
-const PANEL_DIR = path.join(__dirname, '..');
-app.get('/Panel.html', (req, res) => res.sendFile(path.join(PANEL_DIR, 'Panel.html')));
-app.get('/panel.html', (req, res) => res.sendFile(path.join(PANEL_DIR, 'Panel.html')));
-app.get('/panel.css', (req, res) => res.sendFile(path.join(PANEL_DIR, 'panel.css')));
-app.get('/panel.js', (req, res) => res.sendFile(path.join(PANEL_DIR, 'panel.js')));
-app.get('/Hesabat.html', (req, res) => res.sendFile(path.join(PANEL_DIR, 'Hesabat.html')));
-app.get('/hesabat.html', (req, res) => res.sendFile(path.join(PANEL_DIR, 'Hesabat.html')));
-// روت اصلی: اگر Hesabat.html وجود داشت لندینگ را بده، وگرنه برو پنل
+/* سرو کردن فایل‌های پنل + لندینگ — سازگار با Render و Railway
+   Railway وقتی Root Directory = hesabat-backend باشه، /app = hesabat-backend
+   و فایل‌های پنل یا در .. (ریشه ریپو) هستند یا در خود __dirname (اگر کپی شده باشند) */
+function findFile(name) {
+  const candidates = [
+    path.join(__dirname, '..', name),
+    path.join(__dirname, name),
+    path.join(process.cwd(), '..', name),
+    path.join(process.cwd(), name),
+  ];
+  for (const p of candidates) if (fs.existsSync(p)) return p;
+  return candidates[0];
+}
+const PANEL_DIR_CANDIDATES = [path.join(__dirname, '..'), __dirname, path.join(process.cwd(), '..'), process.cwd()];
+function panelExists(f) {
+  for (const d of PANEL_DIR_CANDIDATES) if (fs.existsSync(path.join(d, f))) return true;
+  return false;
+}
+
+app.get('/Panel.html', (req, res) => res.sendFile(findFile('Panel.html')));
+app.get('/panel.html', (req, res) => res.sendFile(findFile('Panel.html')));
+app.get('/panel.css', (req, res) => res.sendFile(findFile('panel.css')));
+app.get('/panel.js', (req, res) => res.sendFile(findFile('panel.js')));
+app.get('/Hesabat.html', (req, res) => res.sendFile(findFile('Hesabat.html')));
+app.get('/hesabat.html', (req, res) => res.sendFile(findFile('Hesabat.html')));
 app.get('/', (req, res) => {
-  const hesPath = path.join(PANEL_DIR, 'Hesabat.html');
-  if (fs.existsSync(hesPath)) return res.sendFile(hesPath);
+  if (panelExists('Hesabat.html')) return res.sendFile(findFile('Hesabat.html'));
+  if (panelExists('Panel.html')) return res.sendFile(findFile('Panel.html'));
   return res.redirect('/Panel.html');
 });
 
