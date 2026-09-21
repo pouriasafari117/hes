@@ -969,7 +969,8 @@ setInterval(function(){ saved += 3 + Math.floor(Math.random()*17); renderTicker(
 bindStub('lnkBrand','brand');   bindStub('lnkRates','rates');
 bindStub('lnkHow','how');       bindStub('lnkHow2','how');
 bindStub('lnkHelp','help');
-['lnkLogin','lnkOpen','lnkCta'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html';});});
+['lnkLogin'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html';});});
+['lnkOpen','lnkCta'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html#/onboarding';});});
 
 setLang(lang);
 

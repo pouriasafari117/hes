@@ -15,7 +15,7 @@ async function getActiveFields(c, iid) {
 
 async function fetchMember(c, iid, mid) {
   const m = (await c.query(
-    'select id, status, created_at, updated_at from members where id=$1 and institution_id=$2 and deleted_at is null',
+    'select id, status, member_no, created_at, updated_at from members where id=$1 and institution_id=$2 and deleted_at is null',
     [mid, iid])).rows[0];
   if (!m) return null;
   const vq = await c.query(
@@ -40,7 +40,7 @@ r.get('/', asyncH(async (req, res) => {
     const total = (await c.query(`select count(*)::int as n from members m where ${where.join(' and ')}`, args)).rows[0].n;
     args.push(pageSize, (page - 1) * pageSize);
     const mq = await c.query(
-      `select m.id, m.status, m.created_at, m.updated_at from members m where ${where.join(' and ')} order by m.id desc limit $${args.length - 1} offset $${args.length}`,
+      `select m.id, m.status, m.member_no, m.created_at, m.updated_at from members m where ${where.join(' and ')} order by m.id desc limit $${args.length - 1} offset $${args.length}`,
       args);
     const ids = mq.rows.map(x => x.id);
     let vmap = {};
@@ -63,15 +63,49 @@ r.get('/:memberId', asyncH(async (req, res) => {
   res.json({ member: m });
 }));
 
-/* POST /api/institutions/:id/members {values:{fieldKey:...}} — بند ۸ و ۹ سند */
+/* POST /api/institutions/:id/members {values:{fieldKey:...}, memberNo?} — بند ۸ و ۹ سند */
 r.post('/', asyncH(async (req, res) => {
   const values = (req.body || {}).values || {};
+  let memberNo = (req.body.memberNo || req.body.member_no || '').trim();
+
+  // تابع تبدیل فارسی به انگلیسی ساده برای شماره عضویت
+  function faToEnTranslit(s){
+    const map = {
+      'ا':'a','آ':'a','ب':'b','پ':'p','ت':'t','ث':'s','ج':'j','چ':'ch','ح':'h','خ':'kh',
+      'د':'d','ذ':'z','ر':'r','ز':'z','ژ':'zh','س':'s','ش':'sh','ص':'s','ض':'z',
+      'ط':'t','ظ':'z','ع':'a','غ':'gh','ف':'f','ق':'gh','ک':'k','گ':'g','ل':'l',
+      'م':'m','ن':'n','و':'o','ه':'h','ی':'y','ئ':'y','ء':'',
+      ' ': '', '‌':''
+    };
+    let out = '';
+    for (const ch of String(s||'')) {
+      if (/[a-zA-Z0-9]/.test(ch)) out += ch.toLowerCase();
+      else if (map[ch]) out += map[ch];
+    }
+    return out.replace(/[^a-z0-9]/g,'').slice(0,20);
+  }
+  function genMemberNo(vals){
+    // سعی کن از فیلدهای نام و نام خانوادگی و کدملی شماره عضویت بسازی
+    const first = vals.firstName || vals.first_name || vals.name || '';
+    const last = vals.lastName || vals.last_name || vals.family || '';
+    const nid = vals.nid || vals.nationalId || vals.national_id || '';
+    const firstWord = String(first).trim().split(/\s+/)[0] || '';
+    const lastWord = String(last).trim().split(/\s+/)[0] || '';
+    const enFirst = faToEnTranslit(firstWord) || 'user';
+    const enLast = faToEnTranslit(lastWord) || '';
+    const nidPart = String(nid).replace(/\D/g,'').slice(-6) || Date.now().toString().slice(-4);
+    return (enFirst + (enLast ? enLast.charAt(0) : '') + nidPart).toLowerCase();
+  }
+
   const result = await withTenant(req.user, req.institutionId, async c => {
     const defs = await getActiveFields(c, req.institutionId);
     const v = validateValues(defs, values, { partial: false });
     if (!v.ok) return { bad: true, errors: v.errors };
+
+    if (!memberNo) memberNo = genMemberNo(v.values);
+
     const mq = await c.query(
-      'insert into members (institution_id) values ($1) returning id, status, created_at', [req.institutionId]);
+      'insert into members (institution_id, member_no) values ($1,$2) returning id, status, member_no, created_at', [req.institutionId, memberNo]);
     const member = mq.rows[0];
     const byKey = new Map(defs.map(f => [f.key, f]));
     for (const [k, val] of Object.entries(v.values)) {

@@ -644,3 +644,25 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .st-top{font-size:.55rem; letter-spacing:4px; opacity:.75}
 .st-bot{font-size:.6rem; opacity:.7; margin-top:3px; border-top:1px solid currentColor; padding-top:3px}
 
+/* ── افتتاح حساب جدید ── */
+.role-btn{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);cursor:pointer;transition:all .2s;width:100%;text-align:right;margin-bottom:8px;font-family:var(--font-ui)}
+.role-btn.on{border-color:var(--green-deep);background:rgba(28,110,49,.08)}
+.role-btn b{display:block;font-size:.95rem}
+.role-btn small{display:block;font-size:.78rem;color:var(--ink-2);margin-top:2px}
+.role-sel{display:flex;flex-direction:column;gap:8px;margin:16px 0}
+.onb-step{display:flex;gap:12px;align-items:flex-start;margin:18px 0 12px;padding-bottom:12px;border-bottom:1px dashed var(--line)}
+.onb-step .sn{width:32px;height:32px;border-radius:50%;background:var(--green-deep);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.onb-step h4{margin:0;font-size:1rem}
+.onb-step p{margin:2px 0 0;font-size:.82rem;color:var(--ink-2)}
+.steps-line{display:flex;align-items:center;gap:8px;margin:16px 0;justify-content:center}
+.steps-line .st{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.85rem;background:var(--card);font-weight:700}
+.steps-line .st.cur{background:var(--green-deep);color:#fff;border-color:var(--green-deep)}
+.steps-line .st.done{background:var(--lime);color:var(--ink);border-color:var(--lime)}
+.steps-line .st-sep{width:24px;height:2px;background:var(--line)}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}
+.plan{border:1.5px solid var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;transition:all .15s}
+.plan.on{border-color:var(--green-deep);background:rgba(28,110,49,.06)}
+.plan h5{margin:0 0 4px}
+.plan p{font-size:.82rem;color:var(--ink-2);margin:0 0 8px}
+.drop-panel,.notif-item,.dp-item,.profile-chip,.pc-t,.pc-t b,.pc-t span{font-family:'IBM Plex Sans Arabic','DM Sans',Tahoma,sans-serif !important}
+

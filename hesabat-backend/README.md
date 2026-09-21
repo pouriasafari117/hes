@@ -1,76 +1,70 @@
-# Hesabat Backend — فاز ۱
+# Hesabat Backend — فاز ۲ (Round 32)
 
-معماری طبق سند `Architecture Specification v1.0`:
+معماری طبق تغییرات جدید:
 
 ```
-Panel (panel.js)  →  Backend API (Node/Express)  →  PostgreSQL (+ Row Level Security)
+Hesabat.html (لندینگ) → Panel.html (ورود با شماره تماس/کد ملی یا افتتاح حساب)
+  → افتتاح حساب: مدیر ۳ مرحله / کاربر ۲ مرحله
+  → Backend API (Node/Express) → PostgreSQL (Supabase) با RLS
 ```
 
-پنل هرگز مستقیم به دیتابیس وصل نمی‌شود. حالت «دمو» پنل هم دست‌نخورده باقی مانده؛
-از تنظیمات پنل می‌توان بین دمودیتا و دادهٔ واقعی سرور سوئیچ کرد (حالت دوگانه).
+**داکر حذف شد** — per Round 32، اتصال به PostgreSQL در زمان ساخت حساب انجام می‌شود، نه از تنظیمات. 
+نیازی به `docker-compose.yml` نیست. برای لوکال هم مستقیم از Supabase یا هر Postgres استفاده کنید.
 
 ---
 
-## اجرا با داکر (توصیه‌شده)
+## اجرا (بدون داکر)
 
 ```bash
 cd backend
-docker compose up -d          # فقط PostgreSQL (اسکیمای فاز ۱ خودکار اعمال می‌شود)
-cp .env.example .env          # رمز JWT_SECRET را عوض کنید
+cp .env.example .env   # DATABASE_URL و JWT_SECRET را پر کن
 npm install
-npm run migrate               # اگر دیتابیس از قبل ساخته شده (نه اولین راه‌اندازی)
-npm start                     # API روی پورت 4000
+npm run migrate        # اعمال schema.sql + schema_v2.sql
+npm start              # API روی PORT (پیش‌فرض 10000 برای Render)
 ```
 
-## اجرا بدون داکر (دیتابیس محلی)
+### متغیرهای محیطی (.env)
 
-```bash
-# با کاربر مالک (مثلاً postgres):
-createdb hesabat
-psql -d hesabat -f db/schema.sql     # نقش hesabat_app و سیاست‌های RLS هم ساخته می‌شود
-npm install && npm start
 ```
-
-## تست‌ها
-
-```bash
-npm test          # تست سرتاسری (42 سناریو): احراز هویت، مؤسسه، فیلد داینامیک،
-                  # اعتبارسنجی انواع، عضو، حذف نرم، آرشیو فیلد، جداسازی دو مؤسسه با RLS
-```
-
-تست اتصال پنل (نیازمند بالا بودن سرور):
-```bash
-node ../_build/smoke_api.js   # 14 سناریو: پنل واقعی → API → PostgreSQL
+DATABASE_URL=postgres://... (از Supabase > Connection String)
+PORT=10000
+JWT_SECRET=یک رشته طولانی تصادفی
+JWT_EXPIRES=7d
+CORS_ORIGIN=*
 ```
 
 ---
 
-## ساختار دیتابیس
+## احراز هویت جدید (Round 32)
 
-| جدول | نقش |
-|---|---|
-| `users` | حساب‌ها (بدون دسترسی مستقیم نقش اپ؛ فقط از طریق توابع امن) |
-| `institutions` | مؤسسات — همه داده‌ها با `institution_id` جدا می‌شوند |
-| `institution_members` | عضویت کاربر در مؤسسه + نقش |
-| `field_definitions` | تعریف فیلدهای داینامیک هر مؤسسه (بدون ستون جدید در اعضا) |
-| `members` | پوستهٔ عضو: وضعیت + زمان‌ها + `deleted_at` (حذف نرم) |
-| `member_field_values` | مقادیر فیلدها به‌صورت کلید/مقدار |
+- **لاگین:** `POST /api/auth/login` با `{email: phone|nid|email, password: nid|1234}`
+  - نام کاربری پیش‌فرض = شماره تماس (09xxxxxxxxx)
+  - رمز پیش‌فرض = کد ملی (10 رقم)
+  - برای حساب‌های قدیمی admin/1234 همچنان کار می‌کند
+- **افتتاح حساب:** `POST /api/auth/register-v2`
+  ```json
+  {
+    "firstName":"علی", "lastName":"رضایی",
+    "phone":"09121234567", "nid":"1234567890",
+    "fatherName":"حسین", "birthDate":"1991-07-23",
+    "roleType":"manager|user",
+    "institutionName":"قرض‌الحسنه مهرگان",
+    "institutionSlug":"mehregan",
+    "establishedAt":"2011-03-21",
+    "address":"تهران...",
+    "installmentsCount":12,
+    "currency":"تومان",
+    "feePercent":4,
+    "installmentPeriod":"monthly",
+    "memberFields":[{"label":"نام","type":"text","required":true}]
+  }
+  ```
+  - برای مدیر: مؤسسه ساخته می‌شود + ایمیل خودکار `{slug}{nid}@hes.com`
+  - برای کاربر: اگر `institutionName` داشت، درخواست join ثبت می‌شود
 
-### چندمستأجری (بند ۱۰ و ۱۱ سند)
+- **درخواست عضویت:** `POST /api/auth/request-join` با `{institutionName}` (نیاز به توکن)
 
-- روی همهٔ جداول مستأجر `ROW LEVEL SECURITY` فعال است و نقش اپلیکیشن
-  (`hesabat_app`) نه مالک است نه سوپریوزر، پس سیاست‌ها همیشه اعمال می‌شوند.
-- هر درخواست داخل یک تراکنش: `app.user_id` از توکن (قابل اعتماد) و
-  `app.institution_id` از URL ست می‌شود؛ سیاست‌ها با `fn_is_member` راستی‌آزمایی
-  می‌کنند که کاربر واقعاً عضو آن مؤسسه است. اسپوف کردن شناسهٔ مؤسسه بی‌فایده است.
-- عمل‌هایی که ذاتاً بیرون مرز مستأجرند (ثبت‌نام، ایجاد مؤسسه، لیست مؤسسات من)
-  فقط از طریق توابع `SECURITY DEFINER` انجام می‌شوند.
-
-## اعتبارسنجی فیلدها (سمت سرور)
-
-انواع: `text, number, date, bool, select, mobile, nid`
-عدد/تاریخ/کد ملی/موبایل با ارقام فارسی هم پذیرفته می‌شوند؛ `select` فقط گزینه‌های
-تعریف‌شده؛ فیلد الزامی نمی‌تواند خالی باشد. خطاها با پیام فارسی و `details` برمی‌گردند.
+---
 
 ## API
 
@@ -78,25 +72,48 @@ node ../_build/smoke_api.js   # 14 سناریو: پنل واقعی → API → P
 
 | متد | مسیر | توضیح |
 |---|---|---|
-| POST | `/auth/register` | ثبت‌نام `{name, email, password}` |
-| POST | `/auth/login` | ورود `{email, password}` |
+| POST | `/auth/register-v2` | افتتاح حساب جدید (مدیر/کاربر) |
+| POST | `/auth/login` | ورود با phone/nid/email |
 | GET | `/auth/me` | کاربر + مؤسساتش |
-| POST | `/institutions` | ایجاد مؤسسه `{name, slug?}` |
+| POST | `/auth/request-join` | درخواست عضویت در مؤسسه |
+| POST | `/institutions` | ایجاد مؤسسه (قدیمی) |
 | GET | `/institutions` | مؤسسات من |
-| GET/PATCH | `/institutions/:id` | دریافت/ویرایش مؤسسه |
-| GET/POST | `/institutions/:id/fields` | لیست/ایجاد فیلد |
-| PATCH/DELETE | `/institutions/:id/fields/:fid` | ویرایش/آرشیو فیلد |
-| GET/POST | `/institutions/:id/members` | لیست (با `q`, `page`, `pageSize`) / ایجاد عضو `{values:{…}}` |
-| GET/PATCH/DELETE | `/institutions/:id/members/:mid` | عضو / ویرایش `{values:{…}}` / حذف نرم |
+| GET | `/institutions/:id/join-requests` | لیست درخواست‌ها (مدیر) |
+| POST | `/institutions/:id/join-requests/:reqId/approve` | تأیید عضویت |
+| POST | `/institutions/:id/join-requests/:reqId/reject` | رد عضویت |
+| GET/POST | `/institutions/:id/fields` | فیلدها |
+| GET/POST | `/institutions/:id/members` | اعضا (با member_no خودکار) |
 
-## اتصال از پنل
+### شماره عضویت خودکار
 
-تنظیمات پنل ▸ تب «اطلاعات مؤسسه» ▸ کارت «اتصال به سرور»:
-آدرس سرور + ایمیل/رمز → ورود یا ساخت حساب → انتخاب/ایجاد مؤسسه →
-«فعال‌سازی حالت سرور». از آن لحظه صفحهٔ اعضا و مدیریت فیلدها مستقیماً
-روی PostgreSQL کار می‌کنند؛ بقیهٔ پنل (وام، اقساط، گزارش‌ها) تا فاز ۲ روی دمودیتا می‌ماند.
+در `members.js`:
+```
+en(firstName) + en(lastName[0]) + nidLast6
+```
+با نگاشت فارسی→انگلیسی: ا→a, ب→b, پ→p, ... (مثلاً علی رضایی 1234567890 → alir567890)
 
-## فازهای بعد (طبق سند)
+---
 
-- فاز ۲: `loans → installments → payments` روی همین RLS
-- فاز ۳: استخراج داده از تصویر لیست اعضا بر اساس فیلدهای همان مؤسسه
+## فرانت‌اند
+
+- `Panel.html` + `panel.css` + `panel.js` — پنل مستقل (3 فایل کنار هم)
+- `Hesabat.html` — لندینگ، دکمه ورود → Panel.html، افتتاح حساب → Panel.html#/onboarding
+- افتتاح حساب در `app9.js`: ویزارد کامل با role selector، 3 مرحله مدیر، 2 مرحله کاربر
+- تنظیمات: کارت PostgreSQL حذف شد، آیکون مؤسسه با دکمه زیبا، قالب شماره‌گذاری حذف شد، داده‌ها فقط «بازنشانی دمو»
+
+---
+
+## دیپلوی رایگان (بدون کارت)
+
+- **دیتابیس:** Supabase (500MB رایگان) — DATABASE_URL را از Dashboard کپی کن
+- **بک‌اند:** Render Free (بدون کارت، ولی بعد 15 دقیقه sleep) یا Railway ($5 trial)
+- Root Directory در Railway باید `backend` باشد اگر از روت ریپو دیپلوی می‌کنی
+
+تست سلامت: `GET /api/health` → `{ok:true}`
+
+---
+
+## فازهای بعد
+
+- فاز ۲ تکمیل: وام، اقساط، پرداخت‌ها روی همین RLS
+- پلن‌ها در onboarding فعلاً placeholder
