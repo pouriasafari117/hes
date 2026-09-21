@@ -174,17 +174,19 @@ r.patch('/:memberId', asyncH(async (req, res) => {
   res.json(result);
 }));
 
-/* DELETE /api/institutions/:id/members/:memberId → حذف نرم (بند ۱۳ سند) */
+/* DELETE /api/institutions/:id/members/:memberId → حذف سخت (hard delete) per درخواست کاربر */
 r.delete('/:memberId', asyncH(async (req, res) => {
   const mid = parseInt(req.params.memberId, 10);
   const row = await withTenant(req.user, req.institutionId, async c => {
+    // اول مقادیر فیلدها را پاک کن، بعد خود عضو را
+    await c.query('delete from member_field_values where member_id=$1', [mid]);
     const q = await c.query(
-      'update members set deleted_at=now() where id=$1 and institution_id=$2 and deleted_at is null returning id',
+      'delete from members where id=$1 and institution_id=$2 returning id',
       [mid, req.institutionId]);
     return q.rows[0];
   });
   if (!row) return res.status(404).json({ error: 'عضو پیدا نشد.' });
-  res.json({ deleted: true, memberId: mid });
+  res.json({ deleted: true, memberId: mid, hard: true });
 }));
 
 module.exports = r;

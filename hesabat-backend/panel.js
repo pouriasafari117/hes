@@ -812,13 +812,23 @@ function showView(name){
 function route(){
   closeJdPop();
   const h = location.hash || '#/';
+  // اگر حالت سرور فعال است، SESSION را از SRV بساز اگر نداریم
+  try{
+    if(typeof SRV!=='undefined' && SRV.on && SRV.token && !SESSION){
+      const nm = (SRV.user&&SRV.user.name) || SRV.instName || 'مدیر';
+      const ph = (SRV.user&&SRV.user.phone) || '';
+      SESSION = { username: ph||'srv', name: nm, role: 'admin', roleType: 'manager' };
+      try{ localStorage.setItem(SES_KEY, JSON.stringify(SESSION)); }catch(e){}
+    }
+  }catch(e){}
   if(h === '#/' || h === '#' || h === ''){ showView('login'); return; }
   if(h === '#/login'){
-    if(SESSION){ location.hash = '#/app/dashboard'; return; }
+    if(SESSION || (typeof SRV!=='undefined' && SRV.on && SRV.token)){ location.hash = '#/app/dashboard'; return; }
     showView('login'); return;
   }
   if(h.indexOf('#/app/') === 0){
-    if(!SESSION){ location.hash = '#/login'; return; }
+    const isSrvAuth = (typeof SRV!=='undefined' && SRV.on && SRV.token);
+    if(!SESSION && !isSrvAuth){ location.hash = '#/login'; return; }
     showView('app');
     const parts = h.slice(6).split('/').filter(Boolean);
     const page = parts[0] || 'dashboard', arg = parts[1];
@@ -2907,7 +2917,12 @@ function renderSettings(){
       sec('secUi','image','ظاهر و مُهرها','رنگ مُهرهای ثبت و ترجیحات نمایش');
     renderOrgSec(body.querySelector('#secOrg .sec-b'));
     if(typeof renderSrvConnSec === 'function') renderSrvConnSec(body.querySelector('#secSrv .sec-b'));
-    renderFieldsSec(body.querySelector('#secFld .sec-b'));
+    // اگر حالت سرور فعال است، فیلدها را از سرور بخوان — دقیقاً بر اساس انتخاب کاربر در onboarding
+    if(typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady() && typeof srvFieldsSec==='function'){
+      srvFieldsSec(body.querySelector('#secFld .sec-b'));
+    }else{
+      renderFieldsSec(body.querySelector('#secFld .sec-b'));
+    }
     renderFunds(fundsTab, '#secFa .sec-b');
     renderFinSec(body.querySelector('#secFin .sec-b'));
     renderNotifSec(body.querySelector('#secNotif .sec-b'));
@@ -4487,6 +4502,44 @@ function genMemberNo(firstName, lastName, nid){
   return (enFirst + (enLast ? enLast.charAt(0) : '') + nidPart).toLowerCase();
 }
 
+
+// مپ فیلدهای انتخابی به تعریف فیلد دمو — دقیقاً بر اساس انتخاب کاربر
+function buildDemoFields(selected){
+  const MAP = {
+    'نام': {key:'name', label:'نام و نام خانوادگی', type:'text', on:1, core:1, req:1},
+    'نام و نام خانوادگی': {key:'name', label:'نام و نام خانوادگی', type:'text', on:1, core:1, req:1},
+    'نام پدر': {key:'father', label:'نام پدر', type:'text', on:1, core:1},
+    'موبایل': {key:'mobile', label:'شماره تماس', type:'mobile', on:1, core:1, req:1},
+    'شماره تماس': {key:'mobile', label:'شماره تماس', type:'mobile', on:1, core:1, req:1},
+    'کدملی': {key:'nationalId', label:'کد ملی', type:'nid', on:1, core:1, req:1},
+    'کد ملی': {key:'nationalId', label:'کد ملی', type:'nid', on:1, core:1, req:1},
+    'تاریخ تولد': {key:'birthDate', label:'تاریخ تولد', type:'jdate', on:1, core:1, req:1},
+    'آدرس': {key:'address', label:'آدرس', type:'text', on:1},
+    'شغل': {key:'job', label:'شغل', type:'text', on:1},
+  };
+  if(!Array.isArray(selected) || !selected.length){
+    return [
+      {key:'name', label:'نام و نام خانوادگی', type:'text', on:1, core:1, req:1},
+      {key:'father', label:'نام پدر', type:'text', on:1, core:1},
+      {key:'mobile', label:'شماره تماس', type:'mobile', on:1, core:1, req:1},
+      {key:'nationalId', label:'کد ملی', type:'nid', on:1, core:1, req:1},
+      {key:'birthDate', label:'تاریخ تولد', type:'jdate', on:1, core:1, req:1},
+    ];
+  }
+  const out=[];
+  const seen=new Set();
+  for(const lbl of selected){
+    const def = MAP[lbl];
+    if(def && !seen.has(def.key)){ out.push(Object.assign({},def)); seen.add(def.key); }
+  }
+  // اگر فقط نام انتخاب شده بود، حداقل نام را نگه دار
+  if(!out.length) return [
+    {key:'name', label:'نام و نام خانوادگی', type:'text', on:1, core:1, req:1},
+    {key:'father', label:'نام پدر', type:'text', on:1, core:1},
+  ];
+  return out;
+}
+
 function genInstitutionEmail(slug, nid){
   const cleanSlug = String(slug||'').toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,20) || 'inst';
   return cleanSlug + (nid||'') + '@hes.com';
@@ -4820,9 +4873,20 @@ async function submitOnboarding(){
         SRV.on = true;
       }
       try { localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); } catch(e){}
+      // SESSION را هم بساز تا روتر اجازه ورود بدهد — فیکس باگ ورود
+      try{
+        const nm = (res.user&&res.user.name) || (onboardData.firstName+' '+onboardData.lastName);
+        const ph = (res.user&&res.user.phone) || onboardData.phone;
+        const rt = (res.user&&res.user.roleType) || onboardRole;
+        SESSION = { username: ph, name: nm, role: rt==='manager'?'admin':'viewer', roleType: rt };
+        localStorage.setItem(SES_KEY, JSON.stringify(SESSION));
+      }catch(e){}
       toast('حساب با موفقیت در سرور ساخته شد!','ok');
       if (alertBox) alertBox.innerHTML = `<div class="alert a-ok"><span class="al-ic">${icon('check',16)}</span><div>✅ حساب در <b>Postgres</b> ساخته شد! ایمیل ربات: <b dir="ltr">${esc(res.institutionEmail||payload.email)}</b><br><small>در حال ورود...</small></div></div>`;
-      setTimeout(()=>{ location.href='Panel.html#/app/dashboard'; }, 1200);
+      setTimeout(()=>{ 
+        try{ location.hash = '#/app/dashboard'; }catch(_){}
+        setTimeout(()=>{ location.reload(); }, 400);
+      }, 800);
       serverOk = true;
       return;
     }
@@ -4888,8 +4952,11 @@ async function submitOnboarding(){
               interval: payload.installmentPeriod==='monthly'?1:payload.installmentPeriod==='bimonthly'?2:3,
               rate: parseFloat(payload.feePercent)||4
             };
+            // فیلدهای اعضا دقیقاً بر اساس انتخاب کاربر
+            try{ DB.settings.memberFields = buildDemoFields(onboardData.memberFields||[]); }catch(e){}
           } else {
             DB.settings.institution.email = payload.email;
+            try{ DB.settings.memberFields = buildDemoFields(onboardData.memberFields||[]); }catch(e){}
           }
           saveDb();
           SESSION = { username:newUser.username, name:newUser.name, role:newUser.role, roleType: onboardRole };
@@ -4901,15 +4968,10 @@ async function submitOnboarding(){
         }
         if (btn) { btn.disabled=false; btn.innerHTML = icon('check',14)+' ایجاد حساب'; }
       };
-      // اگر کاربر دکمه دمو را نزد، اینجا متوقف می‌شویم تا تصمیم بگیرد
-      // برای اینکه کد پایین اجرا نشود، return می‌کنیم و منتظر کلیک می‌مانیم
-      // اما اگر SRV.base خالی بود و file:// نیست، خودکار دمو بساز
       const isFile = typeof location!=='undefined' && location.protocol==='file:';
       if(isFile || (typeof SRV!=='undefined' && SRV.base && SRV.base.includes('localhost'))){
-        // در حالت لوکال file:// یا localhost، بعد 3 ثانیه خودکار دمو نساز - منتظر بمان
         return;
       }
-      // اگر same-origin و سرور در دسترس نیست، احتمالاً بک‌اند sleep است - به کاربر بگو صبر کند
       return;
     }
     // سایر خطاها → نمایش
@@ -4941,7 +5003,6 @@ async function submitOnboarding(){
     };
     DB.users.push(newUser);
     if (onboardRole==='manager' && payload.institutionName) {
-      // مؤسسه جدید = شروع تمیز، نه 30 عضو نمونه
       DB.members = [];
       DB.loans = [];
       DB.installments = [];
@@ -4954,17 +5015,18 @@ async function submitOnboarding(){
       DB.settings.institution.name = payload.institutionName;
       DB.settings.institution.address = payload.address||'';
       DB.settings.institution.establishedAt = onboardData.establishedAt||'';
-      DB.settings.institution.email = payload.email; // ایمیل ربات hes.com
+      DB.settings.institution.email = payload.email;
       DB.settings.currency = payload.currency||'تومان';
       DB.settings.loanDefaults = {
         months: parseInt(payload.installmentsCount)||12,
         interval: payload.installmentPeriod==='monthly'?1:payload.installmentPeriod==='bimonthly'?2:3,
         rate: parseFloat(payload.feePercent)||4
       };
+      try{ DB.settings.memberFields = buildDemoFields(onboardData.memberFields||[]); }catch(e){}
       if (alertBox) alertBox.innerHTML = `<div class="alert a-info"><div>مؤسسه «${esc(payload.institutionName)}» با ایمیل ربات <b dir="ltr">${esc(payload.email)}</b> ساخته شد و دیتابیس دمو تمیز شد (0 عضو).</div></div>`;
     } else {
-      // کاربر عادی دمو - مؤسسه ندارد
       DB.settings.institution.email = payload.email;
+      try{ DB.settings.memberFields = buildDemoFields(onboardData.memberFields||[]); }catch(e){}
     }
     saveDb();
     SESSION = { username:newUser.username, name:newUser.name, role:newUser.role, roleType: onboardRole };

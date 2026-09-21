@@ -10,8 +10,6 @@ alter table users add column if not exists father_name text;
 alter table users add column if not exists birth_date date;
 alter table users add column if not exists first_name text;
 alter table users add column if not exists last_name text;
-alter table users add column if not exists first_name_en text;
-alter table users add column if not exists last_name_en text;
 alter table users add column if not exists role_type text default 'user' check (role_type in ('manager','user'));
 -- ایمیل دیگر یکتا نیست برای حالت تولید خودکار، ولی برای سازگاری قدیم نگه می‌داریم
 -- اگر قبلا unique بود، آن را نگه می‌داریم اما اجازه می‌دهیم خالی باشد؟ برای سادگی، unique را برمی‌داریم و دوباره با شرط می‌سازیم

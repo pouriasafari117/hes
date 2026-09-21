@@ -26,8 +26,6 @@ create table if not exists users (
   birth_date    date,
   first_name    text,
   last_name     text,
-  first_name_en text,
-  last_name_en  text,
   role_type     text default 'user' check (role_type in ('manager','user')),
   created_at    timestamptz not null default now()
 );
@@ -42,8 +40,6 @@ alter table users add column if not exists father_name text;
 alter table users add column if not exists birth_date date;
 alter table users add column if not exists first_name text;
 alter table users add column if not exists last_name text;
-alter table users add column if not exists first_name_en text;
-alter table users add column if not exists last_name_en text;
 alter table users add column if not exists role_type text default 'user';
 
 create table if not exists institutions (

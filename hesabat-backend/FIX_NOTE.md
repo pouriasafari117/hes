@@ -1,45 +1,65 @@
-# فیکس Round 33.3 - داشبورد صفر + فیلدهای انتخابی مؤسسه
+# فیکس Round 33.4 - ورود بعد از ثبت + حذف فیلدهای انگلیسی + حذف سخت اعضا + تنظیمات فیلدها
 
-## مشکل ۱: عضو ساختی ولی داشبورد صفر می‌زد
-**علت:** `pageDashboard()` همیشه از `DB.members.length` (localStorage دمو) می‌خواند. وقتی `SRV.on=true` هست، `DB.members` خالیه چون داده از سرور میاد (`/api/institutions/:id/members`). پس داشبورد ۰ می‌زد حتی با وجود عضو در لیست.
-
-**فیکس:**
-- `app8.js` تابع جدید `renderSrvDashboard()`:
-  - `GET /api/institutions/:id/fields` → تعداد فیلدها
-  - `GET /api/institutions/:id/members?page=1&pageSize=20` → `total` واقعی از Postgres + ۲۰ عضو اخیر
-  - استت‌ها: تعداد کل اعضا (سرور)، اعضای صفحه اول، مؤسسه، فیلدها + لیست اعضای اخیر + وضعیت اتصال
-- `hookSrvMode` الان `PAGES.dashboard` و `window.pageDashboard` را هم override می‌کند: اگر `SRV.on` باشد → `renderSrvDashboard()`، وگرنه داشبورد قدیمی دمو
-
-الان داشبورد در حالت سرور تعداد واقعی را از Postgres نشان می‌دهد.
-
-## مشکل ۲: تو ساخت مؤسسه فیلد انتخاب می‌کنی ولی باز پیش‌فرض‌ها میاد
-**علت:** `auth.js` register-v2 همیشه ۵ فیلد پیش‌فرض (نام، نام پدر، موبایل، کدملی، تاریخ تولد) را می‌ساخت و بعد فیلدهای انتخابی تو را اضافه می‌کرد. تو می‌خواستی فقط «نام و نام پدر» ولی ۵ تا می‌آمد.
+## ۱) مشکل «در حال ورود ولی وارد پنل مؤسسه نمیشه»
+**علت:** 
+- `route()` در `app4.js` فقط `SESSION` را چک می‌کرد، نه `SRV.token`. بعد از ثبت‌نام سرور، `SRV.on=true` می‌شد ولی `SESSION` ساخته نمی‌شد، پس روتر برمی‌گشت به `#/login` و داشبورد باز نمی‌شد.
+- `submitOnboarding()` در `app9.js` بعد از `register-v2` موفق، فقط `SRV` را ذخیره می‌کرد و `location.href='Panel.html#/app/dashboard'` می‌زد که در حالت same-origin گاهی رفرش درست کار نمی‌کرد.
 
 **فیکس:**
-- `backend/src/routes/auth.js`:
-  - مپ فارسی به کلید: `نام`→`name`, `نام پدر`→`father`, `موبایل`→`mobile`, `کدملی`→`nationalId`, `تاریخ تولد`→`birthDate`, `آدرس`→`address`, `شغل`→`job`
-  - اگر `memberFields` فرستاده شده و طول>۰ → **دقیقاً همونا** را بساز (نه پیش‌فرض)
-  - اگر خالی → ۵ پیش‌فرض را بساز
-- `fields.js` GET: اگر هیچ فیلدی نیست، خودکار ۵ پیش‌فرض می‌سازد تا عضو اضافه کردن قفل نشود (قبلاً اضافه شده بود)
-- `members.js` POST: اگر فیلدی نیست، اول پیش‌فرض می‌سازد (قبلاً اضافه شده بود) + `genMemberNo` حالا `name` که شامل نام+فامیلی است را درست جدا می‌کند
+- `app4.js` روتر: اگر `SRV.on && SRV.token` باشد و `SESSION` نداریم، `SESSION` را از `SRV.user` می‌سازیم و اجازه ورود می‌دهیم. چک `#/app/` هم `isSrvAuth` را قبول می‌کند.
+- `app9.js` ثبت سرور: بعد از موفقیت، `SESSION` هم ساخته می‌شود (`username=phone`, `name=first+last`, `role=admin/viewer`) و در `localStorage` ذخیره می‌شود، بعد `location.hash='#/app/dashboard'` + `reload()`.
 
-الان اگه تو onboarding فقط «نام» و «نام پدر» را انتخاب کنی، تو `field_definitions` دقیقاً ۲ تا می‌شیند و تو تنظیمات → فیلدهای اعضا هم همونا را می‌بینی، نه ۵ تا.
+الان بعد از ساخت حساب، مستقیم وارد داشبورد مؤسسه می‌شوی.
 
-## منظم‌سازی DB (درخواست قبلی)
-- `backend/db/README.md` توضیح کامل
-- `complete_schema.sql` تنها فایل برای نصب تازه (۱۹KB)
-- `migrations/001_initial.sql`, `002_v2.sql`, `003_delete_institution.sql`
-- `patches/fix_missing_cols.sql` و `fix_missing_cols_minimal.sql` (برای Supabase بدون ROLE)
-- `old/` آرشیو فایل‌های قدیمی شلوغ
+## ۲) دو فیلد اضافی انگلیسی برای یوزرها
+**علت:** `complete_schema.sql` و `002_v2.sql` ستون‌های `first_name_en` و `last_name_en` داشتند که برای transliteration شماره عضویت استفاده می‌شد ولی تو گفتی نمی‌خوای.
+
+**فیکس:**
+- از `complete_schema.sql` حذف شد (الان فقط `first_name`, `last_name` می‌ماند)
+- از `migrations/002_v2.sql` حذف شد
+- `patches/fix_missing_cols.sql` و `fix_missing_cols_minimal.sql` الان `DROP COLUMN IF EXISTS first_name_en/last_name_en` می‌کنند تا DB های موجود تمیز شود
+- `patches/drop_en_fields.sql` جدید: فقط همین دو ستون را حذف می‌کند — اگر DB فعلی‌ات این ستون‌ها را دارد، این فایل را در Supabase اجرا کن
+- `backend/*.sql` اضافی در روت حذف شد
+
+شماره عضویت خودکار هنوز با تابع `faToEnTranslit` در JS و بک‌اند ساخته می‌شود ولی دیگر ستون جدا در DB ذخیره نمی‌شود.
+
+## ۳) حذف عضو هنوز تو دیتابیس می‌ماند
+**قبل:** `DELETE /members/:id` → `UPDATE members SET deleted_at=now()` (حذف نرم) — عضو از لیست ناپدید می‌شد ولی تو جدول می‌ماند.
+
+**الان:** per درخواست تو، حذف سخت (hard delete):
+```sql
+DELETE FROM member_field_values WHERE member_id=$1;
+DELETE FROM members WHERE id=$1 AND institution_id=$2;
+```
+`members.js` عوض شد، پاسخ `{deleted:true, hard:true}`.
+
+اگر می‌خوای بعداً دوباره soft delete برگردونیم، ستون `deleted_at` هنوز تو اسکیما هست ولی استفاده نمی‌شود.
+
+## ۴) تنظیمات مؤسسه تیک همه خورده با وجود انتخاب فقط نام و نام پدر
+**علت دوگانه:**
+- دمو: `submitOnboarding` در حالت دمو `memberFields` انتخابی را نادیده می‌گرفت و همیشه ۵ فیلد پیش‌فرض را می‌گذاشت.
+- سرور: `renderSettings()` در `app7.js` همیشه `renderFieldsSec` (دمو) را صدا می‌زد، نه `srvFieldsSec` (سرور). پس حتی اگه تو سرور فقط ۲ فیلد ساخته شده بود، تو تنظیمات ۵ تا تیک‌خورده می‌دیدی.
+
+**فیکس:**
+- `app9.js` helper جدید `buildDemoFields(selected)`:
+  - اگر `selected` خالی → ۵ پیش‌فرض
+  - اگر مثلاً `['نام','نام پدر']` → فقط `{name, father}` با `on:1`
+  - هر دو مسیر دمو (`doDemoCreate` و مستقیم) الان `DB.settings.memberFields = buildDemoFields(...)` می‌کنند
+- `app7.js` `renderSettings()`:
+  ```js
+  if(SRV.on && srvReady() && srvFieldsSec) srvFieldsSec(box)
+  else renderFieldsSec(box)
+  ```
+  الان تو حالت سرور، بخش «فیلدهای اعضا» دقیقاً همونایی که تو onboarding انتخاب کردی را از `/api/fields` می‌خواند و لیست می‌کند (بدون تیک‌های اضافی).
 
 ## فایل‌ها
-- `panel.js` 378KB (قبلاً 372KB) — شامل داشبورد سرور + فیکس memberAdd
-- `hesabat-backend.zip` 208K
-- `hesabat-full.zip` 490K
+- `panel.js` 382KB syntax ok
+- `hesabat-backend.zip` 200K (بدون `first_name_en`, با حذف سخت)
+- `hesabat-full.zip` 480K
 
 ## تست
-1. Railway دیپلوی جدید (چون `auth.js`, `fields.js`, `members.js` عوض شد)
-2. `localStorage.clear()` → onboarding جدید → فقط «نام» و «نام پدر» را انتخاب کن → ثبت
-3. تنظیمات → فیلدهای اعضا → باید دقیقاً ۲ تا ببینی
-4. اعضا → عضو جدید → باید فقط همون ۲ فیلد بیاد (یا اگه خالی بود، ۵ پیش‌فرض خودکار)
-5. داشبورد → باید تعداد کل اعضا (سرور) را درست نشان دهد، نه صفر
+1. `drop_en_fields.sql` را تو Supabase اجرا کن اگر ستون‌های en داری (اختیاری)
+2. بک‌اند را ری‌دیپلوی کن (چون `members.js`, `complete_schema.sql`, `002_v2.sql`, `fields.js` عوض شد)
+3. `localStorage.clear()` → `Panel.html#/onboarding` → فقط «نام» و «نام پدر» انتخاب کن → ایجاد حساب → باید مستقیم برود داشبورد (نه گیر کردن روی «در حال ورود»)
+4. تنظیمات → اطلاعات مؤسسه → فیلدهای اعضا → باید دقیقاً ۲ تا ببینی (نه ۵ تیک‌خورده)
+5. عضو بساز → حذف کن → تو Supabase `select * from members` بزن → باید واقعاً حذف شده باشد، نه با `deleted_at`

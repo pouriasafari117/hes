@@ -7,9 +7,10 @@ alter table users add column if not exists father_name text;
 alter table users add column if not exists birth_date date;
 alter table users add column if not exists first_name text;
 alter table users add column if not exists last_name text;
-alter table users add column if not exists first_name_en text;
-alter table users add column if not exists last_name_en text;
 alter table users add column if not exists role_type text default 'user' check (role_type in ('manager','user'));
+-- حذف فیلدهای انگلیسی اضافی که کاربر نمی‌خواهد
+alter table users drop column if exists first_name_en;
+alter table users drop column if exists last_name_en;
 
 create unique index if not exists idx_users_phone_unique on users(lower(phone)) where phone is not null and phone <> '';
 create unique index if not exists idx_users_nid_unique on users(nid) where nid is not null and nid <> '';
