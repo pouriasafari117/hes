@@ -4337,12 +4337,83 @@ function srvMemberForm(m){
   }).catch(e => toast(e.message, 'err'));
 }
 
+/* ── داشبورد حالت سرور — تعداد اعضا را از Postgres می‌خواند ── */
+async function renderSrvDashboard(){
+  const main = document.getElementById('main');
+  if(!main) return;
+  // اگر تابع اصلی داشبورد را داریم، اول اسکلت آن را بساز ولی بعداً تعداد اعضا را از سرور جایگزین کن
+  // برای سادگی، داشبورد سرور را جدا می‌سازیم که دقیقاً از سرور بخواند
+  main.innerHTML = '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">حالت سرور — <b>'+esc(SRV.instName||('مؤسسه #'+SRV.instId))+'</b> — در حال دریافت آمار از Postgres...</div></div></div><div id="srvDashBody"><p class="hint-t">در حال دریافت...</p></div>';
+  let fields=[], membersData=null, membersTotal=0, recentMembers=[];
+  try{
+    fields = await srvLoadFields();
+    const q = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/members?page=1&pageSize=20');
+    membersData = q;
+    membersTotal = q.total || 0;
+    recentMembers = q.rows || [];
+  }catch(e){
+    document.getElementById('srvDashBody').innerHTML = '<div class="alert a-err"><div>خطا در دریافت آمار: '+esc(e.message)+'</div></div><button class="btn btn-soft btn-sm" onclick="renderSrvDashboard()">تلاش دوباره</button>';
+    return;
+  }
+  const t = (typeof J!=='undefined' && J.todayIso) ? J.todayIso() : new Date().toISOString().slice(0,10);
+  const fmtDate = (typeof J!=='undefined' && J.fmtLong) ? J.fmtLong(t) : t;
+  const stat = (cls, ic, label, val, sub) => '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+(typeof icon==='function'?icon(ic,16):'')+'</span>'+label+'</div><div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
+  const totalM = membersTotal;
+  const activeM = recentMembers.filter(m=>m.status==='active').length; // تقریبی از صفحه اول
+  // برای اینکه داشبورد صفر نشان ندهد، از total استفاده می‌کنیم
+  const body = `
+    <div class="alert a-ok" style="margin-bottom:12px"><span class="al-ic">${(typeof icon==='function'?icon('check',16):'✓')}</span><div>✅ متصل به <b>PostgreSQL</b> — ${totalM} عضو در سرور ثبت شده — <a href="#/app/members" style="text-decoration:underline">مشاهده اعضا</a></div></div>
+    <div class="grid g-stats">
+      ${stat('', 'users', 'تعداد کل اعضا (سرور)', (typeof fmtN==='function'?fmtN(totalM):totalM), 'از Postgres')}
+      ${stat('s-lime', 'check', 'اعضای صفحه اول', (typeof fmtN==='function'?fmtN(recentMembers.length):recentMembers.length), 'نمایش ۲۰ عضو اخیر')}
+      ${stat('', 'bank', 'مؤسسه', esc(SRV.instName||''), 'ID: '+SRV.instId)}
+      ${stat('s-teal', 'gear', 'فیلدهای تعریف شده', (typeof fmtN==='function'?fmtN(fields.length):fields.length), fields.map(f=>esc(f.label)).slice(0,3).join('، ')+(fields.length>3?'...':''))}
+    </div>
+    <div class="grid g-2" style="margin-top:14px">
+      <div class="card tight"><div class="card-h"><h3>اعضای اخیر (سرور)</h3><a class="btn btn-soft btn-sm" href="#/app/members">همه</a></div><div class="card-b" id="srvDashMembers"></div></div>
+      <div class="card"><div class="card-h"><h3>وضعیت اتصال</h3></div><div class="card-b">
+        <div class="kv-grid">
+          <div class="kv"><span>آدرس API</span><b dir="ltr" style="font-family:monospace">${esc(SRV.base==='' ? 'same-origin' : SRV.base)}</b></div>
+          <div class="kv"><span>مؤسسه</span><b>${esc(SRV.instName||'—')}</b></div>
+          <div class="kv"><span>کاربر</span><b>${esc(SRV.user&&SRV.user.name||'—')} (${esc(SRV.user&&SRV.user.phone||'')})</b></div>
+          <div class="kv"><span>ایمیل ربات</span><b dir="ltr" style="font-family:monospace">${esc(SRV.user&&SRV.user.email||'—')}</b></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-soft btn-sm" onclick="srvLoadFields(true).then(()=>renderSrvDashboard())">رفرش</button><a class="btn btn-ghost btn-sm" href="#/app/settings">تنظیمات اتصال</a></div>
+      </div></div>
+    </div>
+  `;
+  document.getElementById('srvDashBody').innerHTML = body;
+  const memBox = document.getElementById('srvDashMembers');
+  if(memBox){
+    if(!recentMembers.length){
+      memBox.innerHTML = '<div class="notif-empty">هنوز عضوی در سرور نیست — «افزودن عضو» را بزن.</div>';
+    } else {
+      memBox.innerHTML = '<div class="mini-list">' + recentMembers.map(m=>{
+        const nm = Object.values(m.values||{}).filter(Boolean)[0] || ('#'+m.id);
+        const sub = (m.member_no||'') + ' · ' + (m.values && (m.values.mobile||m.values.phone||'') || '');
+        return '<div class="mini-item" style="cursor:pointer" data-go="#/app/members/'+m.id+'"><span class="avatar sz-34">'+esc((nm||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(nm)+'</b><span>'+esc(sub)+'</span></span><span class="mi-v">'+(m.status==='active'?'فعال':'غیرفعال')+'</span></div>';
+      }).join('') + '</div>';
+      memBox.querySelectorAll('[data-go]').forEach(el=> el.onclick = ()=> location.hash = el.dataset.go );
+    }
+  }
+}
+
+/* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
+(function hookSrvMode(){
 /* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
 (function hookSrvMode(){
   function isSrv(){ return typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady(); }
   if (typeof PAGES !== 'undefined' && PAGES.members) {
     const _pgMembers = PAGES.members;
     PAGES.members = function(arg){ if(isSrv()) return renderSrvMembersPage(); return _pgMembers(arg); };
+  }
+  if (typeof PAGES !== 'undefined' && PAGES.dashboard) {
+    const _pgDash = PAGES.dashboard;
+    PAGES.dashboard = function(){ if(isSrv()) return renderSrvDashboard(); return _pgDash(); };
+  }
+  if (typeof window !== 'undefined' && window.pageDashboard) {
+    const _pd = window.pageDashboard;
+    window.pageDashboard = function(){ if(isSrv()) return renderSrvDashboard(); return _pd(); };
   }
   // ثبت عضو از داشبورد و میانبرها هم باید به سرور برود
   function overrideShortcuts(){

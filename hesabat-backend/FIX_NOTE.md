@@ -1,63 +1,45 @@
-# فیکس Round 33.2 - منظم‌سازی DB + ثبت عضو دوطرفه
+# فیکس Round 33.3 - داشبورد صفر + فیلدهای انتخابی مؤسسه
 
-## ۱) منظم‌سازی فایل‌های دیتابیس (قبلاً شلوغ بود)
-قبلاً تو `backend/db/` اینا بود: `schema.sql`, `schema_v2.sql`, `schema.supabase.sql`, `delete_institution.sql`, `fix_missing_cols.sql`, `fix_missing_cols_minimal.sql` — ۶ فایل شلوغ.
-
-الان:
-```
-backend/db/
-├── README.md                    ← توضیح همه فایل‌ها
-├── complete_schema.sql          ← **تنها فایل برای نصب تازه** (همه چیز توش: جداول + ستون‌های v2 + bot_email + member_no + join_requests + RLS + توابع)
-├── migrate.js                   ← اول complete_schema را می‌زند، اگر نبود migrations را به ترتیب
-├── migrations/
-│   ├── 001_initial.sql          (از schema.sql)
-│   ├── 002_v2.sql               (از schema_v2.sql + DROP FUNCTION برای جلوگیری از 42P13)
-│   └── 003_delete_institution.sql
-├── patches/
-│   ├── fix_missing_cols.sql     (با DO ... EXCEPTION برای role)
-│   └── fix_missing_cols_minimal.sql (بدون ROLE، مخصوص Supabase)
-└── old/                         (فایل‌های قدیمی آرشیو)
-```
-
-برای Supabase فقط `complete_schema.sql` را یک بار اجرا کن.
-
-## ۲) عضو اضافه کردن کار نمی‌کرد — الان دوطرفه شد
-**مشکل:** 
-- وقتی `field_definitions` خالی بود، backend می‌گفت "فیلد ناشناخته" و عضو ثبت نمی‌شد
-- فرانت‌اند `SHORTCUTS.memberAdd` (دکمه داشبورد) همیشه می‌رفت فرم دمو `memberForm()` که فقط `localStorage` می‌نوشت، نه Postgres
-- `renderSrvMembersPage` فقط می‌خواند، نمی‌نوشت
+## مشکل ۱: عضو ساختی ولی داشبورد صفر می‌زد
+**علت:** `pageDashboard()` همیشه از `DB.members.length` (localStorage دمو) می‌خواند. وقتی `SRV.on=true` هست، `DB.members` خالیه چون داده از سرور میاد (`/api/institutions/:id/members`). پس داشبورد ۰ می‌زد حتی با وجود عضو در لیست.
 
 **فیکس:**
-- `backend/src/routes/fields.js` GET: اگر هیچ فیلدی نیست، خودکار ۵ فیلد پیش‌فرض می‌سازد:
-  `name` (نام و نام خانوادگی), `father`, `mobile`, `nationalId`, `birthDate`
-- `backend/src/routes/members.js` POST: اگر فیلدی نیست، اول پیش‌فرض می‌سازد، بعد عضو را می‌سازد. `genMemberNo` هم `name` را که شامل نام+فامیلی است درست هندل می‌کند
-- `backend/src/routes/auth.js` register-v2: اگر مدیر مؤسسه می‌سازد و `memberFields` نفرستاد، خودکار ۵ فیلد پیش‌فرض + فیلدهای سفارشی را می‌سازد
-- `app8.js` hookSrvMode:
-  - `PAGES.members` → `renderSrvMembersPage` (قبلاً بود)
-  - **جدید:** `SHORTCUTS.memberAdd` → اگر `SRV.on` باشد `srvMemberForm(null)` وگرنه دمو
-  - **جدید:** `window.memberForm` → اگر سرور روشن باشد به `srvMemberForm` می‌رود (هم می‌نویسد هم می‌خواند)
-- `app9.js` patchMemberForm: اول چک می‌کند اگر سرور روشن است، برود سرور (قبلاً مستقیم می‌رفت دمو)
-- `app8.js` renderSrvMembersPage: اگر فیلدی نیست پیام راهنما + اگر عضوی نیست جدول با دکمه، و نمایش `member_no` + badge وضعیت
+- `app8.js` تابع جدید `renderSrvDashboard()`:
+  - `GET /api/institutions/:id/fields` → تعداد فیلدها
+  - `GET /api/institutions/:id/members?page=1&pageSize=20` → `total` واقعی از Postgres + ۲۰ عضو اخیر
+  - استت‌ها: تعداد کل اعضا (سرور)، اعضای صفحه اول، مؤسسه، فیلدها + لیست اعضای اخیر + وضعیت اتصال
+- `hookSrvMode` الان `PAGES.dashboard` و `window.pageDashboard` را هم override می‌کند: اگر `SRV.on` باشد → `renderSrvDashboard()`، وگرنه داشبورد قدیمی دمو
 
-الان:
-- مدیر لاگین می‌کند (حالت سرور سبز) → داشبورد → «افزودن عضو» → فرم سرور باز می‌شود → ثبت → `POST /api/institutions/:id/members` → تو Postgres می‌رود → لیست رفرش می‌شود و عضو را می‌بینی
-- `/api/debug` → `institutions_count` و `users_count` و `members` (از طریق `/api/institutions/:id/members` با توکن) قابل چک
+الان داشبورد در حالت سرور تعداد واقعی را از Postgres نشان می‌دهد.
 
-## ۳) درخواست عضویت کاربر فعلاً بی‌خیال
-- تو `app9.js` پنل کاربر (role=user) قبلاً درخواست join داشت، الان فعلاً تمرکز روی مدیر است
-- API `request-join` هنوز هست ولی UI کاربر ساده شده: فقط اطلاعات شخصی + پیام "فعلاً مدیر باید شما را اضافه کند"
-- بعداً می‌تونی دوباره فعال کنی
+## مشکل ۲: تو ساخت مؤسسه فیلد انتخاب می‌کنی ولی باز پیش‌فرض‌ها میاد
+**علت:** `auth.js` register-v2 همیشه ۵ فیلد پیش‌فرض (نام، نام پدر، موبایل، کدملی، تاریخ تولد) را می‌ساخت و بعد فیلدهای انتخابی تو را اضافه می‌کرد. تو می‌خواستی فقط «نام و نام پدر» ولی ۵ تا می‌آمد.
+
+**فیکس:**
+- `backend/src/routes/auth.js`:
+  - مپ فارسی به کلید: `نام`→`name`, `نام پدر`→`father`, `موبایل`→`mobile`, `کدملی`→`nationalId`, `تاریخ تولد`→`birthDate`, `آدرس`→`address`, `شغل`→`job`
+  - اگر `memberFields` فرستاده شده و طول>۰ → **دقیقاً همونا** را بساز (نه پیش‌فرض)
+  - اگر خالی → ۵ پیش‌فرض را بساز
+- `fields.js` GET: اگر هیچ فیلدی نیست، خودکار ۵ پیش‌فرض می‌سازد تا عضو اضافه کردن قفل نشود (قبلاً اضافه شده بود)
+- `members.js` POST: اگر فیلدی نیست، اول پیش‌فرض می‌سازد (قبلاً اضافه شده بود) + `genMemberNo` حالا `name` که شامل نام+فامیلی است را درست جدا می‌کند
+
+الان اگه تو onboarding فقط «نام» و «نام پدر» را انتخاب کنی، تو `field_definitions` دقیقاً ۲ تا می‌شیند و تو تنظیمات → فیلدهای اعضا هم همونا را می‌بینی، نه ۵ تا.
+
+## منظم‌سازی DB (درخواست قبلی)
+- `backend/db/README.md` توضیح کامل
+- `complete_schema.sql` تنها فایل برای نصب تازه (۱۹KB)
+- `migrations/001_initial.sql`, `002_v2.sql`, `003_delete_institution.sql`
+- `patches/fix_missing_cols.sql` و `fix_missing_cols_minimal.sql` (برای Supabase بدون ROLE)
+- `old/` آرشیو فایل‌های قدیمی شلوغ
 
 ## فایل‌ها
-- `panel.js` 372KB (قبلاً 369KB) — تنها فایل منطق
-- `hesabat-backend.zip` 207K شامل `complete_schema.sql`, `README.md`, `migrations/`, `patches/`, `src/routes/fields.js` و `members.js` فیکس شده
-- `hesabat-full.zip` 485K همه چیز
+- `panel.js` 378KB (قبلاً 372KB) — شامل داشبورد سرور + فیکس memberAdd
+- `hesabat-backend.zip` 208K
+- `hesabat-full.zip` 490K
 
-## تست سریع بعد از دیپلوی Railway
-1. `https://YOUR.up.railway.app/api/health` → `v:2, db_ok:true`
-2. `https://YOUR.up.railway.app/api/debug` → `funcs` کامل
-3. `localStorage.clear()` → `Panel.html#/onboarding` → مدیر جدید → باید بنر سبز Postgres
-4. برو اعضا و اقساط → عضو جدید → پر کن (نام، نام پدر، موبایل، کدملی، تاریخ تولد) → ثبت
-5. باید تو جدول ببینی + تو `/api/debug` اگر `/api/institutions/1/members` را با توکن بزنی، عضو را ببینی
-
-اگر هنوز عضو اضافه نشد، کنسول F12 → Network → ببین POST به `/members` چه اروری می‌دهد و بفرست.
+## تست
+1. Railway دیپلوی جدید (چون `auth.js`, `fields.js`, `members.js` عوض شد)
+2. `localStorage.clear()` → onboarding جدید → فقط «نام» و «نام پدر» را انتخاب کن → ثبت
+3. تنظیمات → فیلدهای اعضا → باید دقیقاً ۲ تا ببینی
+4. اعضا → عضو جدید → باید فقط همون ۲ فیلد بیاد (یا اگه خالی بود، ۵ پیش‌فرض خودکار)
+5. داشبورد → باید تعداد کل اعضا (سرور) را درست نشان دهد، نه صفر

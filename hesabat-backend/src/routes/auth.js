@@ -78,7 +78,28 @@ r.post('/register-v2', asyncH(async (req, res) => {
       );
       institutionId = iq.rows[0].id;
       institutionEmail = slug.replace(/[^a-z0-9]/g,'') + nid + '@hes.com';
-      // فیلدهای پیش‌فرض اعضا را بساز - اگر فرستاده شده از آنها، وگرنه ۵ فیلد پایه
+      // فیلدهای اعضا را دقیقاً از انتخاب کاربر بساز — اگر چیزی انتخاب نکرد، پیش‌فرض ۵ تا
+      const labelToKey = {
+        'نام': 'name',
+        'نام و نام خانوادگی': 'name',
+        'نام خانوادگی': 'last_name',
+        'نام پدر': 'father',
+        'موبایل': 'mobile',
+        'شماره تماس': 'mobile',
+        'کدملی': 'nationalId',
+        'کد ملی': 'nationalId',
+        'تاریخ تولد': 'birthDate',
+        'آدرس': 'address',
+        'شغل': 'job',
+        'شهر': 'city',
+        'مدرک': 'degree'
+      };
+      const labelToType = {
+        'نام': 'text', 'نام و نام خانوادگی': 'text', 'نام خانوادگی': 'text',
+        'نام پدر': 'text', 'موبایل': 'mobile', 'شماره تماس': 'mobile',
+        'کدملی': 'nid', 'کد ملی': 'nid', 'تاریخ تولد': 'date',
+        'آدرس': 'text', 'شغل': 'text', 'شهر': 'text', 'مدرک': 'text'
+      };
       const defaultFields = [
         {key:'name', label:'نام و نام خانوادگی', type:'text', required:true},
         {key:'father', label:'نام پدر', type:'text', required:false},
@@ -86,20 +107,17 @@ r.post('/register-v2', asyncH(async (req, res) => {
         {key:'nationalId', label:'کد ملی', type:'nid', required:true},
         {key:'birthDate', label:'تاریخ تولد', type:'date', required:true},
       ];
-      let fieldsToCreate = defaultFields;
+      let fieldsToCreate = [];
       if (Array.isArray(b.memberFields) && b.memberFields.length) {
-        // اگر کاربر فیلدهای دلخواه فرستاد، آنها را به پیش‌فرض اضافه کن (یا جایگزین اگر کلید تکراری)
-        const custom = b.memberFields.filter(f=>f.label).map((f,i)=>({
-          key: (f.key || f.label).toString().trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').slice(0,30) || 'field_'+i,
-          label: f.label,
-          type: f.type||'text',
-          required: !!f.required
-        }));
-        // ترکیب: اول پیش‌فرض، بعد سفارشی‌های غیرتکراری
-        const seen = new Set(defaultFields.map(f=>f.key));
-        for (const cf of custom) {
-          if (!seen.has(cf.key)) { fieldsToCreate.push(cf); seen.add(cf.key); }
-        }
+        // دقیقاً همونی که کاربر انتخاب کرده
+        fieldsToCreate = b.memberFields.filter(f=>f.label).map((f,i)=>{
+          const lbl = String(f.label).trim();
+          const key = labelToKey[lbl] || (f.key || lbl).toString().trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').slice(0,30) || 'field_'+i;
+          const type = f.type || labelToType[lbl] || 'text';
+          return {key, label: lbl, type, required: !!f.required || lbl==='نام' || lbl==='نام و نام خانوادگی'};
+        });
+      } else {
+        fieldsToCreate = defaultFields;
       }
       for (let i=0;i<fieldsToCreate.length;i++) {
         const f = fieldsToCreate[i];
