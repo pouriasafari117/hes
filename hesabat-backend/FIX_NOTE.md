@@ -1,72 +1,96 @@
-# فیکس Round 33.6 - ورود پایدار + خروج به صفحه اصلی
+# فیکس Round 33.7 - ریشه‌یابی پرش بعد از ثبت‌نام
 
-## مشکلاتی که گفتی
-- حساب می‌سازی یک بار می‌ره تو پنل بعد سریعا خارج می‌شه و دوباره باید لاگین کنی
-- تو صفحه ورود هرچی می‌زنی قبول نمی‌کنه، باید بری صفحه اصلی Hesabat.html و از اونجا ورود بزنی تا وارد شی
-- می‌خوای بعد ساخت دیگه بیرون نیاد و مستقیم بره داخل
-- وقتی لاگ‌اوت کردی تو صفحه ورود گیر می‌کنی، می‌خوای بری Hesabat.html
+## مشکل واقعی که گفتی
+- بعد ساخت حساب می‌پره بیرون و می‌ره به URL خراب `Panel.html#/)/dashboard` (در واقع `Panel.html#/app/dashboard` بود ولی مارک‌داون لینک را شکسته بود)
+- هر چی تو لاگین می‌زنی وارد نمی‌شه، باید بری Hesabat.html
 
-## علت‌ها
-1. **خروج سریع بعد ثبت:** `boot()` تو `app7.js` بعد از هر رفرش `SESSION` را از `localStorage` می‌خواند و چک می‌کرد `DB.users.some(u=>username==...)`. چون کاربر سرور تو `DB.users` دمو نیست، `SESSION` دور ریخته می‌شد → `SESSION=null` → روتر می‌رفت لاگین → انگار بیرون پریدی.
-2. **لاگین قبول نمی‌کرد:** همین چک باعث می‌شد حتی بعد از لاگین موفق سرور، اگر رفرش کنی SESSION دوباره پاک شود. برای همین مجبور بودی بری Hesabat.html و دوباره بیای.
-3. **لاگ‌اوت گیر می‌کرد:** `logout()` فقط `location.hash='#/'` می‌زد. تو `Panel.html`، `#/` یعنی `showView('login')` نه صفحه اصلی، پس تو لاگین گیر می‌کردی.
+## ریشه‌یابی دقیق (Root Cause)
+ترتیب لود اسکریپت‌ها در `assemble2.py` اشتباه بود:
+```python
+# قدیمی - BUG
+panel_js = app1+app2+app3+app4+app5+app6+app7+app8+app9
+# app7 = boot() که SESSION را چک می‌کند
+# app8 = SRV تعریف می‌شود
+```
+`boot()` تو `app7.js` یک IIFE است که **بلافاصله** موقع لود اجرا می‌شود. چون `SRV` هنوز تعریف نشده بود (تو app8 بعدی است)، شرط `typeof SRV!=='undefined' && SRV.token` همیشه false بود. پس boot فکر می‌کرد تو حالت دمو هستی و `SESSION` را که تازه از سرور ساخته بودی، چون تو `DB.users` دمو نبود، دور می‌ریخت → `SESSION=null` → `route()` می‌رفت `#/login` → انگار پریدی بیرون.
 
 ## فیکس‌ها
 
-### boot پایدار شد (`app7.js`)
-```js
-const s = localStorage.getItem(SES_KEY)
-if(s){
-  const o = JSON.parse(s)
-  if(o && o.username){
-    const isSrv = (typeof SRV!=='undefined' && SRV.token)
-    if(isSrv || DB.users.some(...)) SESSION = o // اگر توکن سرور داری، بدون چک دمو قبول کن
-  }
-}
-// اگر SRV توکن دارد ولی SESSION نداریم، از SRV بساز
-if(!SESSION && SRV.token && SRV.user){
-  SESSION = { username: SRV.user.phone, name: SRV.user.name, role:'admin', roleType:'manager' }
-}
+### 1. ترتیب لود درست شد (`assemble2.py`)
+```python
+# جدید - FIX
+panel_js = app1+app2+app3+app4+app5+app6+app8+app7+app9
+# الان SRV قبل از boot لود می‌شود
 ```
-الان بعد از ساخت حساب و رفرش، SESSION حفظ می‌شود و بیرون نمی‌پری.
+الان تو `panel.js`:
+- line 812: `function route()`
+- line 2372: `const SRV_KEY` (app8)
+- line 4430: `function logout()`
+- line 4456: `(function boot()`
+SRV قبل از boot است.
 
-### ثبت‌نام مستقیم می‌ره داخل (`app9.js`)
-بعد از `register-v2` موفق:
+### 2. boot مقاوم شد (`app7.js`)
+حتی اگر SRV global نباشد، از localStorage مستقیم می‌خواند:
 ```js
-SESSION = { username: phone, name: first+last, role: 'admin', roleType: 'manager' }
-localStorage.setItem(SES_KEY, SESSION)
-location.hash = '#/app/dashboard'
-setTimeout(()=>location.reload(), 400)
+function getSrvFromStorage(){
+  try{
+    if(typeof SRV!=='undefined' && SRV.token) return SRV;
+    const raw = localStorage.getItem('hesabat-srv-v1');
+    if(raw){ const o = JSON.parse(raw); if(o && o.token) return o; }
+  }catch(e){}
+  return null;
+}
+const srv = getSrvFromStorage();
+const isSrv = !!(srv && srv.token);
+if(isSrv || DB.users.some(...)) SESSION = o;
 ```
-دیگر `Panel.html#/app/dashboard` با href کامل نمی‌زنیم که باعث لود دوباره از صفر شود.
+و اگر SESSION نداریم ولی SRV token داریم، از SRV می‌سازد.
 
-### لاگ‌اوت می‌ره Hesabat.html (`app7.js`)
+### 3. route مقاوم شد (`app4.js`)
+همان `getSrv()` از localStorage، و حتی اگر `SRV.on=false` باشد، فقط وجود token کافیست برای ورود به `#/app/dashboard`:
+```js
+const srv = getSrv();
+const isSrvAuth = !!(srv && srv.token);
+if(!SESSION && !isSrvAuth){ location.hash='#/login'; }
+```
+و `showView('landing')` به `showView('login')` تغییر کرد تا تو Panel.html گیر نکنی.
+
+### 4. register و login همیشه on=true می‌کنند
+قبلاً فقط وقتی `institutionId` داشت `on=true` می‌شد. اگر ساخت مؤسسه به هر دلیلی خطا می‌داد، on=false می‌ماند و روتر SESSION را نمی‌پذیرفت.
+
+الان:
+```js
+// app9.js register
+SRV.token = res.token;
+SRV.user = res.user;
+SRV.instId = res.institutionId || null;
+SRV.instName = onboardData.institutionName || '';
+SRV.on = true; // همیشه true وقتی توکن داریم
+
+// app7.js login
+SRV.token = j.token; SRV.user = j.user;
+SRV.on = true; // فوری true
+```
+
+### 5. logout می‌ره Hesabat.html
 ```js
 function logout(){
-  SESSION=null; removeItem(SES_KEY)
-  SRV.on=false; save SRV
-  toast('خارج شدید')
-  setTimeout(()=>{
-    if(location.pathname.includes('Panel.html')) location.href='Hesabat.html'
-    else location.href='Hesabat.html'
-  }, 300)
+  SESSION=null; remove SES_KEY;
+  SRV.on=false; save
+  setTimeout(()=> location.href='Hesabat.html', 250);
 }
 ```
-الان بعد خروج مستقیم می‌ری صفحه اصلی، نه گیر کردن تو لاگین.
 
-### بک‌اند بدون en (از قبل)
-- `complete_schema.sql` بدون `first_name_en/last_name_en`
-- `auth.js` مستقیم INSERT بدون تابع → مشکل «حسابی وجود ندارد» حل شد
-- `members.js` hard delete + شماره عضویت ساده `M-xxxxxx`
+## تست نهایی
+1. `hesabat-backend.zip` جدید (201K) را روی Railway دیپلوی کن (همون `hes-production-4d37.up.railway.app`)
+2. تو مرورگر: `localStorage.clear()` + `sessionStorage.clear()`
+3. برو `Panel.html#/onboarding` → مدیر → اطلاعات → مؤسسه → ایجاد
+4. باید بره `Panel.html#/app/dashboard` و **دیگر بیرون نپره** حتی با رفرش (F5)
+5. خروج بزن → باید بری `Hesabat.html` نه لاگین
+6. از Hesabat.html ورود بزن → شماره تماس + کدملی → باید بره داشبورد
 
 ## فایل‌ها
-- `panel.js` 382KB syntax ok
+- `panel.js` 384KB (قبلاً 382KB) - ترتیب درست SRV قبل boot
 - `hesabat-backend.zip` 201K
 - `hesabat-full.zip` 482K
-
-## تست
-1. Railway دیپلوی
-2. `localStorage.clear()` → `Panel.html#/onboarding` → حساب بساز → باید مستقیم بره داشبورد و دیگر بیرون نپره (حتی با رفرش)
-3. خروج بزن → باید بری `Hesabat.html` نه لاگین
-4. از `Hesabat.html` ورود بزن → شماره + کدملی → باید مستقیم بره پنل
-5. اگر DB قدیمی داری: `drop_en_fields.sql` را یک بار تو Supabase بزن
+- فقط `drop_en_fields.sql` برای DB قدیمی لازم است (en ستون‌ها را حذف می‌کند)
