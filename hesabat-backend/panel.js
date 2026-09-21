@@ -1148,7 +1148,12 @@ function pageDashboard(){
     '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+icon(ic,16)+'</span>'+label+'</div>' +
     '<div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
 
+  const srvBadge = (typeof SRV!=='undefined' && SRV.on && SRV.token) ?
+    `<div class="alert a-ok" style="margin-bottom:12px"><span class="al-ic">${icon('check',16)}</span><div>✅ متصل به <b>PostgreSQL</b> — مؤسسه <b>${esc(SRV.instName||'سرور')}</b> — آدرس <code dir="ltr">${esc(SRV.base==='' ? 'same-origin' : SRV.base)}</code> — <a href="#/app/settings" style="color:var(--green-deep);text-decoration:underline">تنظیمات اتصال</a> — <a href="#" onclick="event.preventDefault(); (async()=>{ const b=document.getElementById('srvDbg'); if(b){ b.style.display=b.style.display==='none'?'':'none'; if(b.style.display!=='none'){ try{ const h=await srvFetch('GET','/api/debug'); b.textContent=JSON.stringify(h,null,2); }catch(e){ b.textContent='خطا: '+e.message; } } })()" style="margin-inline-start:8px">دیباگ DB</a><pre id="srvDbg" style="display:none;white-space:pre-wrap;max-height:240px;overflow:auto;background:rgba(0,0,0,.06);padding:8px;border-radius:8px;margin-top:8px;font-size:11px;direction:ltr;text-align:left"></pre></div></div>` :
+    `<div class="alert a-warn" style="margin-bottom:12px"><span class="al-ic">${icon('warn',16)}</span><div>⚠️ حالت <b>دمو (localStorage)</b> — داده در Postgres ذخیره نمی‌شود. برای اتصال به دیتابیس: <a href="#/app/settings" style="color:inherit;text-decoration:underline;font-weight:700">تنظیمات → اتصال به دیتابیس</a> را چک کن و <code>/api/health</code> را تست کن.<br><small>آدرس فعلی سرور: <code dir="ltr">${esc(typeof SRV!=='undefined' ? (SRV.base==='' ? 'same-origin' : (SRV.base||'تنظیم نشده')) : 'نامشخص')}</code> — اگر با file:// باز کردی، باید از http://localhost:4000/Panel.html باز کنی.</small></div></div>`;
+
   main.innerHTML =
+    srvBadge +
     '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">نمای کلی '+esc(DB.settings.institution.name)+' — ' + J.fmtLong(t) + '</div></div>' +
       '<div class="ph-actions">' +
         qaBtn('memberAdd','plus','افزودن عضو','#addMember') +
@@ -4689,10 +4694,13 @@ async function submitOnboarding(){
     email: genInstitutionEmail(onboardData.institutionName||'inst', onboardData.nid||'')
   };
 
-  // اول سعی کن به سرور بزنی، اگر نشد برو حالت دمو — '' هم معتبر است (same-origin)
+  // اول سعی کن به سرور بزنی — اگر SRV.base تعریف شده (حتی '') یعنی می‌خوایم سرور
   let serverOk = false;
+  let serverAttempted = false;
   try {
     if (typeof SRV !== 'undefined' && typeof SRV.base === 'string' && typeof srvFetch === 'function') {
+      serverAttempted = true;
+      if (alertBox) alertBox.innerHTML = `<div class="alert a-info"><span class="al-ic">${icon('info',16)}</span><div>در حال اتصال به سرور (<code dir="ltr">${esc(SRV.base==='' ? 'same-origin' : SRV.base)}</code>)...</div></div>`;
       const res = await srvFetch('POST', '/api/auth/register-v2', payload);
       SRV.token = res.token;
       SRV.user = res.user;
@@ -4702,24 +4710,105 @@ async function submitOnboarding(){
         SRV.on = true;
       }
       try { localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); } catch(e){}
-      toast('حساب با موفقیت ساخته شد! در حال ورود...','ok');
-      setTimeout(()=>{ location.href='Panel.html#/app/dashboard'; }, 800);
+      toast('حساب با موفقیت در سرور ساخته شد!','ok');
+      if (alertBox) alertBox.innerHTML = `<div class="alert a-ok"><span class="al-ic">${icon('check',16)}</span><div>✅ حساب در <b>Postgres</b> ساخته شد! ایمیل ربات: <b dir="ltr">${esc(res.institutionEmail||payload.email)}</b><br><small>در حال ورود...</small></div></div>`;
+      setTimeout(()=>{ location.href='Panel.html#/app/dashboard'; }, 1200);
       serverOk = true;
       return;
     }
   } catch(e) {
-    console.warn('[onboard] server register failed, falling back to demo:', e.message);
-    // اگر خطای شبکه بود، برو دمو؛ اگر خطای منطقی (مثلاً تکراری) بود، نشان بده
-    if (e && e.network) {
-      if (alertBox) alertBox.innerHTML = `<div class="alert a-warn"><span class="al-ic">${icon('info',16)}</span><div>سرور در دسترس نیست، حساب دمو ساخته می‌شود...</div></div>`;
-    } else if (e && e.status && e.status>=400 && e.status<500) {
-      if (alertBox) alertBox.innerHTML = `<div class="alert a-err"><span class="al-ic">${icon('warn',16)}</span><div>خطا: ${esc(e.message)}</div></div>`;
+    console.warn('[onboard] server register failed:', e.message, e);
+    // خطای منطقی 400-500 → نمایش خطا و توقف (مثلاً تکراری)
+    if (e && e.status && e.status>=400 && e.status<500) {
+      if (alertBox) alertBox.innerHTML = `<div class="alert a-err"><span class="al-ic">${icon('warn',16)}</span><div>❌ خطا از سرور (${e.status}): ${esc(e.message)}${e.details ? '<br><small>'+esc(JSON.stringify(e.details))+'</small>':''}</div></div>`;
       if (btn) { btn.disabled=false; btn.innerHTML = (typeof icon==='function'?icon('check',14):'✓')+' ایجاد حساب'; }
       return;
     }
-    // در غیر اینصورت ادامه بده به دمو
+    // خطای شبکه → اگر سرور ست شده بود، خطا را واضح نشان بده و اجازه انتخاب دمو بده
+    if (e && e.network) {
+      if (alertBox) alertBox.innerHTML = `<div class="alert a-err"><span class="al-ic">${icon('warn',16)}</span><div>❌ اتصال به سرور برقرار نشد (<code dir="ltr">${esc(typeof SRV!=='undefined'?SRV.base:'')}</code>)<br>پیام: ${esc(e.message)}<br><br><b>چک‌لیست:</b><br>۱) آیا بک‌اند روشن است؟ <code>/api/health</code> را در مرورگر باز کن.<br>۲) آیا <code>DATABASE_URL</code> در Render/Railway ست است؟<br>۳) آیا <code>npm run migrate</code> را اجرا کردی؟<br>۴) اگر فایل را با file:// باز کردی، باید از <code>http://localhost:4000/Panel.html</code> باز کنی.<br><br><button class="btn btn-soft btn-sm" id="obForceDemo">${icon('users',14)} ادامه در حالت دمو (localStorage)</button></div></div>`;
+      if (btn) { btn.disabled=false; btn.innerHTML = (typeof icon==='function'?icon('check',14):'✓')+' ایجاد حساب'; }
+      setTimeout(()=>{
+        const fd = document.getElementById('obForceDemo');
+        if(fd) fd.onclick = async ()=>{
+          if (alertBox) alertBox.innerHTML = `<div class="alert a-warn"><div>در حال ساخت حساب دمو...</div></div>`;
+          await new Promise(r=>setTimeout(r,300));
+          // ادامه به دمو - کد پایین اجرا می‌شود
+          doDemoCreate();
+        };
+      },100);
+      // تابع ساخت دمو را جدا می‌کنیم تا دکمه بتواند صدا بزند
+      const doDemoCreate = async ()=>{
+        try {
+          const newUser = {
+            id: 'u'+Date.now(),
+            name: payload.firstName+' '+payload.lastName,
+            username: payload.phone,
+            mobile: payload.phone,
+            phone: payload.phone,
+            nationalId: payload.nid,
+            nid: payload.nid,
+            father: payload.fatherName,
+            birthDate: onboardData.birthDate||'',
+            role: onboardRole==='manager' ? 'admin' : 'viewer',
+            roleType: onboardRole,
+            institutions: payload.institutionName||'',
+            status:'active',
+            lastLogin: J.nowIso(),
+            email: payload.email
+          };
+          DB.users.push(newUser);
+          if (onboardRole==='manager' && payload.institutionName) {
+            DB.members = [];
+            DB.loans = [];
+            DB.installments = [];
+            DB.payments = [];
+            DB.txns = [];
+            DB.funds = [{id:'f1', name: payload.institutionName, status:'active'}];
+            DB.accounts = [{id:'a1', fundId:'f1', name:'صندوق اصلی', number:'', type:'cash', initialBalance:0, balance:0, status:'active'}];
+            DB.audit = [];
+            DB.counters = {member:0, loan:0};
+            DB.settings.institution.name = payload.institutionName;
+            DB.settings.institution.address = payload.address||'';
+            DB.settings.institution.establishedAt = onboardData.establishedAt||'';
+            DB.settings.institution.email = payload.email;
+            DB.settings.currency = payload.currency||'تومان';
+            DB.settings.loanDefaults = {
+              months: parseInt(payload.installmentsCount)||12,
+              interval: payload.installmentPeriod==='monthly'?1:payload.installmentPeriod==='bimonthly'?2:3,
+              rate: parseFloat(payload.feePercent)||4
+            };
+          } else {
+            DB.settings.institution.email = payload.email;
+          }
+          saveDb();
+          SESSION = { username:newUser.username, name:newUser.name, role:newUser.role, roleType: onboardRole };
+          try { localStorage.setItem(SES_KEY, JSON.stringify(SESSION)); } catch(e){}
+          toast('حساب دمو ساخته شد!','ok');
+          setTimeout(()=>{ location.hash='#/app/dashboard'; location.reload(); }, 600);
+        } catch(err) {
+          if (alertBox) alertBox.innerHTML = `<div class="alert a-err"><div>خطا: ${esc(err.message)}</div></div>`;
+        }
+        if (btn) { btn.disabled=false; btn.innerHTML = icon('check',14)+' ایجاد حساب'; }
+      };
+      // اگر کاربر دکمه دمو را نزد، اینجا متوقف می‌شویم تا تصمیم بگیرد
+      // برای اینکه کد پایین اجرا نشود، return می‌کنیم و منتظر کلیک می‌مانیم
+      // اما اگر SRV.base خالی بود و file:// نیست، خودکار دمو بساز
+      const isFile = typeof location!=='undefined' && location.protocol==='file:';
+      if(isFile || (typeof SRV!=='undefined' && SRV.base && SRV.base.includes('localhost'))){
+        // در حالت لوکال file:// یا localhost، بعد 3 ثانیه خودکار دمو نساز - منتظر بمان
+        return;
+      }
+      // اگر same-origin و سرور در دسترس نیست، احتمالاً بک‌اند sleep است - به کاربر بگو صبر کند
+      return;
+    }
+    // سایر خطاها → نمایش
+    if (alertBox) alertBox.innerHTML = `<div class="alert a-err"><div>خطا: ${esc(e.message)}</div></div>`;
+    if (btn) { btn.disabled=false; btn.innerHTML = (typeof icon==='function'?icon('check',14):'✓')+' ایجاد حساب'; }
+    return;
   }
   if (serverOk) return;
+  // اگر به اینجا رسیدیم یعنی SRV تعریف نشده بود - مستقیم دمو
 
   // حالت دمو - ذخیره در localStorage
   try {
@@ -4780,14 +4869,14 @@ async function submitOnboarding(){
 
 // ── تنظیمات جدید ──
 function patchSettings(){
-  // حذف اتصال PostgreSQL از تنظیمات
+  // اتصال به دیتابیس: دیگر حذف نمی‌کنیم - per درخواست کاربر باید بماند تا دیباگ شود
   const origRenderSettings = window.renderSettings;
   if (origRenderSettings && !origRenderSettings._patched) {
     window.renderSettings = function(){
       origRenderSettings();
-      // حذف secSrv
-      const srvSec = document.getElementById('secSrv');
-      if (srvSec) srvSec.remove();
+      // secSrv را نگه می‌داریم - renderSrvConnSec در app7.js آن را پر می‌کند
+      // const srvSec = document.getElementById('secSrv');
+      // if (srvSec) srvSec.remove();
       
       // اطلاعات مؤسسه را با داده‌های کاربر پر کن
       const orgBox = document.querySelector('#secOrg .sec-b');

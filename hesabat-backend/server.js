@@ -28,16 +28,27 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'hesabat-backend', v: 1 }));
+app.get('/api/health', async (req, res) => {
+  try {
+    const { pool } = require('./src/db');
+    const c1 = await pool.query('select 1 as ok');
+    res.json({ ok: true, service: 'hesabat-backend', v: 2, db_ok: true, db: c1.rows[0] });
+  } catch (e) {
+    res.json({ ok: false, service: 'hesabat-backend', v: 2, db_ok: false, error: e.message, code: e.code });
+  }
+});
 app.get('/api/debug', async (req, res) => {
   try {
     const { pool } = require('./src/db');
     const c1 = await pool.query('select 1 as ok');
     const c2 = await pool.query('select count(*) as n from users');
-    const c3 = await pool.query('select proname from pg_proc where proname like \'fn_%\'');
-    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], funcs: c3.rows.map(r=>r.proname) });
+    const c3 = await pool.query('select proname from pg_proc where proname like \'fn_%\' order by proname');
+    const c4 = await pool.query('select count(*) as n from institutions');
+    const c5 = await pool.query('select id, name, slug, bot_email, owner_id, created_at from institutions order by id desc limit 20');
+    const c6 = await pool.query('select id, name, phone, nid, email, role_type, created_at from users order by id desc limit 20');
+    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], institutions_count: c4.rows[0], funcs: c3.rows.map(r=>r.proname), recent_institutions: c5.rows, recent_users: c6.rows });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,1000) });
+    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,2000) });
   }
 });
 app.use('/api/auth', require('./src/routes/auth'));

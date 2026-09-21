@@ -1,0 +1,30 @@
+/* اجرای اسکریپت اسکیمای دیتابیس با کاربر مالک (نه نقش اپ) */
+const { Client } = require('pg');
+const fs = require('fs');
+const path = require('path');
+
+const ADMIN_URL = process.env.ADMIN_URL || process.env.DATABASE_URL
+  || 'postgres://hesabat:hesabat_pass@localhost:5432/hesabat';
+
+async function runFile(client, filename){
+  const fp = path.join(__dirname, filename);
+  if(!fs.existsSync(fp)){ console.log('skip missing', filename); return; }
+  const sql = fs.readFileSync(fp, 'utf8');
+  console.log('applying', filename, '...', sql.length, 'bytes');
+  await client.query(sql);
+  console.log(filename, 'applied ✔');
+}
+
+(async () => {
+  const c = new Client({ connectionString: ADMIN_URL });
+  await c.connect();
+  console.log('connected to', ADMIN_URL.replace(/:[^:@]+@/, ':***@'));
+  // ترتیب مهم است: schema.sql اول، سپس schema_v2، سپس delete_institution
+  await runFile(c, 'schema.sql');
+  await runFile(c, 'schema_v2.sql');
+  // schema.supabase اگر وجود داشت
+  await runFile(c, 'schema.supabase.sql');
+  await runFile(c, 'delete_institution.sql');
+  console.log('all migrations applied ✔');
+  await c.end();
+})().catch(e => { console.error('migration failed:', e.message, e.code, e.detail); console.error(e.stack?.slice(0,2000)); process.exit(1); });
