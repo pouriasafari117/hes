@@ -3994,8 +3994,25 @@ function bindLogin(){
 function logout(){
   SESSION = null;
   try{ localStorage.removeItem(SES_KEY); sessionStorage.removeItem(SES_KEY); }catch(e){}
-  location.hash = '#/';
+  // per درخواست کاربر: بعد از لاگ‌اوت مستقیم برو صفحه اصلی Hesabat.html نه لاگین
+  try{
+    // اگر SRV هم پاک شود یا بماند؟ برای امنیت، SRV را نگه می‌داریم ولی on را false می‌کنیم تا دوباره نیاز به لاگین باشد
+    if(typeof SRV!=='undefined'){
+      SRV.on = false;
+      try{ localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); }catch(e){}
+    }
+  }catch(e){}
   toast('از سامانه خارج شدید.','warn');
+  setTimeout(()=>{
+    try{
+      if(location.pathname.includes('Panel.html')){
+        location.href = 'Hesabat.html';
+      }else{
+        location.hash = '#/';
+        location.href = 'Hesabat.html';
+      }
+    }catch(e){ location.hash = '#/'; }
+  }, 300);
 }
 
 /* ═══════════ راه‌اندازی ═══════════ */
@@ -4003,7 +4020,22 @@ function logout(){
   DB = loadDb();
   try{
     const s = localStorage.getItem(SES_KEY) || sessionStorage.getItem(SES_KEY);
-    if(s){ const o = JSON.parse(s); if(o && o.username && DB.users.some(u=>u.username===o.username && u.status==='active')) SESSION = o; }
+    if(s){
+      const o = JSON.parse(s);
+      if(o && o.username){
+        const isSrv = (typeof SRV!=='undefined' && SRV.token);
+        if(isSrv || DB.users.some(u=>u.username===o.username && u.status==='active')) SESSION = o;
+      }
+    }
+  }catch(e){}
+  // اگر SRV توکن دارد ولی SESSION نداریم، از SRV بساز (فیکس خروج سریع بعد ثبت)
+  try{
+    if(!SESSION && typeof SRV!=='undefined' && SRV.token && SRV.user){
+      const nm = SRV.user.name || SRV.instName || 'مدیر';
+      const ph = SRV.user.phone || '';
+      SESSION = { username: ph||'srv', name: nm, role: 'admin', roleType: SRV.user.roleType||'manager' };
+      try{ localStorage.setItem(SES_KEY, JSON.stringify(SESSION)); }catch(e){}
+    }
   }catch(e){}
 
   if(SESSION && (location.hash==='' || location.hash==='#/' || location.hash==='#' || location.hash==='#/login')){

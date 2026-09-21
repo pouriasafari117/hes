@@ -1,63 +1,72 @@
-# فیکس نهایی Round 33.5 - سازماندهی + ورود + بدون en
+# فیکس Round 33.6 - ورود پایدار + خروج به صفحه اصلی
 
 ## مشکلاتی که گفتی
-1. حساب می‌سازی ولی وارد پنل نمی‌شه، «در حال ورود» گیر می‌کنه
-2. از ورود هم می‌زنی می‌گه حسابی وجود نداره
-3. ستون‌های en-name نمی‌خوای کلا نساز
-4. فایل‌ها شلوغه
+- حساب می‌سازی یک بار می‌ره تو پنل بعد سریعا خارج می‌شه و دوباره باید لاگین کنی
+- تو صفحه ورود هرچی می‌زنی قبول نمی‌کنه، باید بری صفحه اصلی Hesabat.html و از اونجا ورود بزنی تا وارد شی
+- می‌خوای بعد ساخت دیگه بیرون نیاد و مستقیم بره داخل
+- وقتی لاگ‌اوت کردی تو صفحه ورود گیر می‌کنی، می‌خوای بری Hesabat.html
+
+## علت‌ها
+1. **خروج سریع بعد ثبت:** `boot()` تو `app7.js` بعد از هر رفرش `SESSION` را از `localStorage` می‌خواند و چک می‌کرد `DB.users.some(u=>username==...)`. چون کاربر سرور تو `DB.users` دمو نیست، `SESSION` دور ریخته می‌شد → `SESSION=null` → روتر می‌رفت لاگین → انگار بیرون پریدی.
+2. **لاگین قبول نمی‌کرد:** همین چک باعث می‌شد حتی بعد از لاگین موفق سرور، اگر رفرش کنی SESSION دوباره پاک شود. برای همین مجبور بودی بری Hesabat.html و دوباره بیای.
+3. **لاگ‌اوت گیر می‌کرد:** `logout()` فقط `location.hash='#/'` می‌زد. تو `Panel.html`، `#/` یعنی `showView('login')` نه صفحه اصلی، پس تو لاگین گیر می‌کردی.
 
 ## فیکس‌ها
 
-### ۱) ورود گیر می‌کرد
-- `app4.js` route بازنویسی: اگر `SRV.on && SRV.token` داری، حتی اگر `SESSION` نداری، `SESSION` از `SRV.user` ساخته می‌شه و اجازه می‌ده بری `#/app/dashboard`
-- `app9.js` register-v2: بعد موفقیت، `SESSION` هم ذخیره می‌شه (username=phone, name=first+last, role=admin) و بعد `location.hash='#/app/dashboard'` + `reload()`. قبلاً فقط `Panel.html#/app/dashboard` می‌زد که گاهی کار نمی‌کرد.
-
-### ۲) لاگین می‌گه حسابی وجود نداره
-- `backend/src/routes/auth.js` کاملاً بازنویسی شد **بدون تکیه بر تابع‌های قدیمی DB**:
-  - register-v2: مستقیم `INSERT INTO users(first_name, last_name, name, phone, nid, ...)` + چک تکراری phone/nid با SELECT
-  - login: مستقیم `SELECT ... FROM users WHERE lower(phone)=lower($1) OR nid=$1 OR lower(email)=lower($1)` — با `faToEnDigits` برای فارسی
-  - دیگر ارور `fn_user_by_phone does not exist` یا return type عوض شده پیش نمیاد
-- `members.js` genMemberNo ساده شد: `M-` + 6 رقم کدملی + 4 رقم تصادفی، بدون `faToEnTranslit` — پس نیازی به ستون en نیست
-
-### ۳) ستون‌های en کلا نساز
-- `complete_schema.sql` (19K): فقط `first_name, last_name` دارد، `first_name_en/last_name_en` حذف
-- `migrations/002_v2.sql`: همین‌طور
-- `patches/fix_missing_cols.sql` و `minimal`: الان `DROP COLUMN IF EXISTS first_name_en/last_name_en` می‌کنند
-- `patches/drop_en_fields.sql` جدید: فقط همین دو خط — **برای DB فعلی‌ات فقط همین را تو Supabase بزن**:
-  ```sql
-  alter table users drop column if exists first_name_en;
-  alter table users drop column if exists last_name_en;
-  ```
-- `backend/*.sql` اضافی در روت پاک شد
-
-### ۴) فایل‌ها منظم شد
+### boot پایدار شد (`app7.js`)
+```js
+const s = localStorage.getItem(SES_KEY)
+if(s){
+  const o = JSON.parse(s)
+  if(o && o.username){
+    const isSrv = (typeof SRV!=='undefined' && SRV.token)
+    if(isSrv || DB.users.some(...)) SESSION = o // اگر توکن سرور داری، بدون چک دمو قبول کن
+  }
+}
+// اگر SRV توکن دارد ولی SESSION نداریم، از SRV بساز
+if(!SESSION && SRV.token && SRV.user){
+  SESSION = { username: SRV.user.phone, name: SRV.user.name, role:'admin', roleType:'manager' }
+}
 ```
-backend/db/
-  complete_schema.sql      ← فقط همین برای نصب تازه
-  README.md                ← توضیح کامل
-  migrate.js
-  migrations/
-    001_initial.sql
-    002_v2.sql
-    003_delete_institution.sql
-  patches/
-    drop_en_fields.sql     ← فقط برای حذف en از DB موجود
-    fix_missing_cols.sql
-    fix_missing_cols_minimal.sql
-  old/                     ← آرشیو شلوغی‌های قبلی
+الان بعد از ساخت حساب و رفرش، SESSION حفظ می‌شود و بیرون نمی‌پری.
+
+### ثبت‌نام مستقیم می‌ره داخل (`app9.js`)
+بعد از `register-v2` موفق:
+```js
+SESSION = { username: phone, name: first+last, role: 'admin', roleType: 'manager' }
+localStorage.setItem(SES_KEY, SESSION)
+location.hash = '#/app/dashboard'
+setTimeout(()=>location.reload(), 400)
 ```
-- `backend/` روت دیگه هیچ `.sql` ندارد
-- `hesabat-backend.zip` 201K تمیز
+دیگر `Panel.html#/app/dashboard` با href کامل نمی‌زنیم که باعث لود دوباره از صفر شود.
 
-### ۵) حذف عضو و تنظیمات فیلدها (از قبل)
-- `members.js` DELETE الان hard delete: `DELETE FROM member_field_values` + `DELETE FROM members`
-- `app7.js` settings: اگر `SRV.on` باشه `srvFieldsSec` از سرور می‌خواند، دقیقاً همون فیلدهایی که انتخاب کردی (نه همه تیک‌ها)
-- `app9.js` buildDemoFields: دمو هم دقیقاً بر اساس انتخاب کاربر فیلد می‌سازد
+### لاگ‌اوت می‌ره Hesabat.html (`app7.js`)
+```js
+function logout(){
+  SESSION=null; removeItem(SES_KEY)
+  SRV.on=false; save SRV
+  toast('خارج شدید')
+  setTimeout(()=>{
+    if(location.pathname.includes('Panel.html')) location.href='Hesabat.html'
+    else location.href='Hesabat.html'
+  }, 300)
+}
+```
+الان بعد خروج مستقیم می‌ری صفحه اصلی، نه گیر کردن تو لاگین.
 
-## چطور آپدیت کنی
-1. **Supabase SQL Editor** → `drop_en_fields.sql` را Run کن (اگر en داری)
-2. **اختیاری** اگر ستون‌های دیگر جاافتاده: `fix_missing_cols_minimal.sql` را Run کن
-3. **Railway** → بک‌اند را ری‌دیپلوی کن (چون `auth.js` و `members.js` عوض شد)
-4. مرورگر → `localStorage.clear()` → `Panel.html#/onboarding` → فقط نام و نام پدر انتخاب کن → ایجاد حساب → باید مستقیم بره داشبورد
-5. ورود با شماره تماس + کدملی → باید کار کند
-6. تنظیمات → فیلدهای اعضا → باید فقط همون ۲ تا باشد
+### بک‌اند بدون en (از قبل)
+- `complete_schema.sql` بدون `first_name_en/last_name_en`
+- `auth.js` مستقیم INSERT بدون تابع → مشکل «حسابی وجود ندارد» حل شد
+- `members.js` hard delete + شماره عضویت ساده `M-xxxxxx`
+
+## فایل‌ها
+- `panel.js` 382KB syntax ok
+- `hesabat-backend.zip` 201K
+- `hesabat-full.zip` 482K
+
+## تست
+1. Railway دیپلوی
+2. `localStorage.clear()` → `Panel.html#/onboarding` → حساب بساز → باید مستقیم بره داشبورد و دیگر بیرون نپره (حتی با رفرش)
+3. خروج بزن → باید بری `Hesabat.html` نه لاگین
+4. از `Hesabat.html` ورود بزن → شماره + کدملی → باید مستقیم بره پنل
+5. اگر DB قدیمی داری: `drop_en_fields.sql` را یک بار تو Supabase بزن
