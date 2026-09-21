@@ -85,12 +85,18 @@ r.post('/', asyncH(async (req, res) => {
     return out.replace(/[^a-z0-9]/g,'').slice(0,20);
   }
   function genMemberNo(vals){
-    // سعی کن از فیلدهای نام و نام خانوادگی و کدملی شماره عضویت بسازی
-    const first = vals.firstName || vals.first_name || vals.name || '';
-    const last = vals.lastName || vals.last_name || vals.family || '';
-    const nid = vals.nid || vals.nationalId || vals.national_id || '';
-    const firstWord = String(first).trim().split(/\s+/)[0] || '';
-    const lastWord = String(last).trim().split(/\s+/)[0] || '';
+    // سعی کن از فیلدهای نام و نام خانوادگی و کدملی شماره عضویت بسازی - هم حالت قدیم هم جدید
+    const first = vals.firstName || vals.first_name || vals.name || '' ;
+    const last = vals.lastName || vals.last_name || vals.family || '' ;
+    const nid = vals.nid || vals.nationalId || vals.national_id || vals.nationalID || '' ;
+    // اگر name شامل نام و نام خانوادگی است، جدا کن
+    let firstWord = String(first).trim().split(/\s+/)[0] || '';
+    let lastWord = String(last).trim().split(/\s+/)[0] || '';
+    if (!lastWord && String(first).trim().split(/\s+/).length > 1) {
+      const parts = String(first).trim().split(/\s+/);
+      firstWord = parts[0];
+      lastWord = parts[parts.length-1];
+    }
     const enFirst = faToEnTranslit(firstWord) || 'user';
     const enLast = faToEnTranslit(lastWord) || '';
     const nidPart = String(nid).replace(/\D/g,'').slice(-6) || Date.now().toString().slice(-4);
@@ -98,7 +104,25 @@ r.post('/', asyncH(async (req, res) => {
   }
 
   const result = await withTenant(req.user, req.institutionId, async c => {
-    const defs = await getActiveFields(c, req.institutionId);
+    let defs = await getActiveFields(c, req.institutionId);
+    // اگر فیلدی نیست، پیش‌فرض بساز تا عضو اضافه کردن قفل نشود
+    if (defs.length === 0) {
+      const defaults = [
+        {key:'name', label:'نام و نام خانوادگی', type:'text', req:true, order:0},
+        {key:'father', label:'نام پدر', type:'text', req:false, order:1},
+        {key:'mobile', label:'شماره تماس', type:'mobile', req:true, order:2},
+        {key:'nationalId', label:'کد ملی', type:'nid', req:true, order:3},
+        {key:'birthDate', label:'تاریخ تولد', type:'date', req:true, order:4},
+      ];
+      for (const f of defaults) {
+        await c.query(
+          `insert into field_definitions (institution_id, key, label, type, is_required, sort_order)
+           values ($1,$2,$3,$4,$5,$6) on conflict (institution_id,key) do nothing`,
+          [req.institutionId, f.key, f.label, f.type, f.req, f.order]
+        );
+      }
+      defs = await getActiveFields(c, req.institutionId);
+    }
     const v = validateValues(defs, values, { partial: false });
     if (!v.ok) return { bad: true, errors: v.errors };
 

@@ -78,18 +78,36 @@ r.post('/register-v2', asyncH(async (req, res) => {
       );
       institutionId = iq.rows[0].id;
       institutionEmail = slug.replace(/[^a-z0-9]/g,'') + nid + '@hes.com';
-      // فیلدهای پیش‌فرض اعضا را بساز اگر فرستاده شده
+      // فیلدهای پیش‌فرض اعضا را بساز - اگر فرستاده شده از آنها، وگرنه ۵ فیلد پایه
+      const defaultFields = [
+        {key:'name', label:'نام و نام خانوادگی', type:'text', required:true},
+        {key:'father', label:'نام پدر', type:'text', required:false},
+        {key:'mobile', label:'شماره تماس', type:'mobile', required:true},
+        {key:'nationalId', label:'کد ملی', type:'nid', required:true},
+        {key:'birthDate', label:'تاریخ تولد', type:'date', required:true},
+      ];
+      let fieldsToCreate = defaultFields;
       if (Array.isArray(b.memberFields) && b.memberFields.length) {
-        for (let i=0;i<b.memberFields.length;i++) {
-          const f = b.memberFields[i];
-          if (!f.label) continue;
-          const key = (f.key || f.label).toString().trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').slice(0,30) || 'field_'+i;
-          await pool.query(
-            `insert into field_definitions (institution_id, key, label, type, is_required, sort_order)
-             values ($1,$2,$3,$4,$5,$6) on conflict (institution_id,key) do nothing`,
-            [institutionId, key, f.label, f.type||'text', !!f.required, i]
-          );
+        // اگر کاربر فیلدهای دلخواه فرستاد، آنها را به پیش‌فرض اضافه کن (یا جایگزین اگر کلید تکراری)
+        const custom = b.memberFields.filter(f=>f.label).map((f,i)=>({
+          key: (f.key || f.label).toString().trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').slice(0,30) || 'field_'+i,
+          label: f.label,
+          type: f.type||'text',
+          required: !!f.required
+        }));
+        // ترکیب: اول پیش‌فرض، بعد سفارشی‌های غیرتکراری
+        const seen = new Set(defaultFields.map(f=>f.key));
+        for (const cf of custom) {
+          if (!seen.has(cf.key)) { fieldsToCreate.push(cf); seen.add(cf.key); }
         }
+      }
+      for (let i=0;i<fieldsToCreate.length;i++) {
+        const f = fieldsToCreate[i];
+        await pool.query(
+          `insert into field_definitions (institution_id, key, label, type, is_required, sort_order)
+           values ($1,$2,$3,$4,$5,$6) on conflict (institution_id,key) do nothing`,
+          [institutionId, f.key, f.label, f.type||'text', !!f.required, i]
+        );
       }
     } catch (e) {
       // اگر ساخت مؤسسه خطا داد، کاربر ساخته شده ولی مؤسسه نه - خطا را برگردان ولی کاربر را نگه دار

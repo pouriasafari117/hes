@@ -1,9 +1,6 @@
--- ═══════════════════════════════════════════════════════════════
--- Hesabat — Schema v2 — افتتاح حساب جدید + نقش‌ها + درخواست عضویت
--- این فایل باید با کاربر مالک اجرا شود (hesabat یا postgres در Supabase)
--- ═══════════════════════════════════════════════════════════════
+-- فیکس سریع: اگر migration قبلی ناقص بود، این فایل را در Supabase SQL Editor اجرا کن
+-- همه ستون‌های جدید Round 32-33 را اضافه می‌کند
 
--- ── کاربران: افزودن فیلدهای جدید ──
 alter table users add column if not exists phone text;
 alter table users add column if not exists nid text;
 alter table users add column if not exists father_name text;
@@ -13,13 +10,10 @@ alter table users add column if not exists last_name text;
 alter table users add column if not exists first_name_en text;
 alter table users add column if not exists last_name_en text;
 alter table users add column if not exists role_type text default 'user' check (role_type in ('manager','user'));
--- ایمیل دیگر یکتا نیست برای حالت تولید خودکار، ولی برای سازگاری قدیم نگه می‌داریم
--- اگر قبلا unique بود، آن را نگه می‌داریم اما اجازه می‌دهیم خالی باشد؟ برای سادگی، unique را برمی‌داریم و دوباره با شرط می‌سازیم
--- برای سادگی، phone و nid را یکتا می‌کنیم اگر پر باشند
+
 create unique index if not exists idx_users_phone_unique on users(lower(phone)) where phone is not null and phone <> '';
 create unique index if not exists idx_users_nid_unique on users(nid) where nid is not null and nid <> '';
 
--- ── مؤسسات: افزودن فیلدهای جدید ──
 alter table institutions add column if not exists established_at date;
 alter table institutions add column if not exists address text;
 alter table institutions add column if not exists installments_count integer default 12;
@@ -27,11 +21,14 @@ alter table institutions add column if not exists currency text default 'توم�
 alter table institutions add column if not exists fee_percent numeric default 4;
 alter table institutions add column if not exists installment_period text default 'monthly';
 alter table institutions add column if not exists member_fields_config jsonb default '[]';
-alter table institutions add column if not exists icon text; -- برای آیکون مؤسسه
-alter table institutions add column if not exists bot_email text; -- ایمیل ربات hes.com برای اتصال آینده
+alter table institutions add column if not exists icon text;
+alter table institutions add column if not exists bot_email text;
 alter table institutions add column if not exists bot_active boolean default true;
 
--- ── درخواست‌های عضویت ──
+alter table members add column if not exists member_no text;
+create unique index if not exists idx_members_no_unique on members(institution_id, member_no) where member_no is not null and member_no <> '';
+
+-- جدول درخواست‌های عضویت
 create table if not exists institution_join_requests (
   id             bigserial primary key,
   user_id        bigint not null references users(id) on delete cascade,
@@ -44,9 +41,9 @@ create table if not exists institution_join_requests (
 create index if not exists idx_join_req_inst on institution_join_requests(institution_id);
 create index if not exists idx_join_req_user on institution_join_requests(user_id);
 
+-- RLS برای join_requests (اگر قبلاً نبود)
 alter table institution_join_requests enable row level security;
 alter table institution_join_requests force row level security;
-
 drop policy if exists p_join_req on institution_join_requests;
 create policy p_join_req on institution_join_requests
   for all
@@ -55,13 +52,14 @@ create policy p_join_req on institution_join_requests
   with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id)
               or user_id = nullif(current_setting('app.user_id', true), '')::bigint);
 
--- ── اعضا: افزودن شماره عضویت خودکار ──
-alter table members add column if not exists member_no text;
-create unique index if not exists idx_members_no_unique on members(institution_id, member_no) where member_no is not null and member_no <> '';
-
--- ── توابع جدید ──
-
--- ثبت‌نام با شماره تماس و کد ملی (پیش‌فرض)
+-- توابع را دوباره بساز (کپی از schema_v2.sql) - اول DROP چون return type عوض شده
+drop function if exists fn_user_by_email(text);
+drop function if exists fn_user_by_phone(text);
+drop function if exists fn_register_user_v2(text,text,text,text,text,date,text,text,text);
+drop function if exists fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text);
+drop function if exists fn_request_join(bigint,bigint);
+drop function if exists fn_delete_institution(bigint,bigint);
+drop function if exists fn_approve_join(bigint,bigint);
 create or replace function fn_register_user_v2(
   p_first_name text, p_last_name text, p_phone text, p_nid text,
   p_father_name text, p_birth_date date, p_role_type text,
@@ -88,21 +86,18 @@ begin
 end;
 $$;
 
--- لاگین با شماره تماس
 create or replace function fn_user_by_phone(p_phone text)
 returns table (id bigint, name text, email text, password_hash text, phone text, nid text, role_type text, first_name text, last_name text)
 language sql stable security definer set search_path = public as $$
   select id, name, email, password_hash, phone, nid, role_type, first_name, last_name from users where lower(phone) = lower(trim(p_phone));
 $$;
 
--- لاگین با ایمیل (قدیمی) - نگه می‌داریم
 create or replace function fn_user_by_email(p_email text)
 returns table (id bigint, name text, email text, password_hash text, phone text, nid text, role_type text)
 language sql stable security definer set search_path = public as $$
   select id, name, email, password_hash, phone, nid, role_type from users where email = lower(trim(p_email)) or lower(phone) = lower(trim(p_email));
 $$;
 
--- ایجاد مؤسسه با اطلاعات کامل + ایمیل خودکار مدیر
 create or replace function fn_create_institution_v2(
   p_owner bigint, p_name text, p_slug text,
   p_established_at date, p_address text,
@@ -113,9 +108,7 @@ declare owner_nid text;
 declare email_auto text;
 begin
   select nid into owner_nid from users where id = p_owner;
-  -- ایمیل خودکار: نام مؤسسه (اسلاگ) + کد ملی مدیر @hes.com
   email_auto := lower(regexp_replace(trim(p_slug), '[^a-z0-9]+', '', 'g')) || coalesce(owner_nid,'') || '@hes.com';
-
   insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period, bot_email, bot_active)
   values (
     trim(p_name), trim(p_slug), p_owner,
@@ -124,18 +117,12 @@ begin
     email_auto, true
   )
   returning id into iid;
-
-  insert into institution_members(user_id, institution_id, role)
-  values (p_owner, iid, 'owner');
-
-  -- ایمیل کاربر را به ایمیل ربات hes.com تغییر بده تا مؤسسه با آن ایمیل فعال باشد
+  insert into institution_members(user_id, institution_id, role) values (p_owner, iid, 'owner');
   update users set email = email_auto where id = p_owner;
-
   return iid;
 end;
 $$;
 
--- درخواست عضویت
 create or replace function fn_request_join(p_user bigint, p_institution_id bigint)
 returns bigint language plpgsql security definer set search_path = public as $$
 declare rid bigint;
@@ -148,7 +135,6 @@ begin
 end;
 $$;
 
--- تأیید درخواست عضویت توسط مدیر
 create or replace function fn_delete_institution(p_user bigint, p_institution_id bigint)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare is_owner boolean;
@@ -169,8 +155,6 @@ begin
 end;
 $$;
 
-grant execute on function fn_delete_institution(bigint,bigint) to hesabat_app;
-
 create or replace function fn_approve_join(p_manager bigint, p_request_id bigint)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare r institution_join_requests%rowtype;
@@ -178,24 +162,65 @@ begin
   select * into r from institution_join_requests where id = p_request_id;
   if not found then return false; end if;
   if not fn_is_member(r.institution_id) then
-    -- چک عضویت مدیر
     if not exists (select 1 from institution_members where user_id = p_manager and institution_id = r.institution_id and role in ('owner','admin')) then
       return false;
     end if;
   end if;
   update institution_join_requests set status = 'approved', updated_at = now() where id = p_request_id;
-  insert into institution_members(user_id, institution_id, role)
-  values (r.user_id, r.institution_id, 'operator')
-  on conflict do nothing;
+  insert into institution_members(user_id, institution_id, role) values (r.user_id, r.institution_id, 'operator') on conflict do nothing;
   return true;
 end;
 $$;
 
--- دسترسی‌ها
-grant select, insert, update, delete on institution_join_requests to hesabat_app;
-grant usage, select on sequence institution_join_requests_id_seq to hesabat_app;
-grant execute on function fn_register_user_v2(text,text,text,text,text,date,text,text,text) to hesabat_app;
-grant execute on function fn_user_by_phone(text) to hesabat_app;
-grant execute on function fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text) to hesabat_app;
-grant execute on function fn_request_join(bigint,bigint) to hesabat_app;
-grant execute on function fn_approve_join(bigint,bigint) to hesabat_app;
+-- دسترسی‌ها — برای Supabase اگر hesabat_app وجود نداشت، اول بساز، بعد GRANT را با try/catch
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'hesabat_app') then
+    begin
+      create role hesabat_app login password 'hesabat_app_pass';
+    exception when others then
+      -- در Supabase ممکنه اجازه ساخت role نداشته باشی، اشکالی ندارد
+      null;
+    end;
+  end if;
+end $$;
+
+do $$
+begin
+  grant select, insert, update, delete on institution_join_requests to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant usage, select on sequence institution_join_requests_id_seq to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_register_user_v2(text,text,text,text,text,date,text,text,text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_user_by_phone(text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_request_join(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_approve_join(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_delete_institution(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;

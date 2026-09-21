@@ -1,61 +1,63 @@
-# فیکس Round 33.1 - چرا DB خالی می‌ماند؟
+# فیکس Round 33.2 - منظم‌سازی DB + ثبت عضو دوطرفه
 
-## ریشه‌یابی
-شما `hesabat-full.zip` را جایگزین کردی ولی هنوز DB خالی → ۳ علت محتمل:
+## ۱) منظم‌سازی فایل‌های دیتابیس (قبلاً شلوغ بود)
+قبلاً تو `backend/db/` اینا بود: `schema.sql`, `schema_v2.sql`, `schema.supabase.sql`, `delete_institution.sql`, `fix_missing_cols.sql`, `fix_missing_cols_minimal.sql` — ۶ فایل شلوغ.
 
-1. **migration اجرا نشده:** `fn_register_user_v2` و `fn_create_institution_v2` در Postgres نیست → `/api/auth/register-v2` خطای `function does not exist` می‌دهد → پنل ساکت می‌رفت دمو (قبلاً)
-2. **Panel.html با file:// باز شده:** `SRV.base='http://localhost:4000'` ولی بک‌اند روی Render است → اتصال fail
-3. **DATABASE_URL ست نیست:** `/api/health` می‌گوید `db_ok:false`
+الان:
+```
+backend/db/
+├── README.md                    ← توضیح همه فایل‌ها
+├── complete_schema.sql          ← **تنها فایل برای نصب تازه** (همه چیز توش: جداول + ستون‌های v2 + bot_email + member_no + join_requests + RLS + توابع)
+├── migrate.js                   ← اول complete_schema را می‌زند، اگر نبود migrations را به ترتیب
+├── migrations/
+│   ├── 001_initial.sql          (از schema.sql)
+│   ├── 002_v2.sql               (از schema_v2.sql + DROP FUNCTION برای جلوگیری از 42P13)
+│   └── 003_delete_institution.sql
+├── patches/
+│   ├── fix_missing_cols.sql     (با DO ... EXCEPTION برای role)
+│   └── fix_missing_cols_minimal.sql (بدون ROLE، مخصوص Supabase)
+└── old/                         (فایل‌های قدیمی آرشیو)
+```
 
-## چی فیکس شد الان؟
+برای Supabase فقط `complete_schema.sql` را یک بار اجرا کن.
 
-### بک‌اند
-- `db/migrate.js` قبلاً فقط `schema.sql` را می‌زد، حالا `schema.sql + schema_v2.sql + schema.supabase.sql + delete_institution.sql` را به ترتیب می‌زند. `ADMIN_URL` هم از `DATABASE_URL` می‌خواند.
-- `server.js`:
-  - `/api/health` حالا واقعاً DB را چک می‌کند → `{ok:true, db_ok:true}` یا `{db_ok:false, error:...}`
-  - `/api/debug` حالا `institutions_count`, `recent_institutions`, `recent_users` هم برمی‌گرداند تا ببینی ثبت شده یا نه.
+## ۲) عضو اضافه کردن کار نمی‌کرد — الان دوطرفه شد
+**مشکل:** 
+- وقتی `field_definitions` خالی بود، backend می‌گفت "فیلد ناشناخته" و عضو ثبت نمی‌شد
+- فرانت‌اند `SHORTCUTS.memberAdd` (دکمه داشبورد) همیشه می‌رفت فرم دمو `memberForm()` که فقط `localStorage` می‌نوشت، نه Postgres
+- `renderSrvMembersPage` فقط می‌خواند، نمی‌نوشت
 
-### فرانت‌اند (panel.js 369KB)
-- `submitOnboarding` دیگر ساکت به دمو نمی‌رود:
-  - اول بنر «در حال اتصال به سرور (same-origin / URL)...» نشان می‌دهد
-  - اگر سرور خطای 400-500 بدهد (مثلاً تکراری)، خطا را با status نشان می‌دهد و متوقف می‌شود
-  - اگر network fail، چک‌لیست کامل + دکمه «ادامه در حالت دمو» نشان می‌دهد
-  - اگر موفق، بنر سبز «✅ حساب در Postgres ساخته شد! ایمیل ربات: ...»
-- `patchSettings` دیگر `secSrv` را حذف نمی‌کند → در تنظیمات → اطلاعات مؤسسه → **اتصال به دیتابیس** همیشه هست (برای دیباگ)
-- `pageDashboard` بنر جدید:
-  - سبز: «متصل به PostgreSQL — مؤسسه ... — آدرس same-origin — دیباگ DB» + دکمه دیباگ که `/api/debug` را pretty-print می‌کند
-  - زرد: «حالت دمو (localStorage) — داده در Postgres نمی‌رود» + لینک تنظیمات + نمایش آدرس فعلی + هشدار file://
-- `app8.js`:
-  - `srvHasBase()` اضافه، `srvAutoProbe()` که `/api/health` را ۱.۲ ثانیه بعد از لود چک می‌کند
-  - `srvFetch` پیام خطا را با base نمایش می‌دهد
+**فیکس:**
+- `backend/src/routes/fields.js` GET: اگر هیچ فیلدی نیست، خودکار ۵ فیلد پیش‌فرض می‌سازد:
+  `name` (نام و نام خانوادگی), `father`, `mobile`, `nationalId`, `birthDate`
+- `backend/src/routes/members.js` POST: اگر فیلدی نیست، اول پیش‌فرض می‌سازد، بعد عضو را می‌سازد. `genMemberNo` هم `name` را که شامل نام+فامیلی است درست هندل می‌کند
+- `backend/src/routes/auth.js` register-v2: اگر مدیر مؤسسه می‌سازد و `memberFields` نفرستاد، خودکار ۵ فیلد پیش‌فرض + فیلدهای سفارشی را می‌سازد
+- `app8.js` hookSrvMode:
+  - `PAGES.members` → `renderSrvMembersPage` (قبلاً بود)
+  - **جدید:** `SHORTCUTS.memberAdd` → اگر `SRV.on` باشد `srvMemberForm(null)` وگرنه دمو
+  - **جدید:** `window.memberForm` → اگر سرور روشن باشد به `srvMemberForm` می‌رود (هم می‌نویسد هم می‌خواند)
+- `app9.js` patchMemberForm: اول چک می‌کند اگر سرور روشن است، برود سرور (قبلاً مستقیم می‌رفت دمو)
+- `app8.js` renderSrvMembersPage: اگر فیلدی نیست پیام راهنما + اگر عضوی نیست جدول با دکمه، و نمایش `member_no` + badge وضعیت
 
-### مستندات
-- `DEBUG_GUIDE.md` اضافه شد با چک‌لیست Render/Railway + تست `/api/health` و `/api/debug` + `localStorage.getItem('hesabat-srv-v1')`
+الان:
+- مدیر لاگین می‌کند (حالت سرور سبز) → داشبورد → «افزودن عضو» → فرم سرور باز می‌شود → ثبت → `POST /api/institutions/:id/members` → تو Postgres می‌رود → لیست رفرش می‌شود و عضو را می‌بینی
+- `/api/debug` → `institutions_count` و `users_count` و `members` (از طریق `/api/institutions/:id/members` با توکن) قابل چک
 
-## چطور الان درست تست کنی؟
-
-1. **بک‌اند را آپدیت کن:**
-   - فایل‌های جدید را جایگزین کن (مخصوصاً `server.js`, `db/migrate.js`, `src/routes/users.js`)
-   - در Render/Railway: `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN=*` را چک کن
-   - یک بار `npm run migrate` بزن (یا در Supabase SQL Editor فایل‌های `db/*.sql` را به ترتیب اجرا کن)
-   - لاگ باید بگوید `Hesabat API on ...` بدون خطای DB
-
-2. **سلامت را چک کن:**
-   - مرورگر: `https://YOUR.onrender.com/api/health` → باید `db_ok:true`
-   - `https://YOUR.onrender.com/api/debug` → باید `funcs` شامل `fn_register_user_v2` باشد، `users_count` عدد
-
-3. **پنل را از بک‌اند باز کن، نه file://:**
-   - `https://YOUR.onrender.com/Panel.html` (یا `/Hesabat.html`)
-   - F12 → Console → `localStorage.clear()` → رفرش
-   - `#/onboarding` → مدیر جدید بساز
-   - اگر خطا دیدی، متن خطا + `/api/debug` را بفرست
-
-4. **بعد از ثبت:**
-   - داشبورد باید بنر سبز «متصل به PostgreSQL» باشد
-   - `/api/debug` → `recent_institutions` باید مؤسسه جدید + `bot_email` مثل `mehregan1234567890@hes.com` را نشان دهد
-   - تنظیمات → اتصال → تست اتصال → `✅ متصل!`
+## ۳) درخواست عضویت کاربر فعلاً بی‌خیال
+- تو `app9.js` پنل کاربر (role=user) قبلاً درخواست join داشت، الان فعلاً تمرکز روی مدیر است
+- API `request-join` هنوز هست ولی UI کاربر ساده شده: فقط اطلاعات شخصی + پیام "فعلاً مدیر باید شما را اضافه کند"
+- بعداً می‌تونی دوباره فعال کنی
 
 ## فایل‌ها
-- `panel.js` تنها فایل منطق (369KB)
-- `hesabat-backend.zip` (173K) شامل `server.js` جدید + `migrate.js` جدید + `users.js` + `DEBUG_GUIDE.md`
-- `hesabat-full.zip` (449K) همه چیز
+- `panel.js` 372KB (قبلاً 369KB) — تنها فایل منطق
+- `hesabat-backend.zip` 207K شامل `complete_schema.sql`, `README.md`, `migrations/`, `patches/`, `src/routes/fields.js` و `members.js` فیکس شده
+- `hesabat-full.zip` 485K همه چیز
+
+## تست سریع بعد از دیپلوی Railway
+1. `https://YOUR.up.railway.app/api/health` → `v:2, db_ok:true`
+2. `https://YOUR.up.railway.app/api/debug` → `funcs` کامل
+3. `localStorage.clear()` → `Panel.html#/onboarding` → مدیر جدید → باید بنر سبز Postgres
+4. برو اعضا و اقساط → عضو جدید → پر کن (نام، نام پدر، موبایل، کدملی، تاریخ تولد) → ثبت
+5. باید تو جدول ببینی + تو `/api/debug` اگر `/api/institutions/1/members` را با توکن بزنی، عضو را ببینی
+
+اگر هنوز عضو اضافه نشد، کنسول F12 → Network → ببین POST به `/members` چه اروری می‌دهد و بفرست.

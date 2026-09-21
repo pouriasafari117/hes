@@ -172,12 +172,55 @@ begin
 end;
 $$;
 
--- دسترسی‌ها
-grant select, insert, update, delete on institution_join_requests to hesabat_app;
-grant usage, select on sequence institution_join_requests_id_seq to hesabat_app;
-grant execute on function fn_register_user_v2(text,text,text,text,text,date,text,text,text) to hesabat_app;
-grant execute on function fn_user_by_phone(text) to hesabat_app;
-grant execute on function fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text) to hesabat_app;
-grant execute on function fn_request_join(bigint,bigint) to hesabat_app;
-grant execute on function fn_approve_join(bigint,bigint) to hesabat_app;
-grant execute on function fn_delete_institution(bigint,bigint) to hesabat_app;
+-- دسترسی‌ها — برای Supabase اگر hesabat_app وجود نداشت، اول بساز، بعد GRANT را با try/catch
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'hesabat_app') then
+    begin
+      create role hesabat_app login password 'hesabat_app_pass';
+    exception when others then
+      -- در Supabase ممکنه اجازه ساخت role نداشته باشی، اشکالی ندارد
+      null;
+    end;
+  end if;
+end $$;
+
+do $$
+begin
+  grant select, insert, update, delete on institution_join_requests to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant usage, select on sequence institution_join_requests_id_seq to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_register_user_v2(text,text,text,text,text,date,text,text,text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_user_by_phone(text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_request_join(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_approve_join(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;
+do $$
+begin
+  grant execute on function fn_delete_institution(bigint,bigint) to hesabat_app;
+exception when others then null;
+end $$;

@@ -4262,18 +4262,23 @@ async function srvLoadMembers(){
     return;
   }
   const meta = $('#srvMeta'); if(meta) meta.textContent = faDigits(data.total) + ' عضو · صفحهٔ ' + faDigits(data.page);
-  const show = fields.slice(0, 5);
-  if(!data.rows.length){
-    box.innerHTML = '<p class="hint-t" style="padding:18px 4px">عضویی پیدا نشد.</p>';
+  if(!fields || !fields.length){
+    box.innerHTML = '<div class="alert a-warn"><span class="al-ic">'+icon('info',16)+'</span><div>هنوز فیلدی برای اعضا تعریف نشده. فیلدهای پیش‌فرض به‌صورت خودکار ساخته می‌شوند، ولی اگر خالی ماند، در <a href="#/app/settings" style="text-decoration:underline">تنظیمات → فیلدهای اعضا</a> فیلد بساز یا صفحه را رفرش کن.</div></div>' +
+      (data.rows.length ? '<p class="hint-t">'+faDigits(data.rows.length)+' عضو بدون فیلد وجود دارد.</p>' : '<p class="hint-t" style="padding:18px 4px">عضویی پیدا نشد — دکمه «عضو جدید» را بزن. فیلدهای پیش‌فرض خودکار می‌آیند.</p>');
     return;
   }
-  const head = show.map(f => '<th>' + esc(f.label) + '</th>').join('') + '<th>وضعیت</th><th></th>';
+  const show = fields.slice(0, 5);
+  if(!data.rows.length){
+    box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr>'+show.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>شماره عضویت</th><th>وضعیت</th><th></th></tr></thead><tbody><tr><td colspan="'+(show.length+3)+'" style="padding:18px 8px"><div class="notif-empty">عضویی نیست — «عضو جدید» را بزن تا در Postgres ثبت شود.</div></td></tr></tbody></table></div>';
+    return;
+  }
+  const head = show.map(f => '<th>' + esc(f.label) + '</th>').join('') + '<th>شماره عضویت</th><th>وضعیت</th><th></th>';
   const rows = data.rows.map(m => {
     const tds = show.map(f => '<td>' + esc(m.values[f.key] || '—') + '</td>').join('');
-    return '<tr>' + tds + '<td>' + (m.status === 'active' ? 'فعال' : 'غیرفعال') + '</td>' +
+    return '<tr>' + tds + '<td class="c-num" dir="ltr" style="text-align:left;font-family:monospace">'+esc(m.member_no||m.memberNo||'—')+'</td><td>' + (m.status === 'active' ? '<span class="badge b-green"><i class="bd"></i>فعال</span>' : '<span class="badge b-gray"><i class="bd"></i>غیرفعال</span>') + '</td>' +
       '<td><div class="field-row" style="gap:6px;justify-content:flex-end">' +
-        '<button class="btn btn-soft btn-xs" data-sme="' + m.id + '">' + icon('pen',13) + ' ویرایش</button>' +
-        '<button class="btn btn-soft btn-xs" data-smd="' + m.id + '">' + icon('trash',13) + ' حذف</button>' +
+        '<button class="x-btn" data-tip="ویرایش" data-sme="' + m.id + '">' + icon('pen',13) + '</button>' +
+        '<button class="x-btn danger" data-tip="حذف" data-smd="' + m.id + '">' + icon('trash',13) + '</button>' +
       '</div></td></tr>';
   }).join('');
   const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
@@ -4289,7 +4294,7 @@ async function srvLoadMembers(){
     const m = byId(b.dataset.smd);
     const nm = m ? Object.values(m.values).filter(Boolean)[0] || ('#' + m.id) : '#' + b.dataset.smd;
     const okc = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود',
-      text:'عضو «' + esc(nm) + '» حذف نرم می‌شود.' });
+      text:'عضو «' + esc(nm) + '» حذف نرم می‌شود (در Postgres deleted_at می‌خورد).' });
     if(!okc) return;
     try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/members/' + b.dataset.smd); toast('عضو حذف شد.', 'ok'); srvLoadMembers(); }
     catch(e){ toast(e.message, 'err'); }
@@ -4297,6 +4302,7 @@ async function srvLoadMembers(){
   const pv = $('#srvPrev'); if(pv) pv.onclick = ()=>{ srvPage--; srvLoadMembers(); };
   const nx = $('#srvNext'); if(nx) nx.onclick = ()=>{ srvPage++; srvLoadMembers(); };
 }
+
 function srvMemberForm(m){
   srvLoadFields().then(fields => {
     const inputs = fields.map(f => srvFieldInput(f, m ? m.values[f.key] : '')).join('');
@@ -4331,12 +4337,47 @@ function srvMemberForm(m){
   }).catch(e => toast(e.message, 'err'));
 }
 
-/* ── قلاب‌های مسیریابی: حالت سرور فقط اعضا و فیلدها را عوض می‌کند ── */
+/* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
 (function hookSrvMode(){
+  function isSrv(){ return typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady(); }
   if (typeof PAGES !== 'undefined' && PAGES.members) {
     const _pgMembers = PAGES.members;
-    PAGES.members = function(arg){ if(SRV.on && srvReady()) return renderSrvMembersPage(); return _pgMembers(arg); };
+    PAGES.members = function(arg){ if(isSrv()) return renderSrvMembersPage(); return _pgMembers(arg); };
   }
+  // ثبت عضو از داشبورد و میانبرها هم باید به سرور برود
+  function overrideShortcuts(){
+    try{
+      if(typeof SHORTCUTS!=='undefined'){
+        if(SHORTCUTS.memberAdd){
+          const _origAdd = SHORTCUTS.memberAdd;
+          SHORTCUTS.memberAdd = function(){ if(isSrv()) return srvMemberForm(null); return _origAdd(); };
+        } else {
+          SHORTCUTS.memberAdd = function(){ if(isSrv()) return srvMemberForm(null); if(typeof memberForm==='function') return memberForm(); };
+        }
+      }
+      if(typeof window!=='undefined' && window.memberForm){
+        const _mf = window.memberForm;
+        window.memberForm = function(m){
+          if(isSrv()){
+            // اگر ویرایش است، مقدار سرور را بگیر
+            if(m && m.id && typeof m.values==='object') return srvMemberForm(m);
+            // اگر m از دمو آمد (id مثل m1)، سعی کن از سرور نخوان، ولی اگر سرور روشن است، فرم سرور را باز کن
+            if(m) {
+              // برای ویرایش دمو در حالت سرور، همان دمو را ویرایش کن (fallback)
+              if(String(m.id).startsWith('m') || !m.values) return _mf(m);
+              return srvMemberForm(m);
+            }
+            return srvMemberForm(null);
+          }
+          return _mf(m);
+        };
+      }
+    }catch(e){ console.warn('hookSrvMode shortcuts failed', e); }
+  }
+  // چند بار تلاش کن چون SHORTCUTS دیرتر ساخته می‌شود
+  setTimeout(overrideShortcuts, 500);
+  setTimeout(overrideShortcuts, 1500);
+  setTimeout(overrideShortcuts, 3000);
   // دیگر injectSrvSec در تنظیمات صدا زده نمی‌شود
 })();
 
@@ -4933,6 +4974,12 @@ function patchMemberForm(){
   const origMemberForm = window.memberForm;
   if (origMemberForm && !origMemberForm._patched) {
     window.memberForm = function(member){
+      // اگر حالت سرور فعال است، به سرور برود (هم بنویسد هم بخواند)
+      try{
+        if(typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady() && typeof srvMemberForm==='function'){
+          return srvMemberForm(member||null);
+        }
+      }catch(e){ console.warn('patchMemberForm srv check failed', e); }
       const isEdit = !!member;
       // اگر ویرایش است، همان قدیمی
       if (isEdit) return origMemberForm(member);
