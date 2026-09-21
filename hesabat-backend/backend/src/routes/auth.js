@@ -146,6 +146,42 @@ r.get('/me', requireAuth, asyncH(async (req, res) => {
   res.json({ user: uq.rows[0] || req.user, institutions: list.rows });
 }));
 
+/* PATCH /api/auth/me - تغییر نام کاربری (phone) و رمز خودم */
+r.patch('/me', requireAuth, asyncH(async (req, res) => {
+  const { name, phone, email, password, currentPassword } = req.body || {};
+  const uid = req.user.id;
+  // اگر رمز جدید می‌دهد، رمز فعلی را چک کن
+  if(password){
+    const q = await pool.query('select password_hash from users where id=$1', [uid]);
+    const u = q.rows[0];
+    if(!u) return res.status(404).json({ error: 'کاربر پیدا نشد.' });
+    if(currentPassword && !verifyPassword(currentPassword, u.password_hash)){
+      return res.status(400).json({ error: 'رمز فعلی اشتباه است.' });
+    }
+  }
+  const sets = [];
+  const vals = [];
+  let idx = 1;
+  if(name !== undefined){ sets.push(`name=$${idx++}`); vals.push(String(name).trim()); }
+  if(phone !== undefined){ sets.push(`phone=$${idx++}`); vals.push(String(phone).trim()); }
+  if(email !== undefined){ sets.push(`email=$${idx++}`); vals.push(String(email).trim().toLowerCase()); }
+  if(password !== undefined && String(password).trim()){
+    if(String(password).trim().length < 4) return res.status(400).json({ error: 'رمز باید حداقل ۴ کاراکتر باشد.' });
+    sets.push(`password_hash=$${idx++}`); vals.push(hashPassword(String(password).trim()));
+  }
+  if(sets.length){
+    vals.push(uid);
+    try{
+      await pool.query(`update users set ${sets.join(', ')} where id=$${idx}`, vals);
+    }catch(e){
+      if(e.code==='23505') return res.status(409).json({ error: 'این نام کاربری/شماره قبلاً استفاده شده.' });
+      throw e;
+    }
+  }
+  const uq = await pool.query('select id, name, first_name, last_name, phone, nid, email, role_type from users where id=$1', [uid]);
+  res.json({ user: uq.rows[0] });
+}));
+
 /* POST /api/auth/request-join {institutionNameOrSlug} */
 r.post('/request-join', requireAuth, asyncH(async (req, res) => {
   const name = (req.body.institutionName || '').trim();

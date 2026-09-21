@@ -41,6 +41,7 @@ app.get('/api/debug', async (req, res) => {
   }
 });
 app.use('/api/auth', require('./src/routes/auth'));
+app.use('/api/users', require('./src/routes/users'));
 app.use('/api/institutions', require('./src/routes/institutions'));
 app.use('/api/institutions/:id/fields', require('./src/routes/fields'));
 app.use('/api/institutions/:id/members', require('./src/routes/members'));
