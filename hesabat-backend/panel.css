@@ -644,7 +644,8 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .st-top{font-size:.55rem; letter-spacing:4px; opacity:.75}
 .st-bot{font-size:.6rem; opacity:.7; margin-top:3px; border-top:1px solid currentColor; padding-top:3px}
 
-/* ── افتتاح حساب جدید ── */
+
+/* ── افتتاح حساب جدید — اضافه شده برای حفظ منطق امروز ── */
 .role-btn{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);cursor:pointer;transition:all .2s;width:100%;text-align:right;margin-bottom:8px;font-family:var(--font-ui)}
 .role-btn.on{border-color:var(--green-deep);background:rgba(28,110,49,.08)}
 .role-btn b{display:block;font-size:.95rem}
@@ -664,5 +665,24 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .plan.on{border-color:var(--green-deep);background:rgba(28,110,49,.06)}
 .plan h5{margin:0 0 4px}
 .plan p{font-size:.82rem;color:var(--ink-2);margin:0 0 8px}
+
+/* فونت یکسان برای پاپ‌آپ‌ها */
 .drop-panel,.notif-item,.dp-item,.profile-chip,.pc-t,.pc-t b,.pc-t span{font-family:'IBM Plex Sans Arabic','DM Sans',Tahoma,sans-serif !important}
 
+/* ── بهبود منوی تنظیمات — فاصله‌ها و فونت، بدون تغییر منطق ── */
+#setBody{padding:22px 22px 10px}
+.set-sec{margin-bottom:20px !important;border-radius:16px;overflow:hidden}
+.set-sec .card-h{padding:16px 20px;background:var(--card-2);border-bottom:1.5px solid var(--line)}
+.set-sec .card-h h3{font-size:1rem;font-weight:800;display:flex;align-items:center;gap:9px}
+.set-sec .card-h .hint-t{font-size:.8rem;color:var(--ink-2);margin-inline-start:auto}
+.set-sec .sec-b{padding:18px 20px}
+.setting-row{padding:14px 6px !important;gap:16px !important}
+.setting-row .sr-t b{font-size:.93rem !important;font-weight:700}
+.setting-row .sr-t p{font-size:.8rem !important;line-height:1.8 !important;margin-top:4px !important}
+#secOrg .sec-b .fields,#secFa .sec-b .fields,#secFin .sec-b .fields,#secNotif .sec-b .fields,#secUi .sec-b .fields,#secRoles .sec-b,#secUsers .sec-b,#secData .sec-b{gap:16px 18px}
+.card.tight .card-b{padding:18px 20px}
+.m-sec{border-radius:14px;margin-bottom:16px}
+.m-sec-h{padding:13px 16px;font-size:.86rem;font-weight:700}
+.m-sec-b{padding:18px}
+#fldList .setting-row{padding:12px 8px;border-radius:10px;transition:background .15s}
+#fldList .setting-row:hover{background:rgba(28,110,49,.04)}

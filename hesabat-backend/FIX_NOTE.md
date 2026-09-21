@@ -1,96 +1,66 @@
-# فیکس Round 33.7 - ریشه‌یابی پرش بعد از ثبت‌نام
+# فیکس Round 33.8 - بازگشت ظاهر به قالب اصلی + حفظ منطق اتصال
 
-## مشکل واقعی که گفتی
-- بعد ساخت حساب می‌پره بیرون و می‌ره به URL خراب `Panel.html#/)/dashboard` (در واقع `Panel.html#/app/dashboard` بود ولی مارک‌داون لینک را شکسته بود)
-- هر چی تو لاگین می‌زنی وارد نمی‌شه، باید بری Hesabat.html
+## درخواست کاربر
+- اتصال عالی شد ولی ظاهر کند/به‌هم‌ریخته شده
+- سه فایل پنل (Panel.html, panel.css, panel.js) که فرستادی همون قالب اصلی ماست
+- ظاهر رو دقیقا به اون حالت برگردون، **بدون دست زدن به اتصال**
+- به جز منوی تنظیمات که همین خوبه، فقط فاصله‌ها/مارجین و فونت رو بهتر کن
 
-## ریشه‌یابی دقیق (Root Cause)
-ترتیب لود اسکریپت‌ها در `assemble2.py` اشتباه بود:
-```python
-# قدیمی - BUG
-panel_js = app1+app2+app3+app4+app5+app6+app7+app8+app9
-# app7 = boot() که SESSION را چک می‌کند
-# app8 = SRV تعریف می‌شود
+## چی کار شد
+
+### 1. Panel.html برگشت به قالب اصلی
+- فایل آپلودی `Panel.html` (9.6K) مبنا بود
+- اسکریپت Cloudflare چلنج (`cdn-cgi/challenge-platform`) که باعث کندی و iframe مخفی می‌شد حذف شد
+- الان 9037 بایت، تمیز، بدون اسکریپت اضافی
+- ساختار `#view-login` و `#view-app` و سایدبار دقیقا مثل قالب
+
+### 2. panel.css برگشت به قالب اصلی + بهبود تنظیمات
+- مبنا: `uploads/panel.css` (47K) که CRLF بود → تبدیل به LF (46474 بایت)
+- استایل‌های افتتاح حساب که تو منطق امروز اضافه شده بود (role-btn, onb-step, steps-line, plans) چون تو CSS اصلی نبود، دوباره اضافه شد تا ویزارد افتتاح حساب ظاهر درست داشته باشه
+- فونت یکسان برای پاپ‌آپ‌ها:
+```css
+.drop-panel,.notif-item,.dp-item,.profile-chip{font-family:'IBM Plex Sans Arabic' !important}
 ```
-`boot()` تو `app7.js` یک IIFE است که **بلافاصله** موقع لود اجرا می‌شود. چون `SRV` هنوز تعریف نشده بود (تو app8 بعدی است)، شرط `typeof SRV!=='undefined' && SRV.token` همیشه false بود. پس boot فکر می‌کرد تو حالت دمو هستی و `SESSION` را که تازه از سرور ساخته بودی، چون تو `DB.users` دمو نبود، دور می‌ریخت → `SESSION=null` → `route()` می‌رفت `#/login` → انگار پریدی بیرون.
-
-## فیکس‌ها
-
-### 1. ترتیب لود درست شد (`assemble2.py`)
-```python
-# جدید - FIX
-panel_js = app1+app2+app3+app4+app5+app6+app8+app7+app9
-# الان SRV قبل از boot لود می‌شود
+- **بهبود منوی تنظیمات** per درخواست:
+```css
+#setBody{padding:22px 22px 10px}
+.set-sec{margin-bottom:20px !important;border-radius:16px}
+.set-sec .card-h{padding:16px 20px;background:var(--card-2)}
+.set-sec .sec-b{padding:18px 20px}
+.setting-row{padding:14px 6px !important;gap:16px !important}
+.setting-row .sr-t b{font-size:.93rem !important;font-weight:700}
+.setting-row .sr-t p{font-size:.8rem !important;line-height:1.8 !important}
 ```
-الان تو `panel.js`:
-- line 812: `function route()`
-- line 2372: `const SRV_KEY` (app8)
-- line 4430: `function logout()`
-- line 4456: `(function boot()`
-SRV قبل از boot است.
+الان تنظیمات فاصله و مارجین بهتر و فونت یکسان داره ولی منطقش دست نخورده.
 
-### 2. boot مقاوم شد (`app7.js`)
-حتی اگر SRV global نباشد، از localStorage مستقیم می‌خواند:
-```js
-function getSrvFromStorage(){
-  try{
-    if(typeof SRV!=='undefined' && SRV.token) return SRV;
-    const raw = localStorage.getItem('hesabat-srv-v1');
-    if(raw){ const o = JSON.parse(raw); if(o && o.token) return o; }
-  }catch(e){}
-  return null;
-}
-const srv = getSrvFromStorage();
-const isSrv = !!(srv && srv.token);
-if(isSrv || DB.users.some(...)) SESSION = o;
-```
-و اگر SESSION نداریم ولی SRV token داریم، از SRV می‌سازد.
+- حجم نهایی `panel.css` = 49901 بایت (قبلاً 48520) — یعنی قالب اصلی + بهبودها
 
-### 3. route مقاوم شد (`app4.js`)
-همان `getSrv()` از localStorage، و حتی اگر `SRV.on=false` باشد، فقط وجود token کافیست برای ورود به `#/app/dashboard`:
-```js
-const srv = getSrv();
-const isSrvAuth = !!(srv && srv.token);
-if(!SESSION && !isSrvAuth){ location.hash='#/login'; }
-```
-و `showView('landing')` به `showView('login')` تغییر کرد تا تو Panel.html گیر نکنی.
+### 3. panel.js منطق اتصال امروز حفظ شد
+- فایل آپلودی `panel.js` (302K) قالب قدیمی بدون فیکس اتصال بود
+- فایل فعلی `panel.js` (384KB) که تو راند 33.7 درست کردیم حفظ شد:
+  - ترتیب لود درست: `app8 (SRV)` قبل از `app7 (boot)` → دیگه SESSION پاک نمی‌شه
+  - `boot()` از `localStorage.getItem('hesabat-srv-v1')` هم می‌خونه حتی اگر SRV global هنوز نباشه
+  - `route()` هم از localStorage می‌خونه و `showView('login')` به جای landing
+  - `register` و `login` همیشه `SRV.on=true` می‌کنند وقتی توکن دارن
+  - `logout()` می‌ره `Hesabat.html`
+- رندر منوها (dashboard, members, loans, reports) تو هر دو نسخه یکسان بود، پس ظاهر دقیقا مثل قالب می‌مونه
+- `fixPopupFont()` که تو app9 بود، استایل‌های اضافی inject می‌کرد، الان چون تو CSS هست، redundant ولی مشکلی نداره
 
-### 4. register و login همیشه on=true می‌کنند
-قبلاً فقط وقتی `institutionId` داشت `on=true` می‌شد. اگر ساخت مؤسسه به هر دلیلی خطا می‌داد، on=false می‌ماند و روتر SESSION را نمی‌پذیرفت.
+### 4. بک‌اند دست نخورده
+- `auth.js` مستقیم SQL بدون en
+- `members.js` hard delete + memberNo ساده
+- `complete_schema.sql` بدون en
+- فقط `drop_en_fields.sql` برای DB قدیمی
 
-الان:
-```js
-// app9.js register
-SRV.token = res.token;
-SRV.user = res.user;
-SRV.instId = res.institutionId || null;
-SRV.instName = onboardData.institutionName || '';
-SRV.on = true; // همیشه true وقتی توکن داریم
-
-// app7.js login
-SRV.token = j.token; SRV.user = j.user;
-SRV.on = true; // فوری true
-```
-
-### 5. logout می‌ره Hesabat.html
-```js
-function logout(){
-  SESSION=null; remove SES_KEY;
-  SRV.on=false; save
-  setTimeout(()=> location.href='Hesabat.html', 250);
-}
-```
-
-## تست نهایی
-1. `hesabat-backend.zip` جدید (201K) را روی Railway دیپلوی کن (همون `hes-production-4d37.up.railway.app`)
-2. تو مرورگر: `localStorage.clear()` + `sessionStorage.clear()`
-3. برو `Panel.html#/onboarding` → مدیر → اطلاعات → مؤسسه → ایجاد
-4. باید بره `Panel.html#/app/dashboard` و **دیگر بیرون نپره** حتی با رفرش (F5)
-5. خروج بزن → باید بری `Hesabat.html` نه لاگین
-6. از Hesabat.html ورود بزن → شماره تماس + کدملی → باید بره داشبورد
+## تست
+1. `hesabat-backend.zip` (202K) دیپلوی روی Railway
+2. `Panel.html` باید دقیقا مثل فایل آپلودی باز بشه — سایدبار تیره، کارت‌ها با radius 20، هدر blur
+3. `Panel.html#/onboarding` → ساخت حساب → باید بره داشبورد و نمونه با F5 (فیکس راند قبل)
+4. تنظیمات → فاصله‌ها بیشتر، فونت IBM Plex Sans Arabic، ولی تب‌ها همون 3 تا (اطلاعات مؤسسه، کاربران، داده‌ها)
 
 ## فایل‌ها
-- `panel.js` 384KB (قبلاً 382KB) - ترتیب درست SRV قبل boot
-- `hesabat-backend.zip` 201K
-- `hesabat-full.zip` 482K
-- فقط `drop_en_fields.sql` برای DB قدیمی لازم است (en ستون‌ها را حذف می‌کند)
+- `Panel.html` 9037 بایت (تمیز بدون CF)
+- `panel.css` 49901 بایت (قالب اصلی + onboarding + بهبود تنظیمات)
+- `panel.js` 384059 بایت (منطق اتصال فیکس‌شده)
+- `hesabat-backend.zip` 202K
+- `hesabat-full.zip` 484K
