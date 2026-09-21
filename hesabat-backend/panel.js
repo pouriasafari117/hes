@@ -1170,12 +1170,7 @@ function pageDashboard(){
     '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+icon(ic,16)+'</span>'+label+'</div>' +
     '<div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
 
-  const srvBadge = (typeof SRV!=='undefined' && SRV.on && SRV.token) ?
-    `<div class="alert a-ok" style="margin-bottom:12px"><span class="al-ic">${icon('check',16)}</span><div>✅ متصل به <b>PostgreSQL</b> — مؤسسه <b>${esc(SRV.instName||'سرور')}</b> — آدرس <code dir="ltr">${esc(SRV.base==='' ? 'same-origin' : SRV.base)}</code> — <a href="#/app/settings" style="color:var(--green-deep);text-decoration:underline">تنظیمات اتصال</a> — <a href="#" onclick="event.preventDefault(); (async()=>{ const b=document.getElementById('srvDbg'); if(b){ b.style.display=b.style.display==='none'?'':'none'; if(b.style.display!=='none'){ try{ const h=await srvFetch('GET','/api/debug'); b.textContent=JSON.stringify(h,null,2); }catch(e){ b.textContent='خطا: '+e.message; } } })()" style="margin-inline-start:8px">دیباگ DB</a><pre id="srvDbg" style="display:none;white-space:pre-wrap;max-height:240px;overflow:auto;background:rgba(0,0,0,.06);padding:8px;border-radius:8px;margin-top:8px;font-size:11px;direction:ltr;text-align:left"></pre></div></div>` :
-    `<div class="alert a-warn" style="margin-bottom:12px"><span class="al-ic">${icon('warn',16)}</span><div>⚠️ حالت <b>دمو (localStorage)</b> — داده در Postgres ذخیره نمی‌شود. برای اتصال به دیتابیس: <a href="#/app/settings" style="color:inherit;text-decoration:underline;font-weight:700">تنظیمات → اتصال به دیتابیس</a> را چک کن و <code>/api/health</code> را تست کن.<br><small>آدرس فعلی سرور: <code dir="ltr">${esc(typeof SRV!=='undefined' ? (SRV.base==='' ? 'same-origin' : (SRV.base||'تنظیم نشده')) : 'نامشخص')}</code> — اگر با file:// باز کردی، باید از http://localhost:4000/Panel.html باز کنی.</small></div></div>`;
-
   main.innerHTML =
-    srvBadge +
     '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">نمای کلی '+esc(DB.settings.institution.name)+' — ' + J.fmtLong(t) + '</div></div>' +
       '<div class="ph-actions">' +
         qaBtn('memberAdd','plus','افزودن عضو','#addMember') +
@@ -1889,7 +1884,7 @@ function loanForm(preset, presetMemberId){
     '</div></div></div>' +
 
     '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
-      '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><input id="lfMonths" type="number" min="1" max="120" value="'+esc(String(ld.months||12))+'" placeholder="مثلاً 12"><span class="help">متغیر - 1 تا 120</span></div>' +
+      '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="lfMonths">'+(()=>{ const cur=ld.months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option'+(x===cur?' selected':'')+' value="'+x+'">'+faDigits(x)+'</option>').join(''); })()+'</select></div>' +
       '<div class="field"><label>فاصله / دوره اقساط</label><select id="lfInt"><option value="1"'+((ld.interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((ld.interval||1)==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((ld.interval||1)==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="lfFirst"><span class="err-msg"></span></div>' +
       '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="lfPer" class="num-inp"><span class="help">با تغییر مبلغ/تعداد، به‌صورت خودکار پیشنهاد می‌شود</span></div>' +
@@ -1937,7 +1932,6 @@ function loanForm(preset, presetMemberId){
       '<div class="sum-line"><span>مجموع کارمزد تقریبی</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>';
   }
   el('#lfAmt').addEventListener('input', suggest);
-  el('#lfMonths').addEventListener('input', suggest);
   el('#lfMonths').addEventListener('change', suggest);
   el('#lfRate').addEventListener('input', suggest);
   el('#lfPer').addEventListener('input', updateSum);
@@ -2360,430 +2354,6 @@ function txnForm(presetAccId){
     }
   });
 }
-
-
-/* ═══════════════════════════════════════════════════════════════
-   لایهٔ اتصال به سرور (فاز ۲) - نسخه بدون کارت PostgreSQL در تنظیمات
-   - اتصال در افتتاح حساب انجام می‌شود
-   - کارت تنظیمات حذف شد per Round 32
-   - حالت سرور برای اعضا/فیلدها همچنان فعال است
-   ═══════════════════════════════════════════════════════════════ */
-
-const SRV_KEY = 'hesabat-srv-v1';
-const SRV_DEFAULT_BASE = (typeof location !== 'undefined' && /^https?:$/.test(location.protocol))
-  ? '' : 'http://localhost:4000';
-let SRV = { base:SRV_DEFAULT_BASE, token:'', user:null, instId:null, instName:'', on:false };
-try { const sv = JSON.parse(localStorage.getItem(SRV_KEY)); if(sv && typeof sv === 'object') SRV = Object.assign(SRV, sv); } catch(e){}
-// اگر base خالی بود ولی از file:// باز شده، localhost را بگذار
-if (typeof location !== 'undefined' && location.protocol === 'file:' && !SRV.base) SRV.base = 'http://localhost:4000';
-function srvSave(){ try{ localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); }catch(e){} }
-function srvReady(){ return !!(SRV.token && SRV.instId); }
-function srvHasBase(){ return typeof SRV.base === 'string'; } // '' هم معتبر است (same-origin)
-
-let SRV_FIELDS = null;
-
-async function srvFetch(method, path, body){
-  const headers = {'Content-Type':'application/json'};
-  if(SRV.token) headers['Authorization'] = 'Bearer ' + SRV.token;
-  const baseUrl = (typeof SRV.base === 'string' ? SRV.base : '').replace(/\/+$/,'');
-  let r;
-  try {
-    r = await fetch(baseUrl + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
-  } catch(e){
-    const err = new Error('اتصال به سرور برقرار نشد ('+ (baseUrl||'same-origin') +'). آدرس سرور را در تنظیمات چک کن.');
-    err.network = true; throw err;
-  }
-  let j = null; try { j = await r.json(); } catch(_){}
-  if(!r.ok){
-    const err = new Error((j && j.error) || ('خطای سرور (' + r.status + ')'));
-    err.status = r.status; err.details = j && j.details; throw err;
-  }
-  return j;
-}
-async function srvLoadFields(force){
-  if(!force && SRV_FIELDS) return SRV_FIELDS;
-  const r = await srvFetch('GET', '/api/institutions/' + SRV.instId + '/fields');
-  SRV_FIELDS = r.fields || [];
-  return SRV_FIELDS;
-}
-function srvDropFieldsCache(){ SRV_FIELDS = null; }
-
-/* ── کارت اتصال به دیتابیس (ساده) ── */
-function injectSrvSec(){ /* برای سازگاری قدیمی */ }
-function renderSrvSec(){ /* no-op */ }
-async function srvFillInstSel(selectId){ /* no-op - handled in onboarding */ }
-
-async function srvAutoProbe(){
-  try{
-    if(typeof srvFetch !== 'function') return;
-    const baseToTry = (typeof SRV.base === 'string' ? SRV.base : '');
-    const h = await srvFetch('GET','/api/health');
-    if(h && h.ok){
-      console.log('[srv] health ok via', baseToTry||'same-origin', h);
-      // اگر قبلاً SRV.on نبود ولی health ok است، یعنی سرور در دسترس است
-      // اما توکن نداریم → حالت دمو می‌ماند ولی تست اتصال سبز می‌شود
-    }
-  }catch(e){
-    console.warn('[srv] health probe failed:', e.message);
-  }
-}
-if(typeof window!=='undefined') setTimeout(srvAutoProbe, 1200);
-
-function renderSrvConnSec(box){
-  if(!box) return;
-  const isFile = typeof location !== 'undefined' && location.protocol === 'file:';
-  const baseDisplay = SRV.base === '' ? '(same-origin) ' + (location.origin||'') : (SRV.base || '—');
-  const statusHtml = SRV.on && SRV.token ? 
-    `<span class="badge b-green"><i class="bd"></i>متصل به سرور</span> <small>${esc(SRV.instName||'مؤسسه #'+SRV.instId)} — ${esc(SRV.user&&SRV.user.email||'')}</small>` :
-    `<span class="badge b-gray"><i class="bd"></i>حالت دمو (localStorage)</span> <small>داده در مرورگر ذخیره می‌شود، نه در Postgres</small>`;
-  box.innerHTML = `
-    <div class="alert ${SRV.on?'a-ok':'a-info'}" style="margin-bottom:12px"><span class="al-ic">${icon(SRV.on?'check':'info',16)}</span><div>${statusHtml}<br><small>آدرس سرور: <code dir="ltr">${esc(baseDisplay)}</code></small></div></div>
-    <div class="fields">
-      <div class="field"><label>آدرس بک‌اند (API)</label><input id="srvBaseInp" dir="ltr" style="text-align:left" placeholder="https://your-app.onrender.com یا خالی برای same-origin" value="${esc(SRV.base||'')}"><span class="help">خالی = همین هاست (وقتی Panel.html از بک‌اند سرو می‌شود). برای file:// باید http://localhost:4000 بگذاری.</span></div>
-      <div class="field"><label>تست اتصال</label><div style="display:flex;gap:8px"><button class="btn btn-soft btn-sm" id="srvTestBtn">${icon('search',14)} تست اتصال</button><button class="btn btn-ghost btn-sm" id="srvClearBtn">${icon('ban',14)} قطع اتصال و رفتن به دمو</button></div><div id="srvTestRes" style="margin-top:8px"></div></div>
-    </div>
-    <div class="field-row" style="margin-top:12px"><button class="btn btn-solid btn-sm" id="srvSaveBase">${icon('check',14)} ذخیره آدرس سرور</button></div>
-    ${isFile ? `<div class="alert a-warn" style="margin-top:12px"><span class="al-ic">${icon('warn',16)}</span><div>شما فایل را با file:// باز کرده‌اید. برای اتصال به دیتابیس باید بک‌اند را اجرا کنی (<code>npm start</code>) و Panel.html را از <code>http://localhost:4000/Panel.html</code> یا از آدرس Render باز کنی، نه با دوبار کلیک.</div></div>` : ''}
-  `;
-  const inp = box.querySelector('#srvBaseInp');
-  const saveBtn = box.querySelector('#srvSaveBase');
-  const testBtn = box.querySelector('#srvTestBtn');
-  const clearBtn = box.querySelector('#srvClearBtn');
-  const resBox = box.querySelector('#srvTestRes');
-  if(saveBtn) saveBtn.onclick = ()=>{
-    SRV.base = inp.value.trim();
-    srvSave();
-    toast('آدرس سرور ذخیره شد.','ok');
-    renderSrvConnSec(box);
-  };
-  if(testBtn) testBtn.onclick = async ()=>{
-    const oldBase = SRV.base;
-    SRV.base = inp.value.trim();
-    resBox.innerHTML = '<span class="hint-t">در حال تست...</span>';
-    try{
-      const h = await srvFetch('GET','/api/health');
-      resBox.innerHTML = `<div class="alert a-ok"><div>✅ متصل! پاسخ سرور: ${esc(JSON.stringify(h))}</div></div>`;
-      SRV.base = inp.value.trim();
-      srvSave();
-    }catch(e){
-      resBox.innerHTML = `<div class="alert a-err"><div>❌ خطا: ${esc(e.message)}</div></div>`;
-      SRV.base = oldBase;
-    }
-  };
-  if(clearBtn) clearBtn.onclick = async ()=>{
-    const okc = await askConfirm({title:'قطع اتصال سرور', danger:true, ok:'قطع شود', text:'اتصال به سرور قطع و پنل به حالت دمو برمی‌گردد. توکن و اطلاعات مؤسسه سرور پاک می‌شود.'});
-    if(!okc) return;
-    SRV.on=false; SRV.token=''; SRV.instId=null; SRV.instName=''; SRV.user=null;
-    srvSave();
-    toast('به حالت دمو برگشتی.','warn');
-    renderSrvConnSec(box);
-  };
-}
-
-const SRV_TYPE_LABEL = { text:'متن', number:'عدد', date:'تاریخ', bool:'بله/خیر', select:'انتخابی', mobile:'شماره تماس', nid:'کد ملی' };
-function srvFieldInput(f, val){
-  const id = 'sf_' + f.key;
-  const v = val === undefined || val === null ? '' : val;
-  const req = f.is_required ? ' <span style="color:var(--red)\">*</span>' : '';
-  const lbl = '<label for="' + id + '">' + esc(f.label) + req + '</label>';
-  if(f.type === 'bool'){
-    return '<div class="field"><label>' + esc(f.label) + req + '</label><div class="field-row">' +
-      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="' + id + '" ' + (v === 'true' ? 'checked' : '') + '> فعال</label>' +
-      '</div></div>';
-  }
-  if(f.type === 'select'){
-    const opts = (Array.isArray(f.options) ? f.options : []).map(o => '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>').join('');
-    return '<div class="field">' + lbl + '<select id="' + id + '"><option value="">—</option>' + opts + '</select></div>';
-  }
-  const ph = f.type === 'date' ? '۱۴۰۳/۰۵/۰۲' : f.type === 'mobile' ? '۰۹۱۲…' : f.type === 'nid' ? '۱۰ رقم' : f.type === 'number' ? 'عدد' : '';
-  return '<div class="field">' + lbl + '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + ph + '"></div>';
-}
-
-async function srvFieldsSec(box){
-  box.innerHTML = '<p class="hint-t">در حال دریافت فیلدها از سرور…</p>';
-  let fields;
-  try { fields = await srvLoadFields(true); }
-  catch(e){ box.innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p>'; return; }
-  const rows = fields.map(f =>
-    '<div class="setting-row"><div class="sr-t"><b>' + esc(f.label) + '</b><p>' +
-      '<code style="font-size:11px">' + esc(f.key) + '</code> · ' + (SRV_TYPE_LABEL[f.type] || f.type) +
-      (f.is_required ? ' · <span style="color:var(--red)">الزامی</span>' : '') +
-      (f.type === 'select' && Array.isArray(f.options) && f.options.length ? ' · گزینه‌ها: ' + esc(f.options.join('، ')) : '') +
-    '</p></div><div class="field-row" style="gap:6px">' +
-      '<button class="btn btn-soft btn-xs" data-sfe="' + f.id + '">' + icon('pen',13) + ' ویرایش</button>' +
-      '<button class="btn btn-soft btn-xs" data-sfd="' + f.id + '" data-sfl="' + esc(f.label) + '">' + icon('trash',13) + ' آرشیو</button>' +
-    '</div></div>').join('');
-  box.innerHTML = (rows || '<p class="hint-t">هنوز فیلدی تعریف نشده — اولین فیلد را بسازید.</p>') +
-    '<div class="field-row" style="gap:8px;margin-top:10px"><button class="btn btn-primary btn-sm" id="srvFieldAdd">' + icon('plus',14) + ' فیلد جدید</button></div>';
-  box.querySelectorAll('[data-sfe]').forEach(b => b.onclick = ()=>{
-    const f = fields.find(x => String(x.id) === b.dataset.sfe); if(f) srvFieldForm(f);
-  });
-  box.querySelectorAll('[data-sfd]').forEach(b => b.onclick = async ()=>{
-    const okc = await askConfirm({ title:'آرشیو فیلد', danger:true, ok:'آرشیو شود',
-      text:'فیلد «' + b.dataset.sfl + '» آرشیو می‌شود؛ مقادیر قبلی اعضا حذف نمی‌شوند ولی فیلد از فرم‌ها حذف می‌شود.' });
-    if(!okc) return;
-    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/fields/' + b.dataset.sfd); srvDropFieldsCache(); toast('فیلد آرشیو شد.', 'ok'); srvFieldsSec(box); }
-    catch(e){ toast(e.message, 'err'); }
-  });
-  const add = $('#srvFieldAdd'); if(add) add.onclick = ()=> srvFieldForm(null);
-}
-function srvFieldForm(f){
-  const types = Object.keys(SRV_TYPE_LABEL).map(t => '<option value="' + t + '"' + (f && f.type === t ? ' selected' : '') + '>' + SRV_TYPE_LABEL[t] + '</option>').join('');
-  openModal({
-    title: f ? 'ویرایش فیلد «' + esc(f.label) + '»' : 'فیلد جدید',
-    body:
-      '<div class="fields">' +
-        '<div class="field"><label>عنوان فیلد</label><input id="sffLabel" value="' + esc(f ? f.label : '') + '" placeholder="مثلاً شماره حساب"></div>' +
-        '<div class="field"><label>کلید (انگلیسی؛ خالی = خودکار)</label><input id="sffKey" value="' + esc(f ? f.key : '') + '" placeholder="account_no" ' + (f ? 'disabled' : '') + '></div>' +
-        '<div class="field"><label>نوع</label><select id="sffType"' + (f ? ' disabled' : '') + '>' + types + '</select></div>' +
-        '<div class="field"><label>الزامی؟</label><select id="sffReq"><option value="0"' + (f && !f.is_required ? ' selected' : '') + '>خیر</option><option value="1"' + (f && f.is_required ? ' selected' : '') + '>بله</option></select></div>' +
-        '<div class="field full"><label>گزینه‌ها (فقط برای نوع انتخابی؛ هر خط یکی)</label><textarea id="sffOpts" rows="3" placeholder="تهران&#10;مشهد">' + esc(f && Array.isArray(f.options) ? f.options.join('\n') : '') + '</textarea></div>' +
-      '</div>' +
-      '<div class="field-row" style="gap:8px;justify-content:flex-end;margin-top:12px">' +
-        '<button class="btn btn-soft btn-sm" onclick="closeModal()">انصراف</button>' +
-        '<button class="btn btn-primary btn-sm" id="sffSave">' + icon('check',14) + (f ? ' ذخیره تغییرات' : ' ایجاد فیلد') + '</button>' +
-      '</div>',
-    width: 560
-  });
-  $('#sffSave').onclick = async ()=>{
-    const label = ($('#sffLabel').value || '').trim();
-    if(!label){ toast('عنوان فیلد الزامی است.', 'err'); return; }
-    const payload = {
-      label,
-      is_required: $('#sffReq').value === '1',
-      options: ($('#sffOpts').value || '').split('\n').map(x => x.trim()).filter(Boolean)
-    };
-    if(!f){
-      payload.key = ($('#sffKey').value || '').trim();
-      payload.type = $('#sffType').value;
-      if(payload.type !== 'select') payload.options = [];
-      try { await srvFetch('POST', '/api/institutions/' + SRV.instId + '/fields', payload); }
-      catch(e){ toast(e.message, 'err'); return; }
-      toast('فیلد ساخته شد.', 'ok');
-    } else {
-      if(payload.options.length === 0) delete payload.options;
-      try { await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/fields/' + f.id, payload); }
-      catch(e){ toast(e.message, 'err'); return; }
-      toast('فیلد به‌روزرسانی شد.', 'ok');
-    }
-    srvDropFieldsCache(); closeModal();
-    const box = $('#secFld .sec-b'); if(box) srvFieldsSec(box);
-  };
-}
-
-let srvQ = '', srvPage = 1;
-async function renderSrvMembersPage(){
-  const main = $('#main');
-  main.innerHTML =
-    '<div class="page-head"><div><h1>اعضا و اقساط</h1><div class="ph-sub">حالت سرور — داده از <b>' + esc(SRV.instName || ('مؤسسهٔ #' + SRV.instId)) + '</b> (PostgreSQL)</div></div>' +
-      '<div class="ph-actions"><button class="btn btn-primary" id="srvAddMember">' + icon('plus',16) + ' عضو جدید</button></div></div>' +
-    '<div class="card tight"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-      '<input id="srvSearch" placeholder="جستجو در اعضا…" value="' + esc(srvQ) + '" style="max-width:280px">' +
-      '<span class="hint-t" id="srvMeta"></span>' +
-    '</div><div class="card-b" id="srvMemBox"><p class="hint-t">در حال دریافت…</p></div></div>';
-  $('#srvAddMember').onclick = ()=> srvMemberForm(null);
-  $('#srvSearch').oninput = ()=>{ srvQ = $('#srvSearch').value.trim(); srvPage = 1; srvLoadMembers(); };
-  await srvLoadMembers();
-}
-async function srvLoadMembers(){
-  const box = $('#srvMemBox'); if(!box) return;
-  let fields, data;
-  try {
-    fields = await srvLoadFields();
-    const qs = '/api/institutions/' + SRV.instId + '/members?page=' + srvPage + '&pageSize=30' + (srvQ ? '&q=' + encodeURIComponent(srvQ) : '');
-    data = await srvFetch('GET', qs);
-  } catch(e){
-    box.innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p><button class="btn btn-soft btn-sm" onclick="srvLoadMembers()">تلاش دوباره</button>';
-    return;
-  }
-  const meta = $('#srvMeta'); if(meta) meta.textContent = faDigits(data.total) + ' عضو · صفحهٔ ' + faDigits(data.page);
-  if(!fields || !fields.length){
-    box.innerHTML = '<div class="alert a-warn"><span class="al-ic">'+icon('info',16)+'</span><div>هنوز فیلدی برای اعضا تعریف نشده. فیلدهای پیش‌فرض به‌صورت خودکار ساخته می‌شوند، ولی اگر خالی ماند، در <a href="#/app/settings" style="text-decoration:underline">تنظیمات → فیلدهای اعضا</a> فیلد بساز یا صفحه را رفرش کن.</div></div>' +
-      (data.rows.length ? '<p class="hint-t">'+faDigits(data.rows.length)+' عضو بدون فیلد وجود دارد.</p>' : '<p class="hint-t" style="padding:18px 4px">عضویی پیدا نشد — دکمه «عضو جدید» را بزن. فیلدهای پیش‌فرض خودکار می‌آیند.</p>');
-    return;
-  }
-  const show = fields.slice(0, 5);
-  if(!data.rows.length){
-    box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr>'+show.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>شماره عضویت</th><th>وضعیت</th><th></th></tr></thead><tbody><tr><td colspan="'+(show.length+3)+'" style="padding:18px 8px"><div class="notif-empty">عضویی نیست — «عضو جدید» را بزن تا در Postgres ثبت شود.</div></td></tr></tbody></table></div>';
-    return;
-  }
-  const head = show.map(f => '<th>' + esc(f.label) + '</th>').join('') + '<th>شماره عضویت</th><th>وضعیت</th><th></th>';
-  const rows = data.rows.map(m => {
-    const tds = show.map(f => '<td>' + esc(m.values[f.key] || '—') + '</td>').join('');
-    return '<tr>' + tds + '<td class="c-num" dir="ltr" style="text-align:left;font-family:monospace">'+esc(m.member_no||m.memberNo||'—')+'</td><td>' + (m.status === 'active' ? '<span class="badge b-green"><i class="bd"></i>فعال</span>' : '<span class="badge b-gray"><i class="bd"></i>غیرفعال</span>') + '</td>' +
-      '<td><div class="field-row" style="gap:6px;justify-content:flex-end">' +
-        '<button class="x-btn" data-tip="ویرایش" data-sme="' + m.id + '">' + icon('pen',13) + '</button>' +
-        '<button class="x-btn danger" data-tip="حذف" data-smd="' + m.id + '">' + icon('trash',13) + '</button>' +
-      '</div></td></tr>';
-  }).join('');
-  const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
-  box.innerHTML =
-    '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    (pages > 1 ? '<div class="field-row" style="gap:8px;justify-content:center;padding:12px 0">' +
-      '<button class="btn btn-soft btn-xs" id="srvPrev"' + (srvPage <= 1 ? ' disabled' : '') + '>قبلی</button>' +
-      '<span class="hint-t">صفحهٔ ' + faDigits(srvPage) + ' از ' + faDigits(pages) + '</span>' +
-      '<button class="btn btn-soft btn-xs" id="srvNext"' + (srvPage >= pages ? ' disabled' : '') + '>بعدی</button></div>' : '');
-  const byId = id => data.rows.find(m => String(m.id) === String(id));
-  box.querySelectorAll('[data-sme]').forEach(b => b.onclick = ()=> srvMemberForm(byId(b.dataset.sme)));
-  box.querySelectorAll('[data-smd]').forEach(b => b.onclick = async ()=>{
-    const m = byId(b.dataset.smd);
-    const nm = m ? Object.values(m.values).filter(Boolean)[0] || ('#' + m.id) : '#' + b.dataset.smd;
-    const okc = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود',
-      text:'عضو «' + esc(nm) + '» حذف نرم می‌شود (در Postgres deleted_at می‌خورد).' });
-    if(!okc) return;
-    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/members/' + b.dataset.smd); toast('عضو حذف شد.', 'ok'); srvLoadMembers(); }
-    catch(e){ toast(e.message, 'err'); }
-  });
-  const pv = $('#srvPrev'); if(pv) pv.onclick = ()=>{ srvPage--; srvLoadMembers(); };
-  const nx = $('#srvNext'); if(nx) nx.onclick = ()=>{ srvPage++; srvLoadMembers(); };
-}
-
-function srvMemberForm(m){
-  srvLoadFields().then(fields => {
-    const inputs = fields.map(f => srvFieldInput(f, m ? m.values[f.key] : '')).join('');
-    openModal({
-      title: m ? 'ویرایش عضو #' + faDigits(m.id) : 'عضو جدید (از سرور)',
-      body:
-        '<div class="fields">' + inputs + '</div>' +
-        '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px"></div>' +
-        '<div class="field-row" style="gap:8px;justify-content:flex-end;margin-top:12px">' +
-          '<button class="btn btn-soft btn-sm" onclick="closeModal()">انصراف</button>' +
-          '<button class="btn btn-primary btn-sm" id="srvMemSave">' + icon('check',14) + (m ? ' ذخیره تغییرات' : ' ثبت عضو') + '</button>' +
-        '</div>',
-      width: 640
-    });
-    $('#srvMemSave').onclick = async ()=>{
-      const values = {};
-      for(const f of fields){
-        const el = document.getElementById('sf_' + f.key);
-        values[f.key] = f.type === 'bool' ? (el.checked ? 'true' : 'false') : (el.value || '');
-      }
-      const errBox = $('#srvFormErr');
-      try {
-        if(m) await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/members/' + m.id, { values });
-        else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
-        toast(m ? 'عضو به‌روزرسانی شد.' : 'عضو ثبت شد.', 'ok');
-        closeModal(); srvLoadMembers();
-      } catch(e){
-        errBox.style.display = '';
-        errBox.innerHTML = esc(e.message) + (Array.isArray(e.details) ? '<br>' + e.details.map(esc).join('<br>') : '');
-      }
-    };
-  }).catch(e => toast(e.message, 'err'));
-}
-
-/* ── داشبورد حالت سرور — تعداد اعضا را از Postgres می‌خواند ── */
-async function renderSrvDashboard(){
-  const main = document.getElementById('main');
-  if(!main) return;
-  // اگر تابع اصلی داشبورد را داریم، اول اسکلت آن را بساز ولی بعداً تعداد اعضا را از سرور جایگزین کن
-  // برای سادگی، داشبورد سرور را جدا می‌سازیم که دقیقاً از سرور بخواند
-  main.innerHTML = '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">حالت سرور — <b>'+esc(SRV.instName||('مؤسسه #'+SRV.instId))+'</b> — در حال دریافت آمار از Postgres...</div></div></div><div id="srvDashBody"><p class="hint-t">در حال دریافت...</p></div>';
-  let fields=[], membersData=null, membersTotal=0, recentMembers=[];
-  try{
-    fields = await srvLoadFields();
-    const q = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/members?page=1&pageSize=20');
-    membersData = q;
-    membersTotal = q.total || 0;
-    recentMembers = q.rows || [];
-  }catch(e){
-    document.getElementById('srvDashBody').innerHTML = '<div class="alert a-err"><div>خطا در دریافت آمار: '+esc(e.message)+'</div></div><button class="btn btn-soft btn-sm" onclick="renderSrvDashboard()">تلاش دوباره</button>';
-    return;
-  }
-  const t = (typeof J!=='undefined' && J.todayIso) ? J.todayIso() : new Date().toISOString().slice(0,10);
-  const fmtDate = (typeof J!=='undefined' && J.fmtLong) ? J.fmtLong(t) : t;
-  const stat = (cls, ic, label, val, sub) => '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+(typeof icon==='function'?icon(ic,16):'')+'</span>'+label+'</div><div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
-  const totalM = membersTotal;
-  const activeM = recentMembers.filter(m=>m.status==='active').length; // تقریبی از صفحه اول
-  // برای اینکه داشبورد صفر نشان ندهد، از total استفاده می‌کنیم
-  const body = `
-    <div class="alert a-ok" style="margin-bottom:12px"><span class="al-ic">${(typeof icon==='function'?icon('check',16):'✓')}</span><div>✅ متصل به <b>PostgreSQL</b> — ${totalM} عضو در سرور ثبت شده — <a href="#/app/members" style="text-decoration:underline">مشاهده اعضا</a></div></div>
-    <div class="grid g-stats">
-      ${stat('', 'users', 'تعداد کل اعضا (سرور)', (typeof fmtN==='function'?fmtN(totalM):totalM), 'از Postgres')}
-      ${stat('s-lime', 'check', 'اعضای صفحه اول', (typeof fmtN==='function'?fmtN(recentMembers.length):recentMembers.length), 'نمایش ۲۰ عضو اخیر')}
-      ${stat('', 'bank', 'مؤسسه', esc(SRV.instName||''), 'ID: '+SRV.instId)}
-      ${stat('s-teal', 'gear', 'فیلدهای تعریف شده', (typeof fmtN==='function'?fmtN(fields.length):fields.length), fields.map(f=>esc(f.label)).slice(0,3).join('، ')+(fields.length>3?'...':''))}
-    </div>
-    <div class="grid g-2" style="margin-top:14px">
-      <div class="card tight"><div class="card-h"><h3>اعضای اخیر (سرور)</h3><a class="btn btn-soft btn-sm" href="#/app/members">همه</a></div><div class="card-b" id="srvDashMembers"></div></div>
-      <div class="card"><div class="card-h"><h3>وضعیت اتصال</h3></div><div class="card-b">
-        <div class="kv-grid">
-          <div class="kv"><span>آدرس API</span><b dir="ltr" style="font-family:monospace">${esc(SRV.base==='' ? 'same-origin' : SRV.base)}</b></div>
-          <div class="kv"><span>مؤسسه</span><b>${esc(SRV.instName||'—')}</b></div>
-          <div class="kv"><span>کاربر</span><b>${esc(SRV.user&&SRV.user.name||'—')} (${esc(SRV.user&&SRV.user.phone||'')})</b></div>
-          <div class="kv"><span>ایمیل ربات</span><b dir="ltr" style="font-family:monospace">${esc(SRV.user&&SRV.user.email||'—')}</b></div>
-        </div>
-        <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-soft btn-sm" onclick="srvLoadFields(true).then(()=>renderSrvDashboard())">رفرش</button><a class="btn btn-ghost btn-sm" href="#/app/settings">تنظیمات اتصال</a></div>
-      </div></div>
-    </div>
-  `;
-  document.getElementById('srvDashBody').innerHTML = body;
-  const memBox = document.getElementById('srvDashMembers');
-  if(memBox){
-    if(!recentMembers.length){
-      memBox.innerHTML = '<div class="notif-empty">هنوز عضوی در سرور نیست — «افزودن عضو» را بزن.</div>';
-    } else {
-      memBox.innerHTML = '<div class="mini-list">' + recentMembers.map(m=>{
-        const nm = Object.values(m.values||{}).filter(Boolean)[0] || ('#'+m.id);
-        const sub = (m.member_no||'') + ' · ' + (m.values && (m.values.mobile||m.values.phone||'') || '');
-        return '<div class="mini-item" style="cursor:pointer" data-go="#/app/members/'+m.id+'"><span class="avatar sz-34">'+esc((nm||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(nm)+'</b><span>'+esc(sub)+'</span></span><span class="mi-v">'+(m.status==='active'?'فعال':'غیرفعال')+'</span></div>';
-      }).join('') + '</div>';
-      memBox.querySelectorAll('[data-go]').forEach(el=> el.onclick = ()=> location.hash = el.dataset.go );
-    }
-  }
-}
-
-/* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
-(function hookSrvMode(){
-  function isSrv(){ return typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady(); }
-  if (typeof PAGES !== 'undefined' && PAGES.members) {
-    const _pgMembers = PAGES.members;
-    PAGES.members = function(arg){ if(isSrv()) return renderSrvMembersPage(); return _pgMembers(arg); };
-  }
-  if (typeof PAGES !== 'undefined' && PAGES.dashboard) {
-    const _pgDash = PAGES.dashboard;
-    PAGES.dashboard = function(){ if(isSrv()) return renderSrvDashboard(); return _pgDash(); };
-  }
-  if (typeof window !== 'undefined' && window.pageDashboard) {
-    const _pd = window.pageDashboard;
-    window.pageDashboard = function(){ if(isSrv()) return renderSrvDashboard(); return _pd(); };
-  }
-  // ثبت عضو از داشبورد و میانبرها هم باید به سرور برود
-  function overrideShortcuts(){
-    try{
-      if(typeof SHORTCUTS!=='undefined'){
-        if(SHORTCUTS.memberAdd){
-          const _origAdd = SHORTCUTS.memberAdd;
-          SHORTCUTS.memberAdd = function(){ if(isSrv()) return srvMemberForm(null); return _origAdd(); };
-        } else {
-          SHORTCUTS.memberAdd = function(){ if(isSrv()) return srvMemberForm(null); if(typeof memberForm==='function') return memberForm(); };
-        }
-      }
-      if(typeof window!=='undefined' && window.memberForm){
-        const _mf = window.memberForm;
-        window.memberForm = function(m){
-          if(isSrv()){
-            // اگر ویرایش است، مقدار سرور را بگیر
-            if(m && m.id && typeof m.values==='object') return srvMemberForm(m);
-            // اگر m از دمو آمد (id مثل m1)، سعی کن از سرور نخوان، ولی اگر سرور روشن است، فرم سرور را باز کن
-            if(m) {
-              // برای ویرایش دمو در حالت سرور، همان دمو را ویرایش کن (fallback)
-              if(String(m.id).startsWith('m') || !m.values) return _mf(m);
-              return srvMemberForm(m);
-            }
-            return srvMemberForm(null);
-          }
-          return _mf(m);
-        };
-      }
-    }catch(e){ console.warn('hookSrvMode shortcuts failed', e); }
-  }
-  // چند بار تلاش کن چون SHORTCUTS دیرتر ساخته می‌شود
-  setTimeout(overrideShortcuts, 500);
-  setTimeout(overrideShortcuts, 1500);
-  setTimeout(overrideShortcuts, 3000);
-  // دیگر injectSrvSec در تنظیمات صدا زده نمی‌شود
-})();
 
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3231,17 +2801,14 @@ function renderUsersTab(box){
 function userForm(user){
   const isEdit = !!user;
   const h = openModal({
-    title: isEdit ? 'ویرایش کاربر — تغییر نام کاربری و رمز' : 'افزودن کاربر جدید',
+    title: isEdit ? 'ویرایش کاربر' : 'افزودن کاربر جدید',
     body:'<div class="fields">' +
       '<div class="field"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="ufName" value="'+esc(isEdit?user.name:'')+'"><span class="err-msg"></span></div>' +
-      '<div class="field"><label>نام کاربری <span class="req">*</span> <small>(شماره تماس یا یوزر لاتین)</small></label><input id="ufUser" class="num-inp" dir="ltr" style="text-align:left" value="'+esc(isEdit?(user.username||user.phone||''):'')+'"><span class="err-msg"></span><span class="help">قابل تغییر — برای ورود استفاده می‌شود. پیش‌فرض: شماره تماس</span></div>' +
+      '<div class="field"><label>نام کاربری <span class="req">*</span></label><input id="ufUser" class="num-inp" value="'+esc(isEdit?user.username:'')+'"'+(isEdit?' disabled style="background:var(--card-2)"':'')+'><span class="err-msg"></span></div>' +
       '<div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="ufMobile" class="num-inp" value="'+esc(isEdit?user.mobile:'')+'"><span class="err-msg"></span></div>' +
-      '<div class="field"><label>ایمیل <small>(اختیاری)</small></label><input id="ufMail" class="num-inp" dir="ltr" style="text-align:left" value="'+esc(isEdit?user.email:'')+'"></div>' +
-      '<div class="field"><label>رمز عبور جدید <small>(خالی = بدون تغییر)</small></label><div class="field-row" style="gap:6px"><input id="ufPass" type="password" placeholder="حداقل ۴ کاراکتر" style="flex:1"><button type="button" class="btn btn-ghost btn-sm" id="ufEye">'+icon('eye',14)+'</button></div><span class="err-msg"></span><span class="help">در دمو رمز = کدملی یا 1234 است، ولی می‌توانید رمز دلخواه بگذارید. در سرور با همین رمز جدید لاگین می‌کنی.</span></div>' +
-      (isEdit ? '<div class="field"><label>تکرار رمز جدید</label><input id="ufPass2" type="password" placeholder="تکرار رمز"><span class="err-msg"></span></div>' : '<div class="field"><label>رمز عبور <span class="req">*</span></label><input id="ufPass" type="password" placeholder="پیش‌فرض: کدملی"><span class="err-msg"></span><span class="help">اگر خالی بگذاری، رمز = کدملی می‌شود.</span></div>') +
+      '<div class="field"><label>ایمیل <small>(اختیاری)</small></label><input id="ufMail" class="num-inp" value="'+esc(isEdit?user.email:'')+'"></div>' +
       '<div class="field"><label>نقش <span class="req">*</span></label><select id="ufRole">'+Object.keys(ROLE_FA).map(r=>'<option value="'+r+'"'+(isEdit&&user.role===r?' selected':'')+'>'+ROLE_FA[r]+'</option>').join('')+'</select><span class="help" id="ufRoleHelp"></span></div>' +
       '<div class="field"><label>مؤسسه / مؤسسات مجاز</label><input id="ufInst" value="'+esc(isEdit?user.institutions:DB.settings.institution.name)+'"></div>' +
-      '<div id="ufSrvStatus" style="margin-top:8px"></div>' +
     '</div>',
     foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="ufSave">'+icon('check',14)+' ذخیره کاربر</button>',
     onOpen(hh){
@@ -3249,73 +2816,21 @@ function userForm(user){
         const perms = Object.keys(DB.settings.roles[r]||{}).filter(p=>DB.settings.roles[r][p]).map(p=>PERM_FA[p]);
         hh.el.querySelector('#ufRoleHelp').textContent = 'دسترسی‌ها: ' + (perms.length?perms.join('، '):'فقط مشاهده'); };
       hh.el.querySelector('#ufRole').addEventListener('change', roleHelp); roleHelp();
-      const eye = hh.el.querySelector('#ufEye');
-      if(eye){ eye.onclick = ()=>{ const p = hh.el.querySelector('#ufPass'); if(p) p.type = p.type==='password'?'text':'password'; }; }
       hh.el.querySelector('[data-x]').onclick = ()=>hh.close();
-      // نمایش وضعیت سرور
-      const srvSt = hh.el.querySelector('#ufSrvStatus');
-      if(srvSt){
-        if(typeof SRV!=='undefined' && SRV.on && SRV.token){
-          srvSt.innerHTML = '<div class="alert a-info"><div>حالت سرور فعال — تغییر نام کاربری/رمز هم در Postgres ذخیره می‌شود.</div></div>';
-        }else{
-          srvSt.innerHTML = '<div class="alert a-info"><div>حالت دمو — تغییر در localStorage ذخیره می‌شود.</div></div>';
-        }
-      }
-      hh.el.querySelector('#ufSave').onclick = async ()=>{
+      hh.el.querySelector('#ufSave').onclick = ()=>{
         const name = fieldVal('#ufName'), uname = fieldVal('#ufUser'), mob = fieldVal('#ufMobile');
-        const pass = hh.el.querySelector('#ufPass') ? hh.el.querySelector('#ufPass').value.trim() : '';
-        const pass2El = hh.el.querySelector('#ufPass2');
-        const pass2 = pass2El ? pass2El.value.trim() : pass;
         let okf = true;
         const need = (c,i,msg)=>{ if(c) clearErr(i); else { markErr(i,msg); okf=false; } };
-        need(name.length>=3, hh.el.querySelector('#ufName'),'نام را کامل وارد کنید.');
-        need(uname.length>=3, hh.el.querySelector('#ufUser'),'نام کاربری حداقل ۳ کاراکتر.');
-        // اجازه هم شماره تماس هم یوزر لاتین
-        if(/^09\d{9}$/.test(uname) || /^[a-zA-Z0-9_.-]{3,}$/.test(uname)) clearErr(hh.el.querySelector('#ufUser')); else { markErr(hh.el.querySelector('#ufUser'),'نام کاربری معتبر نیست.'); okf=false; }
-        need(validMobile(mob) || /^[a-zA-Z0-9_.-]{3,}$/.test(mob) || mob==='', hh.el.querySelector('#ufMobile'),'شماره موبایل معتبر نیست (09...)');
+        need(name.length>=3, $('#ufName'),'نام را کامل وارد کنید.');
+        need(/^[a-zA-Z0-9_.-]{3,}$/.test(uname), $('#ufUser'),'نام کاربری معتبر نیست (حداقل ۳ کاراکتر لاتین).');
+        need(validMobile(mob), $('#ufMobile'),'شماره موبایل معتبر نیست.');
         const dup = DB.users.find(x=>x.username===uname && (!isEdit||x.id!==user.id));
-        need(!dup, hh.el.querySelector('#ufUser'),'این نام کاربری قبلاً ثبت شده است.');
-        if(pass){
-          need(pass.length>=4, hh.el.querySelector('#ufPass'),'رمز حداقل ۴ کاراکتر.');
-          if(pass2El) need(pass===pass2, hh.el.querySelector('#ufPass2'),'تکرار رمز مطابقت ندارد.');
-        }
+        need(!dup, $('#ufUser'),'این نام کاربری قبلاً ثبت شده است.');
         if(!okf) return;
-        // حالت سرور: سعی کن API بزنی
-        if(typeof SRV!=='undefined' && SRV.on && SRV.token && typeof srvFetch==='function'){
-          try{
-            const payload = { name, phone: uname, email: fieldVal('#ufMail') };
-            if(pass) payload.password = pass;
-            // اگر کاربر خودش است → /auth/me، وگرنه /users/:id
-            const isSelf = (typeof SRV.user!=='undefined' && SRV.user && user && (String(SRV.user.id)===String(user.id) || SRV.user.phone===user.username));
-            let res;
-            if(isSelf || !user || !user.id || String(user.id).startsWith('u')){
-              // برای دمو idها با u شروع می‌شود، پس me بزن
-              if(isSelf) res = await srvFetch('PATCH','/api/auth/me', payload);
-              else {
-                // ادمین در حال ویرایش کاربر دمو — فقط لوکال
-              }
-            }else{
-              // تلاش برای آپدیت کاربر سرور
-              try{ res = await srvFetch('PATCH','/api/users/'+user.id, payload); }catch(e){
-                // اگر users API نبود، me را امتحان کن
-                if(isSelf) res = await srvFetch('PATCH','/api/auth/me', payload);
-                else throw e;
-              }
-            }
-            if(res && res.user) toast('کاربر در سرور به‌روزرسانی شد.','ok');
-          }catch(e){
-            toast('خطا در سرور: '+e.message+' — تغییر لوکال اعمال می‌شود.','warn');
-          }
-        }
-        // همیشه لوکال را هم آپدیت کن
-        if(isEdit){
-          Object.assign(user, {name, username:uname, mobile:mob, email:fieldVal('#ufMail'), role:hh.el.querySelector('#ufRole').value, institutions:fieldVal('#ufInst')||DB.settings.institution.name});
-          if(pass) { user.password = pass; user.nationalId = user.nationalId || ''; user._customPass = true; }
-        }else{
-          DB.users.push({id:uid('u'), name, username:uname, mobile:mob, email:fieldVal('#ufMail'), role:hh.el.querySelector('#ufRole').value, institutions:fieldVal('#ufInst')||DB.settings.institution.name, status:'active', lastLogin:'', password: pass||'1234', _customPass: !!pass});
-        }
-        audit((isEdit?'ویرایش':'ایجاد')+' کاربر '+uname+(pass?' + تغییر رمز':''), 'user');
-        saveDb(); toast('کاربر ذخیره شد. نام کاربری: '+uname+(pass?' — رمز جدید فعال شد':'')+'.','ok'); hh.close(); route();
+        if(isEdit) Object.assign(user, {name, mobile:mob, email:fieldVal('#ufMail'), role:$('#ufRole').value, institutions:fieldVal('#ufInst')||DB.settings.institution.name});
+        else DB.users.push({id:uid('u'), name, username:uname, mobile:mob, email:fieldVal('#ufMail'), role:$('#ufRole').value, institutions:fieldVal('#ufInst')||DB.settings.institution.name, status:'active', lastLogin:''});
+        audit((isEdit?'ویرایش':'ایجاد')+' کاربر '+uname, 'user');
+        saveDb(); toast('کاربر ذخیره شد.','ok'); hh.close(); route();
       };
     }
   });
@@ -3345,20 +2860,13 @@ function renderSettings(){
   if(setTab === 'org'){
     body.innerHTML =
       sec('secOrg','bank','اطلاعات مؤسسه','نام، لوگو و مشخصات تماس') +
-      sec('secSrv','swap','اتصال به دیتابیس','وضعیت اتصال سرور و تنظیم آدرس API') +
       sec('secFld','users','فیلدهای اعضا','الگوی فیلدها در فرم عضو، جدول و ورود گروهی') +
       sec('secFa','wallet','صندوق‌ها و حساب‌ها','مدیریت صندوق‌ها، حساب‌های بانکی و موجودی آن‌ها') +
       sec('secFin','coins','عمومی مالی و شماره‌گذاری','واحد پول، قالب شماره عضویت و پیش‌فرض‌های وام') +
       sec('secNotif','info','اعلان‌ها','یادآور سررسید، تأیید پرداخت و گزارش هفتگی') +
       sec('secUi','image','ظاهر و مُهرها','رنگ مُهرهای ثبت و ترجیحات نمایش');
     renderOrgSec(body.querySelector('#secOrg .sec-b'));
-    if(typeof renderSrvConnSec === 'function') renderSrvConnSec(body.querySelector('#secSrv .sec-b'));
-    // اگر حالت سرور فعال است، فیلدها را از سرور بخوان — دقیقاً بر اساس انتخاب کاربر در onboarding
-    if(typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady() && typeof srvFieldsSec==='function'){
-      srvFieldsSec(body.querySelector('#secFld .sec-b'));
-    }else{
-      renderFieldsSec(body.querySelector('#secFld .sec-b'));
-    }
+    renderFieldsSec(body.querySelector('#secFld .sec-b'));
     renderFunds(fundsTab, '#secFa .sec-b');
     renderFinSec(body.querySelector('#secFin .sec-b'));
     renderNotifSec(body.querySelector('#secNotif .sec-b'));
@@ -3383,8 +2891,7 @@ function renderSettings(){
 }
 function renderOrgSec(box){
     const body = box; const s = DB.settings; const canEdit = can('settingsEdit'); const disAttr = canEdit ? '' : ' disabled style="opacity:.55;pointer-events:none"';
-    const botEmail = s.institution.email || (typeof SRV!=='undefined'&&SRV.user&&SRV.user.email?SRV.user.email:'') || (typeof SRV!=='undefined'&&SRV.instId?'مؤسسه سرور '+SRV.instId:'');
-    const botEmailReal = s.institution.email || (typeof SRV!=='undefined'&&SRV.user?SRV.user.email:'');
+    
     body.innerHTML = '<div class="fields">' +
       '<div class="field full"><label>نام و لوگوی مؤسسه</label><div class="field-row" style="gap:14px">' +
         '<span id="logoPrev" style="display:inline-flex;width:58px;height:58px;border-radius:16px;overflow:hidden;background:rgba(28,110,49,.1);align-items:center;justify-content:center;color:var(--green-deep);flex:none">' +
@@ -3393,9 +2900,7 @@ function renderOrgSec(box){
       '<div class="field"><label>نام مؤسسه <span class="req">*</span></label><input id="setOrgName" value="'+esc(s.institution.name)+'"'+disAttr+'></div>' +
       '<div class="field"><label>شماره تماس</label><input id="setOrgPhone" class="num-inp" value="'+esc(s.institution.phone)+'"'+disAttr+'></div>' +
       '<div class="field full"><label>آدرس</label><textarea id="setOrgAddr"'+disAttr+'>'+esc(s.institution.address)+'</textarea></div>' +
-      (botEmailReal ? '<div class="field full"><label>ایمیل ربات مؤسسه (hes.com)</label><input value="'+esc(botEmailReal)+'" disabled style="background:var(--card-2);direction:ltr;font-family:monospace"><span class="help">این ایمیل با فرمت نام‌لاتین+کدملی@hes.com برای اتصال ربات‌های آینده ساخته شده و در دیتابیس فعال است. نام کاربری ورود = شماره تماس، رمز = کدملی.</span></div>' : '') +
-      (canEdit ? '<div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn btn-solid btn-sm" id="setOrgSave">'+icon('check',14)+' ذخیره اطلاعات مؤسسه</button>' +
-        '<button class="btn btn-danger btn-sm" id="btnDeleteInst" title="حذف کامل مؤسسه و تمام داده‌ها">'+icon('trash',14)+' حذف کامل مؤسسه</button></div><div id="delInstStatus" style="margin-top:8px"></div>' : noPermNote()) +
+      (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setOrgSave">'+icon('check',14)+' ذخیره اطلاعات مؤسسه</button></div>' : noPermNote()) +
     '</div>';
     const lg = $('#setLogo'); if(lg) lg.onchange = ()=>{
       const f = lg.files[0]; if(!f) return;
@@ -3409,39 +2914,7 @@ function renderOrgSec(box){
       if(name.length < 3){ markErr($('#setOrgName'),'نام مؤسسه الزامی است.'); return; }
       Object.assign(s.institution, {name, phone:fieldVal('#setOrgPhone'), address:fieldVal('#setOrgAddr')});
       audit('به‌روزرسانی اطلاعات مؤسسه', 'settings'); saveDb();
-      const orgNameEl = document.getElementById('orgName'); if(orgNameEl) orgNameEl.textContent = name;
-      renderShell('settings'); toast('اطلاعات مؤسسه ذخیره شد.','ok');
-    };
-    const delBtn = document.getElementById('btnDeleteInst');
-    if(delBtn) delBtn.onclick = async ()=>{
-      const ok1 = await askConfirm({title:'حذف کامل مؤسسه', danger:true, ok:'بله، حذف شود', text:'مؤسسه <b>'+esc(s.institution.name)+'</b> و تمام داده‌های آن شامل <b>'+DB.members.length+'</b> عضو، وام‌ها، اقساط و پرداخت‌ها <b>برای همیشه</b> حذف می‌شود. این عمل در حالت سرور نیز از دیتابیس Postgres حذف می‌کند. ادامه می‌دهید؟'});
-      if(!ok1) return;
-      const ok2 = await askConfirm({title:'تأیید نهایی حذف', danger:true, ok:'حذف نهایی', text:'آیا مطمئن هستید؟ این عمل برگشت‌ناپذیر است.'});
-      if(!ok2) return;
-      const statusEl = document.getElementById('delInstStatus');
-      // اگر سرور فعال است، از API حذف کن
-      if(typeof SRV!=='undefined' && SRV.on && SRV.instId && SRV.token){
-        try{
-          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-info\"><div>در حال حذف از سرور...</div></div>';
-          await srvFetch('DELETE','/api/institutions/'+SRV.instId);
-          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-ok\"><div>مؤسسه از سرور حذف شد.</div></div>';
-          toast('مؤسسه از سرور حذف شد.','ok');
-          // خروج
-          SRV.on=false; SRV.instId=null; SRV.instName=''; try{localStorage.setItem(SRV_KEY, JSON.stringify(SRV));}catch(e){}
-          setTimeout(()=>{ location.hash='#/'; location.reload(); }, 800);
-          return;
-        }catch(e){
-          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-err\"><div>حذف از سرور ناموفق: '+esc(e.message)+'</div></div>';
-          toast('حذف از سرور ناموفق: '+e.message,'err');
-          return;
-        }
-      }
-      // حالت دمو: پاک‌سازی لوکال
-      DB.members=[]; DB.loans=[]; DB.installments=[]; DB.payments=[]; DB.txns=[]; DB.funds=[]; DB.accounts=[]; DB.audit=[]; DB.counters={member:0, loan:0};
-      DB.settings.institution = {name:'مؤسسه جدید', phone:'', address:'', logo:'', email:''};
-      saveDb();
-      toast('مؤسسه و تمام داده‌ها در حالت دمو پاک شد.','ok');
-      setTimeout(()=>{ location.hash='#/'; location.reload(); }, 600);
+      $('#orgName').textContent = name; renderShell('settings'); toast('اطلاعات مؤسسه ذخیره شد.','ok');
     };
   }
 function renderFieldsSec(box){
@@ -3542,7 +3015,7 @@ function renderFinSec(box){
       '<div class="field"><label>قالب شماره‌گذاری اعضا</label><input id="setNoTpl" class="num-inp" value="'+esc(s.memberNoTemplate)+'"'+disAttr+'>' +
         '<span class="help">متغیر <b>{seq}</b> یا <b>{seq:4}</b> = شماره ردیف. پیش‌نمایش: <b id="noPrev">'+esc(s.memberNoTemplate.replace(/\{seq(?::(\d+))?\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'</b></span></div>' +
       '<div class="field"><label>پیش‌فرض کارمزد سالانه وام <small>(٪)</small></label><input id="setLdRate" class="num-inp" value="'+esc(String((s.loanDefaults||{}).rate!==undefined?s.loanDefaults.rate:4))+'"'+disAttr+'><span class="help">فرم ثبت وام با این مقدار پر می‌شود.</span></div>' +
-      '<div class="field"><label>پیش‌فرض تعداد اقساط</label><input id="setLdMonths" type="number" min="1" max="120" value="'+esc(String((s.loanDefaults||{}).months||12))+'"'+disAttr+'><span class="help">متغیر - 1 تا 120 قسط</span></div>' +
+      '<div class="field"><label>پیش‌فرض تعداد اقساط</label><select id="setLdMonths"'+disAttr+'>'+(()=>{ const cur=(s.loanDefaults||{}).months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option value="'+x+'"'+(x===cur?' selected':'')+'>'+faDigits(x)+'</option>').join(''); })()+'</select><span class="help">تعداد اقساط پیشنهادی هنگام ثبت وام جدید.</span></div>' +
       '<div class="field"><label>پیش‌فرض دوره اقساط</label><select id="setLdInt"'+disAttr+'><option value="1"'+(((s.loanDefaults||{}).interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((s.loanDefaults||{}).interval==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((s.loanDefaults||{}).interval==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setFinSave">'+icon('check',14)+' ذخیره تنظیمات مالی</button></div>' : noPermNote()) +
     '</div>';
@@ -4453,6 +3926,45 @@ function logout(){
 }
 
 /* ═══════════ راه‌اندازی ═══════════ */
+const SRV_KEY = 'hesabat-srv-v1';
+/* وقتی پنل با http/https سرو شود (مثلاً پیش‌نمایش یا سرور واقعی)، آدرس سرور همان مبدأ است؛
+   وقتی به‌صورت فایل محلی (file:) باز شود، سرور محلی پیش‌فرض استفاده می‌شود. */
+const SRV_DEFAULT_BASE = (typeof location !== 'undefined' && /^https?:$/.test(location.protocol))
+  ? '' : 'http://localhost:4000';
+let SRV = { base:SRV_DEFAULT_BASE, token:'', user:null, instId:null, instName:'', on:false };
+try { const sv = JSON.parse(localStorage.getItem(SRV_KEY)); if(sv && typeof sv === 'object') SRV = Object.assign(SRV, sv); } catch(e){}
+function srvSave(){ try{ localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); }catch(e){} }
+function srvReady(){ return !!(SRV.token && SRV.instId); }
+
+let SRV_FIELDS = null; /* کش تعریف فیلدهای مؤسسهٔ متصل */
+
+/* ── کلاینت API ── */
+async function srvFetch(method, path, body){
+  const headers = {'Content-Type':'application/json'};
+  if(SRV.token) headers['Authorization'] = 'Bearer ' + SRV.token;
+  let r;
+  try {
+    const baseUrl = (typeof SRV.base === 'string' ? SRV.base : '').replace(/\/+$/,'');
+    r = await fetch(baseUrl + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  } catch(e){
+    const err = new Error('اتصال به سرور برقرار نشد. آدرس سرور و اجرای بودن آن را بررسی کنید.');
+    err.network = true; throw err;
+  }
+  let j = null; try { j = await r.json(); } catch(_){}
+  if(!r.ok){
+    const err = new Error((j && j.error) || ('خطای سرور (' + r.status + ')'));
+    err.status = r.status; err.details = j && j.details; throw err;
+  }
+  return j;
+}
+async function srvLoadFields(force){
+  if(!force && SRV_FIELDS) return SRV_FIELDS;
+  const r = await srvFetch('GET', '/api/institutions/' + SRV.instId + '/fields');
+  SRV_FIELDS = r.fields || [];
+  return SRV_FIELDS;
+}
+function srvDropFieldsCache(){ SRV_FIELDS = null; }
+
 (function boot(){
   DB = loadDb();
   // کمکی: توکن سرور را هم از global هم از localStorage بخوان
@@ -4529,12 +4041,340 @@ function logout(){
 
 
 /* ═══════════════════════════════════════════════════════════════
-   حساب‌ها — اسکریپت ۹: افتتاح حساب جدید + لاگین با شماره تماس/کدملی + تنظیمات جدید
-   - بازطراحی کامل افتتاح حساب
-   - لاگین با شماره تماس (پیش‌فرض) و کدملی (پیش‌فرض رمز)
-   - حذف اتصال PostgreSQL از تنظیمات
-   - شماره عضویت خودکار: نام انگلیسی + نام خانوادگی انگلیسی + کدملی
+   لایهٔ اتصال به سرور (فاز ۱ معماری): حالت دوگانهٔ دمو + سرور
+   - دمودیتا دست‌نخورده باقی می‌ماند
+   - با روشن‌شدن «حالت سرور»، فیلدها و اعضا از Backend/PostgreSQL می‌آیند
    ═══════════════════════════════════════════════════════════════ */
+
+
+
+/* ── نگاشت نوع فیلد سرور به کنترل ورودی ── */
+const SRV_TYPE_LABEL = { text:'متن', number:'عدد', date:'تاریخ', bool:'بله/خیر', select:'انتخابی', mobile:'شماره تماس', nid:'کد ملی' };
+function srvFieldInput(f, val){
+  const id = 'sf_' + f.key;
+  const v = val === undefined || val === null ? '' : val;
+  const req = f.is_required ? ' <span style="color:var(--red)">*</span>' : '';
+  const lbl = '<label for="' + id + '">' + esc(f.label) + req + '</label>';
+  if(f.type === 'bool'){
+    return '<div class="field"><label>' + esc(f.label) + req + '</label><div class="field-row">' +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="' + id + '" ' + (v === 'true' ? 'checked' : '') + '> فعال</label>' +
+      '</div></div>';
+  }
+  if(f.type === 'select'){
+    const opts = (Array.isArray(f.options) ? f.options : []).map(o => '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>').join('');
+    return '<div class="field">' + lbl + '<select id="' + id + '"><option value="">—</option>' + opts + '</select></div>';
+  }
+  const ph = f.type === 'date' ? '۱۴۰۳/۰۵/۰۲' : f.type === 'mobile' ? '۰۹۱۲…' : f.type === 'nid' ? '۱۰ رقم' : f.type === 'number' ? 'عدد' : '';
+  return '<div class="field">' + lbl + '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + ph + '"></div>';
+}
+
+/* ── بخش اتصال در تنظیمات (تب سازمان) ── */
+function injectSrvSec(){
+  const body = $('#setBody'); if(!body || $('#secSrv')) return;
+  const div = document.createElement('div');
+  div.className = 'card tight set-sec';
+  div.id = 'secSrv';
+  div.style.marginBottom = '16px';
+  div.innerHTML = '<div class="card-h"><h3>' + icon('gear',16) + ' اتصال به سرور (Backend + PostgreSQL)</h3><span class="hint-t">حالت دوگانه: دمو یا دادهٔ واقعی از طریق API</span></div><div class="card-b sec-b" id="srvBox"></div>';
+  body.insertBefore(div, body.firstChild);
+  renderSrvSec();
+}
+function renderSrvSec(){
+  const box = $('#srvBox'); if(!box) return;
+  const conn = srvReady();
+  box.innerHTML =
+    '<div class="setting-row"><div class="sr-t"><b>وضعیت اتصال</b><p>' +
+      (conn ? 'متصل به <b>' + esc(SRV.base) + '</b> — مؤسسهٔ <b>' + esc(SRV.instName || ('#' + SRV.instId)) + '</b> (' + esc((SRV.user && SRV.user.name) || '') + ')</p>'
+            : 'هنوز به سروری متصل نشده‌اید. ابتدا وارد شوید یا حساب بسازید.</p>') +
+      '</div>' + (conn ? '<button class="btn btn-soft btn-sm" id="srvLogout">' + icon('x',14) + ' قطع اتصال</button>' : '') + '</div>' +
+    (conn ? '' :
+      '<div class="fields" style="max-width:640px">' +
+        '<div class="field full"><label>آدرس سرور (API)</label><input type="text" id="srvBase" value="' + esc(SRV.base) + '" placeholder="http://localhost:4000"></div>' +
+        '<div class="field"><label>ایمیل</label><input type="text" id="srvEmail" placeholder="admin@example.com"></div>' +
+        '<div class="field"><label>رمز عبور</label><input type="password" id="srvPass" placeholder="حداقل ۶ حرف"></div>' +
+      '</div>' +
+      '<div class="field-row" style="gap:8px;margin-top:10px">' +
+        '<button class="btn btn-soft btn-sm" id="srvLogin">' + icon('check',14) + ' ورود</button>' +
+        '<button class="btn btn-soft btn-sm" id="srvReg">' + icon('plus',14) + ' ساخت حساب</button>' +
+        '<button class="btn btn-soft btn-sm" id="srvPing">' + icon('info',14) + ' آزمایش سلامت سرور</button>' +
+      '</div>' +
+      '<div id="srvInstBox" style="display:none;margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">' +
+        '<div class="fields" style="max-width:640px">' +
+          '<div class="field full"><label>مؤسسهٔ خود را انتخاب کنید</label><select id="srvInstSel"></select></div>' +
+          '<div class="field"><label>یا مؤسسهٔ جدید — نام</label><input type="text" id="srvNewName" placeholder="قرض‌الحسنه …"></div>' +
+          '<div class="field"><label>اسلاگ (اختیاری)</label><input type="text" id="srvNewSlug" placeholder="my-inst"></div>' +
+        '</div>' +
+        '<div class="field-row" style="gap:8px;margin-top:10px">' +
+          '<button class="btn btn-soft btn-sm" id="srvInstCreate">' + icon('plus',14) + ' ساخت مؤسسه</button>' +
+          '<button class="btn btn-primary btn-sm" id="srvInstGo">' + icon('check',14) + ' اتصال به مؤسسهٔ انتخابی</button>' +
+        '</div>' +
+      '</div>') +
+    (conn ?
+      '<div class="setting-row"><div class="sr-t"><b>حالت سرور</b><p>با فعال‌شدن، فیلدها و اعضا از سرور (PostgreSQL) خوانده و نوشته می‌شوند. دمودیتا دست نمی‌خورد.</p></div>' +
+        '<button class="btn btn-sm ' + (SRV.on ? 'btn-primary' : 'btn-soft') + '" id="srvToggle">' + icon('check',14) + (SRV.on ? ' فعال است — برای غیرفعال‌کردن بزنید' : ' فعال‌سازی حالت سرور') + '</button></div>'
+      : '');
+  const $id = x => document.getElementById(x);
+  const ping = $id('srvPing');
+  if(ping) ping.onclick = async ()=>{
+    SRV.base = ($id('srvBase').value || '').trim() || SRV.base; srvSave();
+    try { const j = await fetch(SRV.base.replace(/\/+$/,'') + '/api/health').then(r => r.json());
+      toast(j.ok ? 'سرور پاسخ می‌دهد ✔' : 'پاسخ سرور معتبر نبود.', j.ok ? 'ok' : 'err');
+    } catch(e){ toast('سرور در دسترس نیست: ' + SRV.base, 'err'); }
+  };
+  const doAuth = async (path)=>{
+    SRV.base = ($id('srvBase').value || '').trim() || SRV.base;
+    const email = ($id('srvEmail').value || '').trim();
+    const pass = ($id('srvPass').value || '');
+    if(!email || !pass){ toast('ایمیل و رمز را وارد کنید.', 'err'); return; }
+    try {
+      const j = await srvFetch('POST', path, { email, password: pass, name: email.split('@')[0] });
+      SRV.token = j.token; SRV.user = j.user; srvSave();
+      toast('ورود موفق. حالا مؤسسه را انتخاب کنید.', 'ok');
+      renderSrvSec(); await srvFillInstSel();
+    } catch(e){ toast(e.message, 'err'); }
+  };
+  const bl = $id('srvLogin'); if(bl) bl.onclick = ()=> doAuth('/api/auth/login');
+  const br = $id('srvReg');  if(br) br.onclick = ()=> doAuth('/api/auth/register');
+  const bi = $id('srvInstCreate');
+  if(bi) bi.onclick = async ()=>{
+    const name = ($id('srvNewName').value || '').trim();
+    if(!name){ toast('نام مؤسسه را وارد کنید.', 'err'); return; }
+    const slug = ($id('srvNewSlug').value || '').trim();
+    try {
+      const j = await srvFetch('POST', '/api/institutions', { name, slug: slug || undefined });
+      toast('مؤسسهٔ «' + j.name + '» ساخته شد.', 'ok');
+      await srvFillInstSel(String(j.id));
+    } catch(e){ toast(e.message, 'err'); }
+  };
+  const bg = $id('srvInstGo');
+  if(bg) bg.onclick = ()=>{
+    const sel = $id('srvInstSel');
+    if(!sel || !sel.value){ toast('اول یک مؤسسه انتخاب یا ایجاد کنید.', 'err'); return; }
+    SRV.instId = +sel.value; SRV.instName = sel.options[sel.selectedIndex].text; srvSave();
+    srvDropFieldsCache();
+    toast('به مؤسسهٔ «' + SRV.instName + '» متصل شدید.', 'ok');
+    renderSrvSec();
+  };
+  const bo = $id('srvLogout');
+  if(bo) bo.onclick = async ()=>{
+    const okc = await askConfirm({ title:'قطع اتصال از سرور', ok:'قطع شود', danger:true,
+      text:'اتصال و توکن حذف می‌شود' + (SRV.on ? ' و حالت سرور غیرفعال می‌شود' : '') + '. دمودیتا تغییری نمی‌کند.' });
+    if(!okc) return;
+    SRV.token = ''; SRV.user = null; SRV.instId = null; SRV.instName = ''; SRV.on = false; srvSave(); srvDropFieldsCache();
+    toast('اتصال قطع شد.', 'ok'); renderSrvSec();
+  };
+  const bt = $id('srvToggle');
+  if(bt) bt.onclick = async ()=>{
+    if(!SRV.on){
+      try { await srvLoadFields(true); }
+      catch(e){ toast('خطا در اتصال: ' + e.message, 'err'); return; }
+      SRV.on = true; srvSave();
+      toast('حالت سرور فعال شد — اعضا و فیلدها از این پس از سرور می‌آیند.', 'ok');
+    } else {
+      SRV.on = false; srvSave();
+      toast('حالت سرور غیرفعال شد — روی دمودیتا برگشتید.', 'ok');
+    }
+    renderSrvSec();
+    if(SRV.on && srvReady() && document.getElementById('secFld')){
+      const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb);
+    }
+  };
+}
+async function srvFillInstSel(selectId){
+  const box = document.getElementById('srvInstBox');
+  const sel = document.getElementById('srvInstSel');
+  if(!box || !sel) return;
+  box.style.display = '';
+  try {
+    const me = await srvFetch('GET', '/api/auth/me');
+    sel.innerHTML = (me.institutions || []).map(i => '<option value="' + i.id + '"' + (String(i.id) === selectId ? ' selected' : '') + '>' + esc(i.name) + ' (' + esc(i.slug) + ')</option>').join('')
+      || '<option value="">— هنوز مؤسسه‌ای ندارید؛ بسازید —</option>';
+  } catch(e){ toast(e.message, 'err'); }
+}
+
+/* ── مدیریت فیلدها از سرور (جایگزین بخش فیلدهای دمو وقتی حالت سرور روشن است) ── */
+async function srvFieldsSec(box){
+  box.innerHTML = '<p class="hint-t">در حال دریافت فیلدها از سرور…</p>';
+  let fields;
+  try { fields = await srvLoadFields(true); }
+  catch(e){ box.innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p>'; return; }
+  const rows = fields.map(f =>
+    '<div class="setting-row"><div class="sr-t"><b>' + esc(f.label) + '</b><p>' +
+      '<code style="font-size:11px">' + esc(f.key) + '</code> · ' + (SRV_TYPE_LABEL[f.type] || f.type) +
+      (f.is_required ? ' · <span style="color:var(--red)">الزامی</span>' : '') +
+      (f.type === 'select' && Array.isArray(f.options) && f.options.length ? ' · گزینه‌ها: ' + esc(f.options.join('، ')) : '') +
+    '</p></div><div class="field-row" style="gap:6px">' +
+      '<button class="btn btn-soft btn-xs" data-sfe="' + f.id + '">' + icon('pen',13) + ' ویرایش</button>' +
+      '<button class="btn btn-soft btn-xs" data-sfd="' + f.id + '" data-sfl="' + esc(f.label) + '">' + icon('trash',13) + ' آرشیو</button>' +
+    '</div></div>').join('');
+  box.innerHTML = (rows || '<p class="hint-t">هنوز فیلدی تعریف نشده — اولین فیلد را بسازید.</p>') +
+    '<div class="field-row" style="gap:8px;margin-top:10px"><button class="btn btn-primary btn-sm" id="srvFieldAdd">' + icon('plus',14) + ' فیلد جدید</button></div>';
+  box.querySelectorAll('[data-sfe]').forEach(b => b.onclick = ()=>{
+    const f = fields.find(x => String(x.id) === b.dataset.sfe); if(f) srvFieldForm(f);
+  });
+  box.querySelectorAll('[data-sfd]').forEach(b => b.onclick = async ()=>{
+    const okc = await askConfirm({ title:'آرشیو فیلد', danger:true, ok:'آرشیو شود',
+      text:'فیلد «' + b.dataset.sfl + '» آرشیو می‌شود؛ مقادیر قبلی اعضا حذف نمی‌شوند ولی فیلد از فرم‌ها حذف می‌شود.' });
+    if(!okc) return;
+    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/fields/' + b.dataset.sfd); srvDropFieldsCache(); toast('فیلد آرشیو شد.', 'ok'); srvFieldsSec(box); }
+    catch(e){ toast(e.message, 'err'); }
+  });
+  const add = $('#srvFieldAdd'); if(add) add.onclick = ()=> srvFieldForm(null);
+}
+function srvFieldForm(f){
+  const types = Object.keys(SRV_TYPE_LABEL).map(t => '<option value="' + t + '"' + (f && f.type === t ? ' selected' : '') + '>' + SRV_TYPE_LABEL[t] + '</option>').join('');
+  openModal({
+    title: f ? 'ویرایش فیلد «' + esc(f.label) + '»' : 'فیلد جدید',
+    body:
+      '<div class="fields">' +
+        '<div class="field"><label>عنوان فیلد</label><input id="sffLabel" value="' + esc(f ? f.label : '') + '" placeholder="مثلاً شماره حساب"></div>' +
+        '<div class="field"><label>کلید (انگلیسی؛ خالی = خودکار)</label><input id="sffKey" value="' + esc(f ? f.key : '') + '" placeholder="account_no" ' + (f ? 'disabled' : '') + '></div>' +
+        '<div class="field"><label>نوع</label><select id="sffType"' + (f ? ' disabled' : '') + '>' + types + '</select></div>' +
+        '<div class="field"><label>الزامی؟</label><select id="sffReq"><option value="0"' + (f && !f.is_required ? ' selected' : '') + '>خیر</option><option value="1"' + (f && f.is_required ? ' selected' : '') + '>بله</option></select></div>' +
+        '<div class="field full"><label>گزینه‌ها (فقط برای نوع انتخابی؛ هر خط یکی)</label><textarea id="sffOpts" rows="3" placeholder="تهران&#10;مشهد">' + esc(f && Array.isArray(f.options) ? f.options.join('\n') : '') + '</textarea></div>' +
+      '</div>' +
+      '<div class="field-row" style="gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button class="btn btn-soft btn-sm" onclick="closeModal()">انصراف</button>' +
+        '<button class="btn btn-primary btn-sm" id="sffSave">' + icon('check',14) + (f ? ' ذخیره تغییرات' : ' ایجاد فیلد') + '</button>' +
+      '</div>',
+    width: 560
+  });
+  $('#sffSave').onclick = async ()=>{
+    const label = ($('#sffLabel').value || '').trim();
+    if(!label){ toast('عنوان فیلد الزامی است.', 'err'); return; }
+    const payload = {
+      label,
+      is_required: $('#sffReq').value === '1',
+      options: ($('#sffOpts').value || '').split('\n').map(x => x.trim()).filter(Boolean)
+    };
+    if(!f){
+      payload.key = ($('#sffKey').value || '').trim();
+      payload.type = $('#sffType').value;
+      if(payload.type !== 'select') payload.options = [];
+      try { await srvFetch('POST', '/api/institutions/' + SRV.instId + '/fields', payload); }
+      catch(e){ toast(e.message, 'err'); return; }
+      toast('فیلد ساخته شد.', 'ok');
+    } else {
+      if(payload.options.length === 0) delete payload.options;
+      try { await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/fields/' + f.id, payload); }
+      catch(e){ toast(e.message, 'err'); return; }
+      toast('فیلد به‌روزرسانی شد.', 'ok');
+    }
+    srvDropFieldsCache(); closeModal();
+    const box = $('#secFld .sec-b'); if(box) srvFieldsSec(box);
+  };
+}
+
+/* ── صفحهٔ اعضا از سرور ── */
+let srvQ = '', srvPage = 1;
+async function renderSrvMembersPage(){
+  const main = $('#main');
+  main.innerHTML =
+    '<div class="page-head"><div><h1>اعضا و اقساط</h1><div class="ph-sub">حالت سرور — داده از <b>' + esc(SRV.instName || ('مؤسسهٔ #' + SRV.instId)) + '</b> (PostgreSQL)</div></div>' +
+      '<div class="ph-actions"><button class="btn btn-primary" id="srvAddMember">' + icon('plus',16) + ' عضو جدید</button></div></div>' +
+    '<div class="card tight"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+      '<input id="srvSearch" placeholder="جستجو در اعضا…" value="' + esc(srvQ) + '" style="max-width:280px">' +
+      '<span class="hint-t" id="srvMeta"></span>' +
+    '</div><div class="card-b" id="srvMemBox"><p class="hint-t">در حال دریافت…</p></div></div>';
+  $('#srvAddMember').onclick = ()=> srvMemberForm(null);
+  $('#srvSearch').oninput = ()=>{ srvQ = $('#srvSearch').value.trim(); srvPage = 1; srvLoadMembers(); };
+  await srvLoadMembers();
+}
+async function srvLoadMembers(){
+  const box = $('#srvMemBox'); if(!box) return;
+  let fields, data;
+  try {
+    fields = await srvLoadFields();
+    const qs = '/api/institutions/' + SRV.instId + '/members?page=' + srvPage + '&pageSize=30' + (srvQ ? '&q=' + encodeURIComponent(srvQ) : '');
+    data = await srvFetch('GET', qs);
+  } catch(e){
+    box.innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p><button class="btn btn-soft btn-sm" onclick="srvLoadMembers()">تلاش دوباره</button>';
+    return;
+  }
+  const meta = $('#srvMeta'); if(meta) meta.textContent = faDigits(data.total) + ' عضو · صفحهٔ ' + faDigits(data.page);
+  const show = fields.slice(0, 5);
+  if(!data.rows.length){
+    box.innerHTML = '<p class="hint-t" style="padding:18px 4px">عضویی پیدا نشد.</p>';
+    return;
+  }
+  const head = show.map(f => '<th>' + esc(f.label) + '</th>').join('') + '<th>وضعیت</th><th></th>';
+  const rows = data.rows.map(m => {
+    const tds = show.map(f => '<td>' + esc(m.values[f.key] || '—') + '</td>').join('');
+    return '<tr>' + tds + '<td>' + (m.status === 'active' ? 'فعال' : 'غیرفعال') + '</td>' +
+      '<td><div class="field-row" style="gap:6px;justify-content:flex-end">' +
+        '<button class="btn btn-soft btn-xs" data-sme="' + m.id + '">' + icon('pen',13) + ' ویرایش</button>' +
+        '<button class="btn btn-soft btn-xs" data-smd="' + m.id + '">' + icon('trash',13) + ' حذف</button>' +
+      '</div></td></tr>';
+  }).join('');
+  const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
+  box.innerHTML =
+    '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    (pages > 1 ? '<div class="field-row" style="gap:8px;justify-content:center;padding:12px 0">' +
+      '<button class="btn btn-soft btn-xs" id="srvPrev"' + (srvPage <= 1 ? ' disabled' : '') + '>قبلی</button>' +
+      '<span class="hint-t">صفحهٔ ' + faDigits(srvPage) + ' از ' + faDigits(pages) + '</span>' +
+      '<button class="btn btn-soft btn-xs" id="srvNext"' + (srvPage >= pages ? ' disabled' : '') + '>بعدی</button></div>' : '');
+  const byId = id => data.rows.find(m => String(m.id) === String(id));
+  box.querySelectorAll('[data-sme]').forEach(b => b.onclick = ()=> srvMemberForm(byId(b.dataset.sme)));
+  box.querySelectorAll('[data-smd]').forEach(b => b.onclick = async ()=>{
+    const m = byId(b.dataset.smd);
+    const nm = m ? Object.values(m.values).filter(Boolean)[0] || ('#' + m.id) : '#' + b.dataset.smd;
+    const okc = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود',
+      text:'عضو «' + esc(nm) + '» حذف نرم می‌شود (در دیتابیس می‌ماند ولی در لیست نمایش داده نمی‌شود).' });
+    if(!okc) return;
+    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/members/' + b.dataset.smd); toast('عضو حذف شد.', 'ok'); srvLoadMembers(); }
+    catch(e){ toast(e.message, 'err'); }
+  });
+  const pv = $('#srvPrev'); if(pv) pv.onclick = ()=>{ srvPage--; srvLoadMembers(); };
+  const nx = $('#srvNext'); if(nx) nx.onclick = ()=>{ srvPage++; srvLoadMembers(); };
+}
+function srvMemberForm(m){
+  srvLoadFields().then(fields => {
+    const inputs = fields.map(f => srvFieldInput(f, m ? m.values[f.key] : '')).join('');
+    openModal({
+      title: m ? 'ویرایش عضو #' + faDigits(m.id) : 'عضو جدید (از سرور)',
+      body:
+        '<div class="fields">' + inputs + '</div>' +
+        '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px"></div>' +
+        '<div class="field-row" style="gap:8px;justify-content:flex-end;margin-top:12px">' +
+          '<button class="btn btn-soft btn-sm" onclick="closeModal()">انصراف</button>' +
+          '<button class="btn btn-primary btn-sm" id="srvMemSave">' + icon('check',14) + (m ? ' ذخیره تغییرات' : ' ثبت عضو') + '</button>' +
+        '</div>',
+      width: 640
+    });
+    $('#srvMemSave').onclick = async ()=>{
+      const values = {};
+      for(const f of fields){
+        const el = document.getElementById('sf_' + f.key);
+        values[f.key] = f.type === 'bool' ? (el.checked ? 'true' : 'false') : (el.value || '');
+      }
+      const errBox = $('#srvFormErr');
+      try {
+        if(m) await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/members/' + m.id, { values });
+        else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
+        toast(m ? 'عضو به‌روزرسانی شد.' : 'عضو ثبت شد.', 'ok');
+        closeModal(); srvLoadMembers();
+      } catch(e){
+        errBox.style.display = '';
+        errBox.innerHTML = esc(e.message) + (Array.isArray(e.details) ? '<br>' + e.details.map(esc).join('<br>') : '');
+      }
+    };
+  }).catch(e => toast(e.message, 'err'));
+}
+
+/* ── قلاب‌های مسیریابی: حالت سرور فقط اعضا و فیلدها را عوض می‌کند؛ بقیه دمو می‌ماند ── */
+(function hookSrvMode(){
+  const _pgMembers = PAGES.members;
+  PAGES.members = function(arg){ if(SRV.on && srvReady()) return renderSrvMembersPage(); return _pgMembers(arg); };
+  const _renderSettings = renderSettings;
+  renderSettings = function(){
+    _renderSettings();
+    if(setTab === 'org'){
+      injectSrvSec();
+      if(SRV.on && srvReady()){ const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb); }
+    }
+  };
+  PAGES.settings = function(){ renderSettings(); };
+})();
 
 const ONBOARD_KEY = 'hesabat-onboard-v1';
 
@@ -5085,251 +4925,7 @@ async function submitOnboarding(){
 }
 
 // ── تنظیمات جدید ──
-function patchSettings(){
-  // اتصال به دیتابیس: دیگر حذف نمی‌کنیم - per درخواست کاربر باید بماند تا دیباگ شود
-  const origRenderSettings = window.renderSettings;
-  if (origRenderSettings && !origRenderSettings._patched) {
-    window.renderSettings = function(){
-      origRenderSettings();
-      // secSrv را نگه می‌داریم - renderSrvConnSec در app7.js آن را پر می‌کند
-      // const srvSec = document.getElementById('secSrv');
-      // if (srvSec) srvSec.remove();
-      
-      // اطلاعات مؤسسه را با داده‌های کاربر پر کن
-      const orgBox = document.querySelector('#secOrg .sec-b');
-      if (orgBox && DB && DB.settings) {
-        const inst = DB.settings.institution;
-        const nameInput = orgBox.querySelector('#setOrgName');
-        if (nameInput && !nameInput.value) nameInput.value = inst.name||'';
-        // آیکون مؤسسه - درست کردن ظاهر
-        const fileInput = orgBox.querySelector('#setLogo');
-        if (fileInput) {
-          fileInput.style.display = 'none';
-          const prev = orgBox.querySelector('#logoPrev');
-          if (prev && !prev.dataset.fixed) {
-            prev.dataset.fixed = '1';
-            prev.style.cursor = 'pointer';
-            prev.title = 'کلیک برای انتخاب آیکون';
-            prev.onclick = ()=> fileInput.click();
-            // دکمه انتخاب آیکون زیبا
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-soft btn-sm';
-            btn.style.marginTop = '8px';
-            btn.innerHTML = icon('image',14)+' انتخاب آیکون مؤسسه';
-            btn.onclick = ()=> fileInput.click();
-            prev.parentNode.appendChild(btn);
-          }
-        }
-      }
 
-      // حذف قالب شماره‌گذاری اعضا
-      const finBox = document.querySelector('#secFin .sec-b');
-      if (finBox) {
-        const tplField = finBox.querySelector('#setNoTpl');
-        if (tplField) {
-          const field = tplField.closest('.field');
-          if (field) field.remove();
-        }
-      }
-
-      // داده‌ها و ممیزی: دکمه شروع از صفر برگردانده شد per درخواست کاربر
-      // دیگر حذف نمی‌کنیم — هر دو دکمه بازنشانی و شروع از صفر بماند
-
-      // فیلدها را بر اساس تنظیمات اولیه پر کن
-      const fldBox = document.querySelector('#secFld .sec-b');
-      if (fldBox && SRV && SRV.on) {
-        // در حالت سرور، فیلدها از سرور می‌آیند - دست نزن
-      }
-    };
-    window.renderSettings._patched = true;
-  }
-}
-
-// ── شماره عضویت خودکار ──
-function patchMemberForm(){
-  const origMemberForm = window.memberForm;
-  if (origMemberForm && !origMemberForm._patched) {
-    window.memberForm = function(member){
-      // اگر حالت سرور فعال است، به سرور برود (هم بنویسد هم بخواند)
-      try{
-        if(typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady() && typeof srvMemberForm==='function'){
-          return srvMemberForm(member||null);
-        }
-      }catch(e){ console.warn('patchMemberForm srv check failed', e); }
-      const isEdit = !!member;
-      // اگر ویرایش است، همان قدیمی
-      if (isEdit) return origMemberForm(member);
-      
-      // برای افزودن جدید، شماره عضویت خودکار
-      const m = openModal({
-        title: 'افزودن عضو جدید',
-        sub: 'شماره عضویت به‌صورت خودکار ساخته می‌شود',
-        size:'lg',
-        body: '<div class="fields">' +
-          '<div class="field"><label>نام <span class="req">*</span></label><input id="mfName" placeholder="نام"><span class="err-msg"></span></div>' +
-          '<div class="field"><label>نام خانوادگی <span class="req">*</span></label><input id="mfFamily" placeholder="نام خانوادگی"><span class="err-msg"></span></div>' +
-          '<div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="mfMobile" placeholder="09121234567" maxlength="11"><span class="err-msg"></span></div>' +
-          '<div class="field"><label>کد ملی <span class="req">*</span></label><input id="mfNid" placeholder="10 رقم" maxlength="10"><span class="err-msg"></span></div>' +
-          '<div class="field"><label>نام پدر</label><input id="mfFather" placeholder="نام پدر"></div>' +
-          '<div class="field"><label>تاریخ تولد <span class="req">*</span></label><input id="mfBirth" placeholder="1370/05/02"><span class="err-msg"></span></div>' +
-          '<div class="field"><label>شماره عضویت (خودکار)</label><input id="mfNo" disabled style="background:var(--card-2);font-family:monospace;direction:ltr"><span class="help">از نام انگلیسی + کدملی ساخته می‌شود</span></div>' +
-        '</div>',
-        foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="mfSave">'+icon('check',14)+' ذخیره عضو</button>',
-        onOpen(h){
-          attachJDate(h.el.querySelector('#mfBirth'));
-          const gen = ()=>{
-            const fn = h.el.querySelector('#mfName').value;
-            const ln = h.el.querySelector('#mfFamily').value;
-            const nid = h.el.querySelector('#mfNid').value;
-            h.el.querySelector('#mfNo').value = genMemberNo(fn, ln, nid);
-          };
-          h.el.querySelector('#mfName').addEventListener('input', gen);
-          h.el.querySelector('#mfFamily').addEventListener('input', gen);
-          h.el.querySelector('#mfNid').addEventListener('input', gen);
-          gen();
-
-          h.el.querySelector('[data-x]').onclick = ()=>h.close();
-          h.el.querySelector('#mfSave').onclick = ()=>{
-            const name = h.el.querySelector('#mfName').value.trim();
-            const family = h.el.querySelector('#mfFamily').value.trim();
-            const mobile = h.el.querySelector('#mfMobile').value.trim();
-            const nid = h.el.querySelector('#mfNid').value.trim();
-            const father = h.el.querySelector('#mfFather').value.trim();
-            const birth = h.el.querySelector('#mfBirth');
-            const memberNo = h.el.querySelector('#mfNo').value;
-
-            let ok = true;
-            const check = (sel, cond, msg)=>{
-              const el = h.el.querySelector(sel);
-              if (cond) clearErr(el); else { markErr(el, msg); ok=false; }
-            };
-            check('#mfName', name.length>=2, 'نام الزامی است');
-            check('#mfFamily', family.length>=2, 'نام خانوادگی الزامی است');
-            check('#mfMobile', /^09\d{9}$/.test(faToEn(mobile)), 'موبایل معتبر نیست');
-            check('#mfNid', /^\d{10}$/.test(faToEn(nid)), 'کدملی 10 رقم');
-            if (!ok) { toast('برخی فیلدها ناقص است','err'); return; }
-
-            const fullName = name + ' ' + family;
-            const jb = birth ? J.parse(birth.value) : null;
-            const nm = {
-              id: uid('m'),
-              name: fullName,
-              father: father,
-              mobile: faToEn(mobile).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]),
-              nationalId: faToEn(nid).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]),
-              birthDate: jb ? jb.jy+'/'+String(jb.jm).padStart(2,'0')+'/'+String(jb.jd).padStart(2,'0') : '',
-              memberNo: memberNo,
-              status:'active',
-              joinedAt: J.todayIso(),
-              createdAt: J.nowIso(),
-              x:{}
-            };
-            DB.members.push(nm);
-            audit('افزودن عضو جدید '+fullName+' ('+memberNo+')', 'member:'+nm.id);
-            saveDb();
-            toast('عضو «'+fullName+'» با شماره '+memberNo+' ثبت شد.','ok');
-            h.close();
-            route();
-          };
-        }
-      });
-    };
-    window.memberForm._patched = true;
-  }
-}
-
-// ── پنل کاربر ──
-function patchUserPanel(){
-  // اگر کاربر عادی است، پرونده شخصی را مثل مدیر نشان بده ولی با درخواست اتصال به مؤسسه
-  const origMemberProfile = window.memberProfile;
-  if (origMemberProfile && !origMemberProfile._userPatched) {
-    // برای نقش کاربر، داشبورد متفاوت
-    const origDashboard = window.pageDashboard;
-    if (origDashboard) {
-      window.pageDashboard = function(){
-        if (SESSION && SESSION.roleType==='user') {
-          // پنل کاربر ساده
-          const main = document.getElementById('main');
-          const user = DB.users.find(u=>u.username===SESSION.username) || {name:SESSION.name};
-          main.innerHTML = `
-            <div class="page-head"><div><h1>پنل کاربری</h1><div class="ph-sub">خوش آمدید ${esc(user.name||'')} - نقش: کاربر</div></div></div>
-            <div class="grid g-2">
-              <div class="card"><div class="card-h"><h3>اطلاعات شخصی</h3></div><div class="card-b">
-                <div class="kv-grid">
-                  <div class="kv"><span>نام</span><b>${esc(user.name||'—')}</b></div>
-                  <div class="kv"><span>موبایل</span><b class="c-num">${esc(user.mobile||'—')}</b></div>
-                  <div class="kv"><span>کد ملی</span><b class="c-num">${esc(user.nationalId||'—')}</b></div>
-                  <div class="kv"><span>مؤسسه</span><b>${esc(user.institutions||'هنوز عضو مؤسسه‌ای نیستید')}</b></div>
-                </div>
-              </div></div>
-              <div class="card"><div class="card-h"><h3>درخواست اتصال به مؤسسه جدید</h3></div><div class="card-b">
-                <div class="fields">
-                  <div class="field full"><label>نام مؤسسه</label><input id="reqInstName" placeholder="نام مؤسسه مورد نظر"><span class="help">نام مؤسسه‌ای که می‌خواهید به آن بپیوندید را وارد کنید و منتظر تأیید مدیر بمانید.</span></div>
-                </div>
-                <button class="btn btn-solid btn-sm" id="btnReqJoin" style="margin-top:12px">${icon('send',14)} ارسال درخواست</button>
-                <div id="joinStatus" style="margin-top:12px"></div>
-              </div></div>
-            </div>
-          `;
-          const btn = document.getElementById('btnReqJoin');
-          if (btn) btn.onclick = async ()=>{
-            const name = document.getElementById('reqInstName').value.trim();
-            if (!name) { toast('نام مؤسسه را وارد کنید','err'); return; }
-            try {
-              if (typeof SRV !== 'undefined' && SRV.token) {
-                const r = await srvFetch('POST','/api/auth/request-join',{institutionName:name});
-                document.getElementById('joinStatus').innerHTML = `<div class="alert a-ok"><span class="al-ic">${icon('check',16)}</span><div>درخواست شما برای مؤسسه «${esc(name)}» ارسال شد و در انتظار تأیید مدیر است.</div></div>`;
-                toast('درخواست ارسال شد','ok');
-              } else {
-                document.getElementById('joinStatus').innerHTML = `<div class="alert a-ok"><div>درخواست برای «${esc(name)}» ثبت شد (دمو).</div></div>`;
-              }
-            } catch(e){
-              document.getElementById('joinStatus').innerHTML = `<div class="alert a-err"><div>${esc(e.message)}</div></div>`;
-            }
-          };
-          return;
-        }
-        return origDashboard();
-      };
-    }
-    window.memberProfile._userPatched = true;
-  }
-}
-
-// ── فونت پاپ‌آپ وضعیت کاربر ──
-function fixPopupFont(){
-  const style = document.createElement('style');
-  style.textContent = `
-    .drop-panel, .notif-item, .dp-item, .profile-chip, .pc-t, .pc-t b, .pc-t span {
-      font-family: 'IBM Plex Sans Arabic', 'DM Sans', Tahoma, sans-serif !important;
-    }
-    .badge, .stat-val, .c-fa-num, .c-num {
-      font-family: 'IBM Plex Sans Arabic', monospace !important;
-    }
-    .role-btn {
-      display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);cursor:pointer;transition:all .2s;width:100%;text-align:right;margin-bottom:8px;
-    }
-    .role-btn.on { border-color:var(--green-deep); background:rgba(28,110,49,.08); }
-    .role-btn b { display:block; font-size:.95rem; }
-    .role-btn small { display:block; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
-    .role-sel { display:flex; flex-direction:column; gap:8px; margin:16px 0; }
-    .onb-step { display:flex; gap:12px; align-items:flex-start; margin:18px 0 12px; padding-bottom:12px; border-bottom:1px dashed var(--line); }
-    .onb-step .sn { width:32px; height:32px; border-radius:50%; background:var(--green-deep); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; flex:none; }
-    .onb-step h4 { margin:0; font-size:1rem; }
-    .onb-step p { margin:2px 0 0; font-size:.82rem; color:var(--ink-2); }
-    .steps-line { display:flex; align-items:center; gap:8px; margin:16px 0; justify-content:center; }
-    .steps-line .st { width:28px; height:28px; border-radius:50%; border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:.85rem; background:var(--card); }
-    .steps-line .st.cur { background:var(--green-deep); color:#fff; border-color:var(--green-deep); }
-    .steps-line .st.done { background:var(--lime); color:var(--ink); border-color:var(--lime); }
-    .steps-line .st-sep { width:24px; height:2px; background:var(--line); }
-    .plans { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:16px 0; }
-    .plan { border:1.5px solid var(--line); border-radius:12px; padding:16px; text-align:center; cursor:pointer; }
-    .plan.on { border-color:var(--green-deep); background:rgba(28,110,49,.06); }
-    .plan h5 { margin:0 0 4px; }
-    .plan p { font-size:.82rem; color:var(--ink-2); margin:0 0 8px; }
-  `;
-  document.head.appendChild(style);
-}
 
 // ── اجرا ──
 (function(){
@@ -5421,3 +5017,4 @@ function fixPopupFont(){
   setTimeout(tryOnboardDirect, 800);
   setTimeout(tryOnboardDirect, 1500);
 })();
+

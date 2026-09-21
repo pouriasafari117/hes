@@ -645,7 +645,7 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .st-bot{font-size:.6rem; opacity:.7; margin-top:3px; border-top:1px solid currentColor; padding-top:3px}
 
 
-/* ── افتتاح حساب جدید — اضافه شده برای حفظ منطق امروز ── */
+/* ── افتتاح حساب جدید — حفظ منطق امروز ── */
 .role-btn{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--card);cursor:pointer;transition:all .2s;width:100%;text-align:right;margin-bottom:8px;font-family:var(--font-ui)}
 .role-btn.on{border-color:var(--green-deep);background:rgba(28,110,49,.08)}
 .role-btn b{display:block;font-size:.95rem}
@@ -665,11 +665,9 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .plan.on{border-color:var(--green-deep);background:rgba(28,110,49,.06)}
 .plan h5{margin:0 0 4px}
 .plan p{font-size:.82rem;color:var(--ink-2);margin:0 0 8px}
-
-/* فونت یکسان برای پاپ‌آپ‌ها */
 .drop-panel,.notif-item,.dp-item,.profile-chip,.pc-t,.pc-t b,.pc-t span{font-family:'IBM Plex Sans Arabic','DM Sans',Tahoma,sans-serif !important}
 
-/* ── بهبود منوی تنظیمات — فاصله‌ها و فونت، بدون تغییر منطق ── */
+/* ── بهبود منوی تنظیمات — فقط فاصله و فونت ── */
 #setBody{padding:22px 22px 10px}
 .set-sec{margin-bottom:20px !important;border-radius:16px;overflow:hidden}
 .set-sec .card-h{padding:16px 20px;background:var(--card-2);border-bottom:1.5px solid var(--line)}
