@@ -68,39 +68,13 @@ r.post('/', asyncH(async (req, res) => {
   const values = (req.body || {}).values || {};
   let memberNo = (req.body.memberNo || req.body.member_no || '').trim();
 
-  // تابع تبدیل فارسی به انگلیسی ساده برای شماره عضویت
-  function faToEnTranslit(s){
-    const map = {
-      'ا':'a','آ':'a','ب':'b','پ':'p','ت':'t','ث':'s','ج':'j','چ':'ch','ح':'h','خ':'kh',
-      'د':'d','ذ':'z','ر':'r','ز':'z','ژ':'zh','س':'s','ش':'sh','ص':'s','ض':'z',
-      'ط':'t','ظ':'z','ع':'a','غ':'gh','ف':'f','ق':'gh','ک':'k','گ':'g','ل':'l',
-      'م':'m','ن':'n','و':'o','ه':'h','ی':'y','ئ':'y','ء':'',
-      ' ': '', '‌':''
-    };
-    let out = '';
-    for (const ch of String(s||'')) {
-      if (/[a-zA-Z0-9]/.test(ch)) out += ch.toLowerCase();
-      else if (map[ch]) out += map[ch];
-    }
-    return out.replace(/[^a-z0-9]/g,'').slice(0,20);
-  }
   function genMemberNo(vals){
-    // سعی کن از فیلدهای نام و نام خانوادگی و کدملی شماره عضویت بسازی - هم حالت قدیم هم جدید
-    const first = vals.firstName || vals.first_name || vals.name || '' ;
-    const last = vals.lastName || vals.last_name || vals.family || '' ;
     const nid = vals.nid || vals.nationalId || vals.national_id || vals.nationalID || '' ;
-    // اگر name شامل نام و نام خانوادگی است، جدا کن
-    let firstWord = String(first).trim().split(/\s+/)[0] || '';
-    let lastWord = String(last).trim().split(/\s+/)[0] || '';
-    if (!lastWord && String(first).trim().split(/\s+/).length > 1) {
-      const parts = String(first).trim().split(/\s+/);
-      firstWord = parts[0];
-      lastWord = parts[parts.length-1];
-    }
-    const enFirst = faToEnTranslit(firstWord) || 'user';
-    const enLast = faToEnTranslit(lastWord) || '';
-    const nidPart = String(nid).replace(/\D/g,'').slice(-6) || Date.now().toString().slice(-4);
-    return (enFirst + (enLast ? enLast.charAt(0) : '') + nidPart).toLowerCase();
+    const nidPart = String(nid).replace(/\D/g,'').slice(-6) || '';
+    // شماره عضویت ساده بدون نیاز به نام انگلیسی - M- + 6 رقم کدملی + 4 رقم تصادفی
+    const rand = Date.now().toString().slice(-4);
+    if(nidPart) return ('M-' + nidPart + rand);
+    return ('M-' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random()*100).toString().padStart(2,'0'));
   }
 
   const result = await withTenant(req.user, req.institutionId, async c => {

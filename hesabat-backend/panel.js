@@ -4476,30 +4476,13 @@ async function renderSrvDashboard(){
 
 const ONBOARD_KEY = 'hesabat-onboard-v1';
 
-// تابع تبدیل فارسی به انگلیسی ساده
-function faToEnTranslit(s){
-  const map = {
-    'ا':'a','آ':'a','ب':'b','پ':'p','ت':'t','ث':'s','ج':'j','چ':'ch','ح':'h','خ':'kh',
-    'د':'d','ذ':'z','ر':'r','ز':'z','ژ':'zh','س':'s','ش':'sh','ص':'s','ض':'z',
-    'ط':'t','ظ':'z','ع':'a','غ':'gh','ف':'f','ق':'gh','ک':'k','گ':'g','ل':'l',
-    'م':'m','ن':'n','و':'o','ه':'h','ی':'y','ئ':'y','ء':'',
-    ' ': '', '‌':''
-  };
-  let out = '';
-  for (const ch of String(s||'')) {
-    if (/[a-zA-Z0-9]/.test(ch)) out += ch.toLowerCase();
-    else if (map[ch]) out += map[ch];
-  }
-  return out.replace(/[^a-z0-9]/g,'').slice(0,20) || 'user';
-}
-
+// شماره عضویت ساده بدون انگلیسی - per درخواست کاربر، هیچ ستون en ساخته نمی‌شود
+function faToEnTranslit(s){ return ''; } // دیگر استفاده نمی‌شود، برای سازگاری نگه داشته شد
 function genMemberNo(firstName, lastName, nid){
-  const firstWord = String(firstName||'').trim().split(/\s+/)[0] || '';
-  const lastWord = String(lastName||'').trim().split(/\s+/)[0] || '';
-  const enFirst = faToEnTranslit(firstWord) || 'user';
-  const enLast = faToEnTranslit(lastWord) || '';
-  const nidPart = String(nid||'').replace(/\D/g,'').slice(-6) || Date.now().toString().slice(-4);
-  return (enFirst + (enLast ? enLast.charAt(0) : '') + nidPart).toLowerCase();
+  const nidPart = String(nid||'').replace(/\D/g,'').slice(-6) || '';
+  const rand = Date.now().toString().slice(-4);
+  if(nidPart) return ('M-' + nidPart + rand);
+  return ('M-' + Date.now().toString(36).toUpperCase());
 }
 
 
