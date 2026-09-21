@@ -52,7 +52,14 @@ create policy p_join_req on institution_join_requests
   with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id)
               or user_id = nullif(current_setting('app.user_id', true), '')::bigint);
 
--- توابع را دوباره بساز (کپی از schema_v2.sql)
+-- توابع را دوباره بساز (کپی از schema_v2.sql) - اول DROP چون return type عوض شده
+drop function if exists fn_user_by_email(text);
+drop function if exists fn_user_by_phone(text);
+drop function if exists fn_register_user_v2(text,text,text,text,text,date,text,text,text);
+drop function if exists fn_create_institution_v2(bigint,text,text,date,text,int,text,numeric,text);
+drop function if exists fn_request_join(bigint,bigint);
+drop function if exists fn_delete_institution(bigint,bigint);
+drop function if exists fn_approve_join(bigint,bigint);
 create or replace function fn_register_user_v2(
   p_first_name text, p_last_name text, p_phone text, p_nid text,
   p_father_name text, p_birth_date date, p_role_type text,
