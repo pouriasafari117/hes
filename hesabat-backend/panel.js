@@ -4400,8 +4400,6 @@ async function renderSrvDashboard(){
 
 /* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
 (function hookSrvMode(){
-/* ── قلاب‌های مسیریابی: حالت سرور برای اعضا/فیلدها و ثبت عضو ── */
-(function hookSrvMode(){
   function isSrv(){ return typeof SRV!=='undefined' && SRV.on && typeof srvReady==='function' && srvReady(); }
   if (typeof PAGES !== 'undefined' && PAGES.members) {
     const _pgMembers = PAGES.members;
