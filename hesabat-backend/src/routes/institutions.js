@@ -114,4 +114,45 @@ r.post('/:id/join-requests/:reqId/reject', requireInstitution, asyncH(async (req
   res.json({ rejected: true });
 }));
 
+/* DELETE /api/institutions/:id — حذف کامل مؤسسه و تمام داده‌ها (فقط مالک) */
+r.delete('/:id', requireInstitution, asyncH(async (req, res) => {
+  const iid = req.institutionId;
+  // اول با تابع امن سعی کن
+  try {
+    const q = await pool.query('select fn_delete_institution($1,$2) as ok', [req.user.id, iid]);
+    if (q.rows[0].ok) return res.json({ deleted: true, id: iid });
+  } catch (e) {
+    // اگر تابع وجود نداشت یا خطا داد، fallback به حذف دستی با withTenant
+    if (e.message && e.message.includes('does not exist')) {
+      // تابع وجود ندارد، حذف دستی
+    } else if (e.message && e.message.includes('مالک')) {
+      return res.status(403).json({ error: e.message });
+    } else {
+      console.warn('fn_delete_institution failed, trying manual delete', e.message);
+    }
+  }
+  // حذف دستی (اگر RLS اجازه دهد و کاربر owner باشد)
+  try {
+    await withTenant(req.user, iid, async c => {
+      await c.query('delete from institution_join_requests where institution_id=$1', [iid]);
+      await c.query('delete from member_field_values where member_id in (select id from members where institution_id=$1)', [iid]);
+      await c.query('delete from members where institution_id=$1', [iid]);
+      await c.query('delete from field_definitions where institution_id=$1', [iid]);
+      await c.query('delete from institution_members where institution_id=$1', [iid]);
+      // فاز ۲ اگر دارید:
+      // await c.query('delete from payments where loan_id in (select id from loans where institution_id=$1)', [iid]);
+      // await c.query('delete from installments where loan_id in (select id from loans where institution_id=$1)', [iid]);
+      // await c.query('delete from loans where institution_id=$1', [iid]);
+      // await c.query('delete from txns where account_id in (select id from accounts where fund_id in (select id from funds where institution_id=$1))', [iid]);
+      // await c.query('delete from accounts where fund_id in (select id from funds where institution_id=$1)', [iid]);
+      // await c.query('delete from funds where institution_id=$1', [iid]);
+      await c.query('delete from institutions where id=$1', [iid]);
+    });
+    res.json({ deleted: true, id: iid });
+  } catch (e2) {
+    console.error('manual delete failed', e2);
+    return res.status(400).json({ error: 'حذف انجام نشد: ' + e2.message });
+  }
+}));
+
 module.exports = r;

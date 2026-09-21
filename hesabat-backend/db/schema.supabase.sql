@@ -192,6 +192,8 @@ alter table institutions add column if not exists fee_percent numeric default 4;
 alter table institutions add column if not exists installment_period text default 'monthly';
 alter table institutions add column if not exists member_fields_config jsonb default '[]';
 alter table institutions add column if not exists icon text;
+alter table institutions add column if not exists bot_email text;
+alter table institutions add column if not exists bot_active boolean default true;
 
 create table if not exists institution_join_requests (
   id             bigserial primary key,
@@ -267,17 +269,38 @@ declare email_auto text;
 begin
   select nid into owner_nid from users where id = p_owner;
   email_auto := lower(regexp_replace(trim(p_slug), '[^a-z0-9]+', '', 'g')) || coalesce(owner_nid,'') || '@hes.com';
-  insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period)
+  insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period, bot_email, bot_active)
   values (
     trim(p_name), trim(p_slug), p_owner,
     p_established_at, trim(p_address),
-    coalesce(p_installments_count,12), coalesce(p_currency,'تومان'), coalesce(p_fee_percent,4), coalesce(p_installment_period,'monthly')
+    coalesce(p_installments_count,12), coalesce(p_currency,'تومان'), coalesce(p_fee_percent,4), coalesce(p_installment_period,'monthly'),
+    email_auto, true
   )
   returning id into iid;
   insert into institution_members(user_id, institution_id, role)
   values (p_owner, iid, 'owner');
-  update users set email = email_auto where id = p_owner and (email like '%@hes.local' or email = '');
+  update users set email = email_auto where id = p_owner;
   return iid;
+end;
+$$;
+
+create or replace function fn_delete_institution(p_user bigint, p_institution_id bigint)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare is_owner boolean;
+begin
+  select exists (
+    select 1 from institutions where id = p_institution_id and owner_id = p_user
+  ) or exists (
+    select 1 from institution_members where user_id = p_user and institution_id = p_institution_id and role in ('owner','admin')
+  ) into is_owner;
+  if not is_owner then raise exception 'شما مالک این مؤسسه نیستید.'; end if;
+  delete from institution_join_requests where institution_id = p_institution_id;
+  delete from member_field_values where member_id in (select id from members where institution_id = p_institution_id);
+  delete from members where institution_id = p_institution_id;
+  delete from field_definitions where institution_id = p_institution_id;
+  delete from institution_members where institution_id = p_institution_id;
+  delete from institutions where id = p_institution_id;
+  return true;
 end;
 $$;
 

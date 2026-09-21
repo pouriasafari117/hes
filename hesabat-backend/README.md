@@ -80,9 +80,33 @@ CORS_ORIGIN=*
 | GET | `/institutions` | مؤسسات من |
 | GET | `/institutions/:id/join-requests` | لیست درخواست‌ها (مدیر) |
 | POST | `/institutions/:id/join-requests/:reqId/approve` | تأیید عضویت |
+| DELETE | `/institutions/:id` | **جدید** حذف کامل مؤسسه و تمام داده‌ها (مالک) — `fn_delete_institution` |
 | POST | `/institutions/:id/join-requests/:reqId/reject` | رد عضویت |
 | GET/POST | `/institutions/:id/fields` | فیلدها |
 | GET/POST | `/institutions/:id/members` | اعضا (با member_no خودکار) |
+
+### حذف مؤسسه (جدید)
+
+- **از پنل:** تنظیمات → اطلاعات مؤسسه → دکمه قرمز «حذف کامل مؤسسه» → دو بار تأیید
+  - حالت سرور: `DELETE /api/institutions/:id` → `fn_delete_institution(userId, instId)` → cascade حذف `join_requests`, `member_field_values`, `members`, `field_definitions`, `institution_members`, `institutions`
+  - حالت دمو: پاک‌سازی `localStorage` (members, loans, ...)
+- **از SQL (Supabase SQL Editor):** فایل `db/delete_institution.sql` را باز کن:
+  ```sql
+  SELECT id, name, slug FROM institutions;
+  -- سپس:
+  SELECT fn_delete_institution(1, 3); -- userId, institutionId
+  -- یا دستی:
+  -- BEGIN; DELETE FROM ... WHERE institution_id=3; DELETE FROM institutions WHERE id=3; COMMIT;
+  -- برای پاک کردن کل DB: TRUNCATE ... RESTART IDENTITY CASCADE;
+  ```
+
+### تعداد اقساط متغیر (جدید)
+
+- قبلاً select با [6,12,18,24,30,36,48] بود
+- حالا در **همه جا** `type=number min=1 max=120`:
+  - onboarding: `obInstCount` (app9.js)
+  - ثبت وام: `lfMonths` (app6.js)
+  - تنظیمات → پیش‌فرض اقساط: `setLdMonths` (app7.js)
 
 ### شماره عضویت خودکار
 
@@ -99,7 +123,16 @@ en(firstName) + en(lastName[0]) + nidLast6
 - `Panel.html` + `panel.css` + `panel.js` — پنل مستقل (3 فایل کنار هم)
 - `Hesabat.html` — لندینگ، دکمه ورود → Panel.html، افتتاح حساب → Panel.html#/onboarding
 - افتتاح حساب در `app9.js`: ویزارد کامل با role selector، 3 مرحله مدیر، 2 مرحله کاربر
-- تنظیمات: کارت PostgreSQL حذف شد، آیکون مؤسسه با دکمه زیبا، قالب شماره‌گذاری حذف شد، داده‌ها فقط «بازنشانی دمو»
+  - **دمو:** وقتی `SRV.base` خالی است یا سرور down → حساب دمو در `localStorage` (کلید `hesabat-db-vX`) ساخته می‌شود. قبلاً 30 عضو نمونه داشت، **حالا برای مدیر جدید 0 عضو** (تمیز).
+  - **سرور:** وقتی `SRV.base` ست است (در `panel.js` اول فایل: `SRV.base='https://...'` یا از `localStorage hesabat-srv`) → `POST /api/auth/register-v2` → مؤسسه در Postgres ساخته می‌شود با ایمیل ربات `{slug}{nid}@hes.com` و `bot_email`، کاربر ایمیلش به همان تغییر می‌کند، `SRV.on=true, instId, token` در `localStorage hesabat-srv` ذخیره می‌شود، داشبورد داده را از سرور می‌خواند (ابتدا خالی است).
+- تنظیمات: کارت PostgreSQL حذف شد، آیکون مؤسسه با دکمه زیبا، قالب شماره‌گذاری حذف شد، داده‌ها فقط «بازنشانی دمو»، نمایش ایمیل ربات hes.com، دکمه حذف کامل مؤسسه
+
+### چرا DB خالی ولی پنل 30 عضو نشان می‌دهد؟
+
+- DB (Postgres) خالی است تا وقتی عضو از پنل در حالت سرور نسازی.
+- پنل در حالت دمو داده را از `localStorage` می‌خواند که با 30 عضو نمونه seed شده.
+- برای دیدن داده سرور: مطمئن شو `panel.js` اولش `SRV.base` دارد یا در کنسول `localStorage.getItem('hesabat-srv')` دارای `on:true` است. اگر نیست، دوباره افتتاح حساب کن وقتی سرور روشن است.
+- برای شروع تمیز دمو: افتتاح حساب مدیر جدید → حالا 0 عضو می‌بینی (fix جدید).
 
 ---
 

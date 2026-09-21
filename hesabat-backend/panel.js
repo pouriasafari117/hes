@@ -1862,7 +1862,7 @@ function loanForm(preset, presetMemberId){
     '</div></div></div>' +
 
     '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
-      '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="lfMonths">'+(()=>{ const cur=ld.months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option'+(x===cur?' selected':'')+' value="'+x+'">'+faDigits(x)+'</option>').join(''); })()+'</select></div>' +
+      '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><input id="lfMonths" type="number" min="1" max="120" value="'+esc(String(ld.months||12))+'" placeholder="مثلاً 12"><span class="help">متغیر - 1 تا 120</span></div>' +
       '<div class="field"><label>فاصله / دوره اقساط</label><select id="lfInt"><option value="1"'+((ld.interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((ld.interval||1)==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((ld.interval||1)==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="lfFirst"><span class="err-msg"></span></div>' +
       '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="lfPer" class="num-inp"><span class="help">با تغییر مبلغ/تعداد، به‌صورت خودکار پیشنهاد می‌شود</span></div>' +
@@ -1910,6 +1910,7 @@ function loanForm(preset, presetMemberId){
       '<div class="sum-line"><span>مجموع کارمزد تقریبی</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>';
   }
   el('#lfAmt').addEventListener('input', suggest);
+  el('#lfMonths').addEventListener('input', suggest);
   el('#lfMonths').addEventListener('change', suggest);
   el('#lfRate').addEventListener('input', suggest);
   el('#lfPer').addEventListener('input', updateSum);
@@ -2869,7 +2870,8 @@ function renderSettings(){
 }
 function renderOrgSec(box){
     const body = box; const s = DB.settings; const canEdit = can('settingsEdit'); const disAttr = canEdit ? '' : ' disabled style="opacity:.55;pointer-events:none"';
-    
+    const botEmail = s.institution.email || (typeof SRV!=='undefined'&&SRV.user&&SRV.user.email?SRV.user.email:'') || (typeof SRV!=='undefined'&&SRV.instId?'مؤسسه سرور '+SRV.instId:'');
+    const botEmailReal = s.institution.email || (typeof SRV!=='undefined'&&SRV.user?SRV.user.email:'');
     body.innerHTML = '<div class="fields">' +
       '<div class="field full"><label>نام و لوگوی مؤسسه</label><div class="field-row" style="gap:14px">' +
         '<span id="logoPrev" style="display:inline-flex;width:58px;height:58px;border-radius:16px;overflow:hidden;background:rgba(28,110,49,.1);align-items:center;justify-content:center;color:var(--green-deep);flex:none">' +
@@ -2878,7 +2880,9 @@ function renderOrgSec(box){
       '<div class="field"><label>نام مؤسسه <span class="req">*</span></label><input id="setOrgName" value="'+esc(s.institution.name)+'"'+disAttr+'></div>' +
       '<div class="field"><label>شماره تماس</label><input id="setOrgPhone" class="num-inp" value="'+esc(s.institution.phone)+'"'+disAttr+'></div>' +
       '<div class="field full"><label>آدرس</label><textarea id="setOrgAddr"'+disAttr+'>'+esc(s.institution.address)+'</textarea></div>' +
-      (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setOrgSave">'+icon('check',14)+' ذخیره اطلاعات مؤسسه</button></div>' : noPermNote()) +
+      (botEmailReal ? '<div class="field full"><label>ایمیل ربات مؤسسه (hes.com)</label><input value="'+esc(botEmailReal)+'" disabled style="background:var(--card-2);direction:ltr;font-family:monospace"><span class="help">این ایمیل با فرمت نام‌لاتین+کدملی@hes.com برای اتصال ربات‌های آینده ساخته شده و در دیتابیس فعال است. نام کاربری ورود = شماره تماس، رمز = کدملی.</span></div>' : '') +
+      (canEdit ? '<div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn btn-solid btn-sm" id="setOrgSave">'+icon('check',14)+' ذخیره اطلاعات مؤسسه</button>' +
+        '<button class="btn btn-danger btn-sm" id="btnDeleteInst" title="حذف کامل مؤسسه و تمام داده‌ها">'+icon('trash',14)+' حذف کامل مؤسسه</button></div><div id="delInstStatus" style="margin-top:8px"></div>' : noPermNote()) +
     '</div>';
     const lg = $('#setLogo'); if(lg) lg.onchange = ()=>{
       const f = lg.files[0]; if(!f) return;
@@ -2892,7 +2896,39 @@ function renderOrgSec(box){
       if(name.length < 3){ markErr($('#setOrgName'),'نام مؤسسه الزامی است.'); return; }
       Object.assign(s.institution, {name, phone:fieldVal('#setOrgPhone'), address:fieldVal('#setOrgAddr')});
       audit('به‌روزرسانی اطلاعات مؤسسه', 'settings'); saveDb();
-      $('#orgName').textContent = name; renderShell('settings'); toast('اطلاعات مؤسسه ذخیره شد.','ok');
+      const orgNameEl = document.getElementById('orgName'); if(orgNameEl) orgNameEl.textContent = name;
+      renderShell('settings'); toast('اطلاعات مؤسسه ذخیره شد.','ok');
+    };
+    const delBtn = document.getElementById('btnDeleteInst');
+    if(delBtn) delBtn.onclick = async ()=>{
+      const ok1 = await askConfirm({title:'حذف کامل مؤسسه', danger:true, ok:'بله، حذف شود', text:'مؤسسه <b>'+esc(s.institution.name)+'</b> و تمام داده‌های آن شامل <b>'+DB.members.length+'</b> عضو، وام‌ها، اقساط و پرداخت‌ها <b>برای همیشه</b> حذف می‌شود. این عمل در حالت سرور نیز از دیتابیس Postgres حذف می‌کند. ادامه می‌دهید؟'});
+      if(!ok1) return;
+      const ok2 = await askConfirm({title:'تأیید نهایی حذف', danger:true, ok:'حذف نهایی', text:'آیا مطمئن هستید؟ این عمل برگشت‌ناپذیر است.'});
+      if(!ok2) return;
+      const statusEl = document.getElementById('delInstStatus');
+      // اگر سرور فعال است، از API حذف کن
+      if(typeof SRV!=='undefined' && SRV.on && SRV.instId && SRV.token){
+        try{
+          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-info\"><div>در حال حذف از سرور...</div></div>';
+          await srvFetch('DELETE','/api/institutions/'+SRV.instId);
+          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-ok\"><div>مؤسسه از سرور حذف شد.</div></div>';
+          toast('مؤسسه از سرور حذف شد.','ok');
+          // خروج
+          SRV.on=false; SRV.instId=null; SRV.instName=''; try{localStorage.setItem(SRV_KEY, JSON.stringify(SRV));}catch(e){}
+          setTimeout(()=>{ location.hash='#/'; location.reload(); }, 800);
+          return;
+        }catch(e){
+          if(statusEl) statusEl.innerHTML = '<div class=\"alert a-err\"><div>حذف از سرور ناموفق: '+esc(e.message)+'</div></div>';
+          toast('حذف از سرور ناموفق: '+e.message,'err');
+          return;
+        }
+      }
+      // حالت دمو: پاک‌سازی لوکال
+      DB.members=[]; DB.loans=[]; DB.installments=[]; DB.payments=[]; DB.txns=[]; DB.funds=[]; DB.accounts=[]; DB.audit=[]; DB.counters={member:0, loan:0};
+      DB.settings.institution = {name:'مؤسسه جدید', phone:'', address:'', logo:'', email:''};
+      saveDb();
+      toast('مؤسسه و تمام داده‌ها در حالت دمو پاک شد.','ok');
+      setTimeout(()=>{ location.hash='#/'; location.reload(); }, 600);
     };
   }
 function renderFieldsSec(box){
@@ -2993,7 +3029,7 @@ function renderFinSec(box){
       '<div class="field"><label>قالب شماره‌گذاری اعضا</label><input id="setNoTpl" class="num-inp" value="'+esc(s.memberNoTemplate)+'"'+disAttr+'>' +
         '<span class="help">متغیر <b>{seq}</b> یا <b>{seq:4}</b> = شماره ردیف. پیش‌نمایش: <b id="noPrev">'+esc(s.memberNoTemplate.replace(/\{seq(?::(\d+))?\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'</b></span></div>' +
       '<div class="field"><label>پیش‌فرض کارمزد سالانه وام <small>(٪)</small></label><input id="setLdRate" class="num-inp" value="'+esc(String((s.loanDefaults||{}).rate!==undefined?s.loanDefaults.rate:4))+'"'+disAttr+'><span class="help">فرم ثبت وام با این مقدار پر می‌شود.</span></div>' +
-      '<div class="field"><label>پیش‌فرض تعداد اقساط</label><select id="setLdMonths"'+disAttr+'>'+(()=>{ const cur=(s.loanDefaults||{}).months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option value="'+x+'"'+(x===cur?' selected':'')+'>'+faDigits(x)+'</option>').join(''); })()+'</select><span class="help">تعداد اقساط پیشنهادی هنگام ثبت وام جدید.</span></div>' +
+      '<div class="field"><label>پیش‌فرض تعداد اقساط</label><input id="setLdMonths" type="number" min="1" max="120" value="'+esc(String((s.loanDefaults||{}).months||12))+'"'+disAttr+'><span class="help">متغیر - 1 تا 120 قسط</span></div>' +
       '<div class="field"><label>پیش‌فرض دوره اقساط</label><select id="setLdInt"'+disAttr+'><option value="1"'+(((s.loanDefaults||{}).interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((s.loanDefaults||{}).interval==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((s.loanDefaults||{}).interval==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setFinSave">'+icon('check',14)+' ذخیره تنظیمات مالی</button></div>' : noPermNote()) +
     '</div>';
@@ -4334,7 +4370,7 @@ function onboardingHtml(){
           <div class="field full"><label>نام مؤسسه <span class="req">*</span></label><input id="obInstName" value="${esc(onboardData.institutionName||'')}" placeholder="مثلاً قرض‌الحسنه مهرگان"></div>
           <div class="field"><label>تاریخ تأسیس</label><input id="obEstDate" value="${esc(onboardData.establishedAt||'')}" placeholder="1390/01/01"></div>
           <div class="field full"><label>آدرس مؤسسه</label><textarea id="obAddress" rows="2" placeholder="تهران، خیابان...">${esc(onboardData.address||'')}</textarea></div>
-          <div class="field"><label>تعداد اقساط پیش‌فرض</label><select id="obInstCount"><option value="6" ${onboardData.installmentsCount==6?'selected':''}>6</option><option value="12" ${!onboardData.installmentsCount||onboardData.installmentsCount==12?'selected':''}>12</option><option value="18" ${onboardData.installmentsCount==18?'selected':''}>18</option><option value="24" ${onboardData.installmentsCount==24?'selected':''}>24</option><option value="36" ${onboardData.installmentsCount==36?'selected':''}>36</option></select></div>
+          <div class="field"><label>تعداد اقساط پیش‌فرض</label><input id="obInstCount" type="number" min="1" max="120" value="${esc(onboardData.installmentsCount||'12')}" placeholder="مثلاً 12"><span class="help">متغیر - هر عددی (1 تا 120)</span></div>
           <div class="field"><label>دوره اقساط</label><select id="obPeriod"><option value="monthly" ${!onboardData.installmentPeriod||onboardData.installmentPeriod=='monthly'?'selected':''}>ماهانه</option><option value="bimonthly" ${onboardData.installmentPeriod=='bimonthly'?'selected':''}>دوماه یک‌بار</option><option value="quarterly" ${onboardData.installmentPeriod=='quarterly'?'selected':''}>سه‌ماه یک‌بار</option></select></div>
           <div class="field"><label>واحد پول</label><select id="obCurrency"><option ${!onboardData.currency||onboardData.currency=='تومان'?'selected':''}>تومان</option><option ${onboardData.currency=='ریال'?'selected':''}>ریال</option></select></div>
           <div class="field"><label>کارمزد ٪</label><input id="obFee" type="number" value="${esc(onboardData.feePercent||'4')}" min="0" max="100"></div>
@@ -4578,15 +4614,30 @@ async function submitOnboarding(){
     };
     DB.users.push(newUser);
     if (onboardRole==='manager' && payload.institutionName) {
+      // مؤسسه جدید = شروع تمیز، نه 30 عضو نمونه
+      DB.members = [];
+      DB.loans = [];
+      DB.installments = [];
+      DB.payments = [];
+      DB.txns = [];
+      DB.funds = [{id:'f1', name: payload.institutionName, status:'active'}];
+      DB.accounts = [{id:'a1', fundId:'f1', name:'صندوق اصلی', number:'', type:'cash', initialBalance:0, balance:0, status:'active'}];
+      DB.audit = [];
+      DB.counters = {member:0, loan:0};
       DB.settings.institution.name = payload.institutionName;
       DB.settings.institution.address = payload.address||'';
       DB.settings.institution.establishedAt = onboardData.establishedAt||'';
+      DB.settings.institution.email = payload.email; // ایمیل ربات hes.com
       DB.settings.currency = payload.currency||'تومان';
       DB.settings.loanDefaults = {
         months: parseInt(payload.installmentsCount)||12,
         interval: payload.installmentPeriod==='monthly'?1:payload.installmentPeriod==='bimonthly'?2:3,
         rate: parseFloat(payload.feePercent)||4
       };
+      if (alertBox) alertBox.innerHTML = `<div class="alert a-info"><div>مؤسسه «${esc(payload.institutionName)}» با ایمیل ربات <b dir="ltr">${esc(payload.email)}</b> ساخته شد و دیتابیس دمو تمیز شد (0 عضو).</div></div>`;
+    } else {
+      // کاربر عادی دمو - مؤسسه ندارد
+      DB.settings.institution.email = payload.email;
     }
     saveDb();
     SESSION = { username:newUser.username, name:newUser.name, role:newUser.role, roleType: onboardRole };
