@@ -4269,102 +4269,344 @@ function srvFieldForm(f){
 let srvQ = '', srvPage = 1;
 async function renderSrvMembersPage(){
   const main = $('#main');
+  const instName = esc(SRV.instName || ('مؤسسهٔ #' + SRV.instId));
   main.innerHTML =
-    '<div class="page-head"><div><h1>اعضا و اقساط</h1><div class="ph-sub">حالت سرور — داده از <b>' + esc(SRV.instName || ('مؤسسهٔ #' + SRV.instId)) + '</b> (PostgreSQL)</div></div>' +
-      '<div class="ph-actions"><button class="btn btn-primary" id="srvAddMember">' + icon('plus',16) + ' عضو جدید</button></div></div>' +
-    '<div class="card tight"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
-      '<input id="srvSearch" placeholder="جستجو در اعضا…" value="' + esc(srvQ) + '" style="max-width:280px">' +
-      '<span class="hint-t" id="srvMeta"></span>' +
-    '</div><div class="card-b" id="srvMemBox"><p class="hint-t">در حال دریافت…</p></div></div>';
+    '<div class="page-head"><div><h1>اعضا و اقساط</h1><div class="ph-sub">حالت سرور — داده از <b>'+instName+'</b> (PostgreSQL) — <span class="badge b-green">متصل</span></div></div>' +
+    '<div class="ph-actions"><button class="btn btn-ghost btn-sm" id="srvBulkBtn" style="padding:11px 17px;font-size:.88rem">'+icon('upload',15)+' افزودن گروهی</button>' +
+    '<button class="btn btn-solid btn-sm" id="srvAddMember" style="padding:11px 17px;font-size:.88rem">'+icon('plus',15)+' افزودن عضو</button></div></div>' +
+    '<div class="card tight"><div class="card-b" style="padding:8px 18px 0"><div class="tabs">' +
+      '<button class="tab on" data-mt="members">اعضا<span class="tc" id="srvMemCount">—</span></button>' +
+      '<button class="tab" data-mt="ins">اقساط و پرداخت‌ها<span class="tc" id="srvInsCount" style="background:var(--red-bg);color:var(--red);display:none">0 معوق</span></button>' +
+    '</div></div><div id="mmBody" style="padding:16px 18px"></div></div>';
+
+  main.querySelectorAll('[data-mt]').forEach(b => b.onclick = ()=> {
+    main.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    b.classList.add('on');
+    if(b.dataset.mt==='members') srvLoadMembers();
+    else srvLoadInstallments();
+  });
+
   $('#srvAddMember').onclick = ()=> srvMemberForm(null);
-  $('#srvSearch').oninput = ()=>{ srvQ = $('#srvSearch').value.trim(); srvPage = 1; srvLoadMembers(); };
+  const bulk = $('#srvBulkBtn');
+  if(bulk) bulk.onclick = ()=> toast('افزودن گروهی به‌زودی از فایل اکسل — فعلاً تکی اضافه کنید.','info');
+
   await srvLoadMembers();
 }
+
 async function srvLoadMembers(){
+  const box = $('#mmBody'); if(!box) return;
+  box.innerHTML =
+    '<div class="toolbar">' +
+      '<div class="t-search">'+icon('search',15)+'<input id="srvSearch" placeholder="جستجو: نام، کد ملی، موبایل، شماره عضویت…" value="'+esc(srvQ)+'"></div>' +
+      '<span class="t-lbl">وضعیت:</span><select class="t-select" id="srvStatus"><option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option></select>' +
+      '<span class="t-lbl">مرتب‌سازی:</span><select class="t-select" id="srvSort"><option value="newest">جدیدترین</option><option value="name">نام</option></select>' +
+      '<button class="btn btn-ghost btn-sm" id="srvReset" style="margin-inline-start:auto">'+icon('refresh',13)+' حذف فیلترها</button>' +
+    '</div>' +
+    '<div id="srvMemBox" style="margin-top:12px"><p class="hint-t" style="padding:18px 4px">در حال دریافت…</p></div>';
+
+  const searchEl = $('#srvSearch');
+  if(searchEl){
+    searchEl.oninput = ()=>{ srvQ = searchEl.value.trim(); srvPage = 1; srvLoadMembersData(); };
+    searchEl.focus();
+  }
+  const resetBtn = $('#srvReset');
+  if(resetBtn) resetBtn.onclick = ()=>{ srvQ=''; srvPage=1; const se=$('#srvSearch'); if(se) se.value=''; srvLoadMembersData(); };
+
+  await srvLoadMembersData();
+}
+
+let srvFieldsCache = null;
+async function srvLoadFieldsCached(){
+  if(srvFieldsCache) return srvFieldsCache;
+  srvFieldsCache = await srvLoadFields();
+  return srvFieldsCache;
+}
+
+async function srvLoadMembersData(){
   const box = $('#srvMemBox'); if(!box) return;
   let fields, data;
   try {
-    fields = await srvLoadFields();
+    fields = await srvLoadFieldsCached();
     const qs = '/api/institutions/' + SRV.instId + '/members?page=' + srvPage + '&pageSize=30' + (srvQ ? '&q=' + encodeURIComponent(srvQ) : '');
     data = await srvFetch('GET', qs);
   } catch(e){
-    box.innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p><button class="btn btn-soft btn-sm" onclick="srvLoadMembers()">تلاش دوباره</button>';
+    box.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div><button class="btn btn-soft btn-sm" onclick="srvLoadMembersData()" style="margin-top:10px">تلاش دوباره</button>';
     return;
   }
-  const meta = $('#srvMeta'); if(meta) meta.textContent = faDigits(data.total) + ' عضو · صفحهٔ ' + faDigits(data.page);
-  const show = fields.slice(0, 5);
+  const cntEl = $('#srvMemCount');
+  if(cntEl) cntEl.textContent = faDigits(data.total);
+
   if(!data.rows.length){
-    box.innerHTML = '<p class="hint-t" style="padding:18px 4px">عضویی پیدا نشد.</p>';
+    box.innerHTML = '<div class="empty" style="padding:32px 18px;text-align:center"><div class="e-ic">'+icon('users',28)+'</div><h3>عضوی پیدا نشد</h3><p class="hint-t">برای شروع، اولین عضو را اضافه کنید.</p><button class="btn btn-solid btn-sm" id="mEmptyAdd" style="margin-top:12px">'+icon('plus',14)+' افزودن عضو</button></div>';
+    const b = $('#mEmptyAdd'); if(b) b.onclick = ()=> srvMemberForm(null);
     return;
   }
-  const head = show.map(f => '<th>' + esc(f.label) + '</th>').join('') + '<th>وضعیت</th><th></th>';
+
+  // Determine which keys to show: try to find name, nationalId, mobile
+  const nameKey = fields.find(f=>/name|نام/.test(f.label))?.key || fields[0]?.key || 'name';
+  const fatherKey = fields.find(f=>/father|پدر/.test(f.label))?.key;
+  const nidKey = fields.find(f=>/national|کدملی|کد ملی/.test(f.key+f.label))?.key;
+  const mobKey = fields.find(f=>/mobile|موبایل|تماس/.test(f.key+f.label))?.key;
+
+  const head =
+    '<th style="min-width:210px">نام و نام خانوادگی</th>' +
+    (nidKey?'<th>کد ملی</th>':'') +
+    (mobKey?'<th>شماره تماس</th>':'') +
+    '<th>شماره عضویت</th><th>وضعیت</th><th></th>';
+
   const rows = data.rows.map(m => {
-    const tds = show.map(f => '<td>' + esc(m.values[f.key] || '—') + '</td>').join('');
-    return '<tr>' + tds + '<td>' + (m.status === 'active' ? 'فعال' : 'غیرفعال') + '</td>' +
-      '<td><div class="field-row" style="gap:6px;justify-content:flex-end">' +
-        '<button class="btn btn-soft btn-xs" data-sme="' + m.id + '">' + icon('pen',13) + ' ویرایش</button>' +
-        '<button class="btn btn-soft btn-xs" data-smd="' + m.id + '">' + icon('trash',13) + ' حذف</button>' +
-      '</div></td></tr>';
+    const vals = m.values || {};
+    const nm = esc(vals[nameKey] || vals['name'] || Object.values(vals)[0] || '—');
+    const father = fatherKey ? esc(vals[fatherKey]||'') : '';
+    const nid = nidKey ? esc(vals[nidKey]||'—') : '';
+    const mob = mobKey ? esc(vals[mobKey]||'—') : '';
+    const av = (nm.charAt(0) || '؟');
+    const st = m.status==='active' ? '<span class="badge b-green">فعال</span>' : '<span class="badge b-gray">غیرفعال</span>';
+    return '<tr>' +
+      '<td><div class="cell-main"><span class="avatar sz-34">'+esc(av)+'</span><span class="cm-t"><b><a class="row-link" href="javascript:void(0)" data-view="'+m.id+'">'+nm+'</a></b>'+(father?'<span>فرزند '+father+'</span>':'')+'</span></div></td>' +
+      (nidKey?'<td><span class="num">'+nid+'</span></td>':'') +
+      (mobKey?'<td><span class="num">'+mob+'</span></td>':'') +
+      '<td><span class="badge b-gray">'+esc(m.member_no||'')+'</span></td>' +
+      '<td>'+st+'</td>' +
+      '<td><div class="row-actions"><button class="x-btn" data-tip="مشاهده" data-view="'+m.id+'">'+icon('eye',15)+'</button>' +
+        '<button class="x-btn" data-tip="ویرایش" data-edit="'+m.id+'">'+icon('pen',15)+'</button>' +
+        '<button class="x-btn" data-tip="حذف" data-del="'+m.id+'">'+icon('trash',15)+'</button></div></td>' +
+    '</tr>';
   }).join('');
+
   const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
   box.innerHTML =
-    '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    (pages > 1 ? '<div class="field-row" style="gap:8px;justify-content:center;padding:12px 0">' +
-      '<button class="btn btn-soft btn-xs" id="srvPrev"' + (srvPage <= 1 ? ' disabled' : '') + '>قبلی</button>' +
-      '<span class="hint-t">صفحهٔ ' + faDigits(srvPage) + ' از ' + faDigits(pages) + '</span>' +
-      '<button class="btn btn-soft btn-xs" id="srvNext"' + (srvPage >= pages ? ' disabled' : '') + '>بعدی</button></div>' : '');
-  const byId = id => data.rows.find(m => String(m.id) === String(id));
-  box.querySelectorAll('[data-sme]').forEach(b => b.onclick = ()=> srvMemberForm(byId(b.dataset.sme)));
-  box.querySelectorAll('[data-smd]').forEach(b => b.onclick = async ()=>{
-    const m = byId(b.dataset.smd);
-    const nm = m ? Object.values(m.values).filter(Boolean)[0] || ('#' + m.id) : '#' + b.dataset.smd;
-    const okc = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود',
-      text:'عضو «' + esc(nm) + '» حذف نرم می‌شود (در دیتابیس می‌ماند ولی در لیست نمایش داده نمی‌شود).' });
+    '<div class="tbl-wrap"><table class="tbl"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>' +
+    '<div class="tbl-foot"><span class="tf-info">'+faDigits(data.total)+' عضو · صفحه '+faDigits(srvPage)+' از '+faDigits(pages)+'</span>' +
+      (pages>1 ? '<div class="pager"><button class="btn btn-soft btn-xs" id="srvPrev"'+(srvPage<=1?' disabled':'')+'>قبلی</button>' +
+      '<span class="hint-t">صفحه '+faDigits(srvPage)+'</span>' +
+      '<button class="btn btn-soft btn-xs" id="srvNext"'+(srvPage>=pages?' disabled':'')+'>بعدی</button></div>' : '') +
+    '</div>';
+
+  box.querySelectorAll('[data-view]').forEach(b=> b.onclick = ()=> srvViewMember(b.dataset.view, data.rows));
+  box.querySelectorAll('[data-edit]').forEach(b=> b.onclick = ()=> { const m=data.rows.find(x=>String(x.id)===String(b.dataset.edit)); if(m) srvMemberForm(m); });
+  box.querySelectorAll('[data-del]').forEach(b=> b.onclick = async ()=> {
+    const m=data.rows.find(x=>String(x.id)===String(b.dataset.del));
+    const nm = m ? (Object.values(m.values)[0]||'#'+m.id) : '#'+b.dataset.del;
+    const okc = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود', text:'عضو «'+esc(nm)+'» حذف می‌شود (حذف سخت از دیتابیس). این عمل قابل بازگشت نیست.' });
     if(!okc) return;
-    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/members/' + b.dataset.smd); toast('عضو حذف شد.', 'ok'); srvLoadMembers(); }
-    catch(e){ toast(e.message, 'err'); }
+    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/members/' + b.dataset.del); toast('عضو حذف شد.','ok'); srvLoadMembersData(); }
+    catch(e){ toast(e.message,'err'); }
   });
-  const pv = $('#srvPrev'); if(pv) pv.onclick = ()=>{ srvPage--; srvLoadMembers(); };
-  const nx = $('#srvNext'); if(nx) nx.onclick = ()=>{ srvPage++; srvLoadMembers(); };
+  const pv=$('#srvPrev'); if(pv) pv.onclick=()=>{ srvPage--; srvLoadMembersData(); };
+  const nx=$('#srvNext'); if(nx) nx.onclick=()=>{ srvPage++; srvLoadMembersData(); };
 }
+
+async function srvLoadInstallments(){
+  const box = $('#mmBody');
+  if(!box) return;
+  box.innerHTML = '<div class="toolbar"><div class="t-search">'+icon('search',15)+'<input placeholder="جستجوی اقساط — به‌زودی" disabled></div></div>' +
+    '<div style="padding:24px 8px"><div class="alert a-info"><span class="al-ic">'+icon('info',16)+'</span><div>اقساط وام‌ها در فاز بعد به دیتابیس وصل می‌شوند. فعلاً از منوی <b>وام‌ها</b> استفاده کنید یا در حالت دمو بمانید.</div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>وام‌های ثبت‌شده</h3><a class="btn btn-soft btn-sm" href="#/app/loans">همه</a></div><div class="card-b" id="srvInsLoans"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="card tight"><div class="card-h"><h3>اقساط سررسید</h3></div><div class="card-b"><p class="hint-t">به‌زودی</p></div></div></div></div>';
+  // try load loans
+  try {
+    const loans = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/loans?page=1&pageSize=10');
+    const lb = $('#srvInsLoans');
+    if(lb){
+      if(!loans.rows.length) lb.innerHTML = '<p class="hint-t">وامی ثبت نشده.</p>';
+      else lb.innerHTML = '<div class="mini-list">'+loans.rows.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+faDigits(l.installments_count)+' قسط</span></span><span class="mi-v">'+esc(l.status)+'</span></div>').join('')+'</div>';
+    }
+  } catch(e){
+    const lb=$('#srvInsLoans'); if(lb) lb.innerHTML='<p class="hint-t">'+esc(e.message)+'</p>';
+  }
+}
+
+async function srvViewMember(id, cachedRows){
+  let m = cachedRows ? cachedRows.find(x=>String(x.id)===String(id)) : null;
+  if(!m){
+    try { const r = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/members/'+id); m = r.member; } catch(e){ toast(e.message,'err'); return; }
+  }
+  const vals = m.values || {};
+  const name = vals[Object.keys(vals)[0]] || m.member_no || '#'+m.id;
+  let fields;
+  try { fields = await srvLoadFieldsCached(); } catch(e){ fields=[]; }
+  const rowsHtml = fields.map(f=>'<div class="kv"><span class="k">'+esc(f.label)+'</span><span class="v">'+esc(vals[f.key]||'—')+'</span></div>').join('') || Object.entries(vals).map(([k,v])=>'<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+esc(v)+'</span></div>').join('');
+  openModal({
+    title: esc(name),
+    sub: 'پرونده عضو · '+esc(m.member_no||'')+' · '+ (m.status==='active'?'فعال':'غیرفعال'),
+    size:'md',
+    body: '<div class="m-sec"><div class="m-sec-h">اطلاعات هویتی</div><div class="m-sec-b"><div class="kv-list">'+rowsHtml+'</div></div></div>' +
+          '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v">'+esc(m.status)+'</span></div></div></div></div>',
+    foot: '<button class="btn btn-ghost btn-sm" data-x>بستن</button><button class="btn btn-solid btn-sm" id="srvViewEdit">'+icon('pen',14)+' ویرایش</button>',
+    onOpen(h){
+      h.el.querySelector('[data-x]').onclick=()=>h.close();
+      h.el.querySelector('#srvViewEdit').onclick=()=>{ h.close(); srvMemberForm(m); };
+    }
+  });
+}
+
 function srvMemberForm(m){
-  srvLoadFields().then(fields => {
-    const inputs = fields.map(f => srvFieldInput(f, m ? m.values[f.key] : '')).join('');
-    openModal({
-      title: m ? 'ویرایش عضو #' + faDigits(m.id) : 'عضو جدید (از سرور)',
-      body:
-        '<div class="fields">' + inputs + '</div>' +
-        '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px"></div>' +
-        '<div class="field-row" style="gap:8px;justify-content:flex-end;margin-top:12px">' +
-          '<button class="btn btn-soft btn-sm" onclick="closeModal()">انصراف</button>' +
-          '<button class="btn btn-primary btn-sm" id="srvMemSave">' + icon('check',14) + (m ? ' ذخیره تغییرات' : ' ثبت عضو') + '</button>' +
-        '</div>',
-      width: 640
+  srvLoadFieldsCached().then(fields => {
+    const isEdit = !!m;
+    const vals = (m && m.values) ? m.values : {};
+    // Build inputs like demo memberForm
+    const inputs = fields.map(f => {
+      const v = vals[f.key] || '';
+      const req = f.is_required ? ' <span class="req">*</span>' : '';
+      const type = f.type;
+      let input = '';
+      if(type==='bool'){
+        input = '<label class="check"><input type="checkbox" id="sf_'+f.key+'" '+(v==='true'?'checked':'')+'><span>'+esc(f.label)+'</span></label>';
+        return '<div class="field full">'+input+'</div>';
+      } else if(type==='select' && Array.isArray(f.options) && f.options.length){
+        const opts = f.options.map(o=>'<option value="'+esc(o)+'" '+(o===v?'selected':'')+'>'+esc(o)+'</option>').join('');
+        input = '<select id="sf_'+f.key+'"><option value="">— انتخاب —</option>'+opts+'</select>';
+      } else if(type==='date'){
+        input = '<input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'">';
+      } else if(type==='number' || type==='mobile' || type==='nid'){
+        input = '<input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
+      } else {
+        input = '<input id="sf_'+f.key+'" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
+      }
+      return '<div class="field"><label>'+esc(f.label)+req+'</label>'+input+'<span class="err-msg"></span></div>';
+    }).join('');
+
+    const h = openModal({
+      title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید',
+      sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'') : 'اطلاعات هویتی پایه عضو — حالت سرور (PostgreSQL)',
+      size:'lg',
+      body: '<div class="fields">'+inputs+'</div>' +
+            '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:10px;padding:10px;background:var(--red-bg);border-radius:8px"></div>',
+      foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
+      onOpen(h){
+        h.el.querySelector('[data-x]').onclick = ()=> h.close();
+        const saveBtn = h.el.querySelector('#srvMemSave');
+        saveBtn.onclick = async ()=>{
+          const values = {};
+          for(const f of fields){
+            const el = document.getElementById('sf_' + f.key);
+            if(!el) continue;
+            values[f.key] = f.type === 'bool' ? (el.checked ? 'true' : 'false') : (el.value || '').trim();
+          }
+          const errBox = h.el.querySelector('#srvFormErr');
+          // simple validation
+          for(const f of fields){
+            if(f.is_required && !values[f.key]){
+              errBox.style.display='';
+              errBox.textContent = '«'+f.label+'» الزامی است.';
+              const el = document.getElementById('sf_'+f.key);
+              if(el) el.focus();
+              return;
+            }
+          }
+          saveBtn.disabled=true; saveBtn.textContent='در حال ثبت…';
+          try {
+            if(m) await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/members/' + m.id, { values });
+            else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
+            // stamp
+            const nm = Object.values(values)[0] || 'عضو';
+            const mno = m ? m.member_no : ('M-'+Date.now().toString().slice(-6));
+            stampFx({ text:'ثبت شد', sub:'عضویت '+esc(mno)+' — '+J.fmt(J.todayIso()), color: (typeof stampColor==='function'?stampColor('member'):'#B3261E'), hold:1100, onDone:()=>{
+              toast(isEdit ? 'عضو به‌روزرسانی شد.' : 'عضو «'+esc(nm)+'» ثبت شد.', 'ok');
+              h.close();
+              srvFieldsCache=null;
+              srvLoadMembersData();
+            }});
+          } catch(e){
+            errBox.style.display='';
+            errBox.innerHTML = esc(e.message) + (Array.isArray(e.details) ? '<br>'+e.details.map(esc).join('<br>') : '');
+            saveBtn.disabled=false;
+            saveBtn.innerHTML = icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو');
+          }
+        };
+      }
     });
-    $('#srvMemSave').onclick = async ()=>{
-      const values = {};
-      for(const f of fields){
-        const el = document.getElementById('sf_' + f.key);
-        values[f.key] = f.type === 'bool' ? (el.checked ? 'true' : 'false') : (el.value || '');
-      }
-      const errBox = $('#srvFormErr');
-      try {
-        if(m) await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/members/' + m.id, { values });
-        else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
-        toast(m ? 'عضو به‌روزرسانی شد.' : 'عضو ثبت شد.', 'ok');
-        closeModal(); srvLoadMembers();
-      } catch(e){
-        errBox.style.display = '';
-        errBox.innerHTML = esc(e.message) + (Array.isArray(e.details) ? '<br>' + e.details.map(esc).join('<br>') : '');
-      }
-    };
   }).catch(e => toast(e.message, 'err'));
 }
 
+
 /* ── قلاب‌های مسیریابی: حالت سرور فقط اعضا و فیلدها را عوض می‌کند؛ بقیه دمو می‌ماند ── */
+/* ── داشبورد متصل به DB ── */
+async function renderSrvDashboard(){
+  const main = $('#main');
+  main.innerHTML =
+    '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">حالت سرور — داده زنده از PostgreSQL · <span class="badge b-green">متصل به '+esc(SRV.instName||'')+'</span></div></div>' +
+    '<div class="ph-actions"><button class="btn btn-soft btn-sm" id="srvDashRefresh">'+icon('refresh',14)+' به‌روزرسانی</button></div></div>' +
+    '<div class="grid g-stats" id="srvStats"><div class="stat"><div class="stat-top">در حال دریافت آمار…</div><div class="stat-val">—</div></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت اعضا</h3><span class="hint-t">توزیع وضعیت</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvMembers"></canvas></div><div class="legend" id="chSrvMembersLg"></div></div></div>' +
+    '<div class="card"><div class="card-h"><h3>گردش مالی ۱۲ ماه اخیر</h3><span class="hint-t">وام‌ها و پرداخت‌ها</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvFlow"></canvas></div><div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>وام‌ها</span><span class="lg-i"><i style="background:#9CCB3C"></i>پرداخت‌ها</span></div></div></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>آخرین اعضا</h3><a class="btn btn-soft btn-sm" href="#/app/members">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashMembers"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="card tight"><div class="card-h"><h3>آخرین وام‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/loans">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashLoans"><p class="hint-t">در حال دریافت…</p></div></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>اقساط</h3></div><div class="card-b" id="srvDashIns"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="card"><div class="card-h"><h3>خلاصه مالی</h3></div><div class="card-b" id="srvDashFinance"></div></div></div>';
+
+  const refreshBtn = $('#srvDashRefresh');
+  if(refreshBtn) refreshBtn.onclick = ()=> renderSrvDashboard();
+
+  try {
+    const stats = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/stats');
+    const stat = (cls, ic, label, val, sub) =>
+      '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+icon(ic,16)+'</span>'+label+'</div><div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
+
+    $('#srvStats').innerHTML =
+      stat('','users','تعداد کل اعضا', fmtN(stats.members.total), faDigits(stats.members.active)+' فعال · '+faDigits(stats.members.newThisMonth)+' جدید این ماه') +
+      stat('s-lime','check','اعضای فعال', fmtN(stats.members.active), faDigits(Math.round(stats.members.active/Math.max(1,stats.members.total)*100))+'٪ کل') +
+      stat('','loan','کل وام‌ها', fmtN(stats.loans.total), fmtMShort(stats.loans.totalAmount)+' '+CUR()+' · '+faDigits(stats.loans.active)+' فعال') +
+      stat('s-teal','coins','وام‌های فعال', fmtN(stats.loans.active), (stats.loans.overdue?faDigits(stats.loans.overdue)+' معوق':'بدون معوق')) +
+      stat('s-red','warn','اقساط معوق', fmtN(stats.installments.overdue), fmtMShort(stats.installments.totalPendingAmount)+' مانده') +
+      stat('s-amber','clock','اقساط در انتظار', fmtN(stats.installments.pending), faDigits(stats.installments.paid)+' پرداخت‌شده') +
+      stat('','bank','موجودی صندوق‌ها', fmtMShort(stats.funds.totalBalance)+' <small>'+CUR()+'</small>', faDigits(stats.funds.total)+' صندوق · '+faDigits(stats.funds.accounts)+' حساب') +
+      stat('s-lime','wallet','پرداخت‌ها', fmtMShort(stats.payments.totalAmount)+' <small>'+CUR()+'</small>', faDigits(stats.payments.total)+' تراکنش');
+
+    // chart members status
+    const memActive = stats.members.active;
+    const memInactive = stats.members.total - memActive;
+    drawDonut($('#chSrvMembers'), [
+      {label:'فعال', value:memActive, color:'#1C6E31'},
+      {label:'غیرفعال', value:memInactive, color:'#B3362B'}
+    ].filter(d=>d.value>0), 'کل اعضا', faDigits(stats.members.total));
+    $('#chSrvMembersLg').innerHTML = '<span class="lg-i"><i style="background:#1C6E31"></i>فعال ('+faDigits(memActive)+')</span><span class="lg-i"><i style="background:#B3362B"></i>غیرفعال ('+faDigits(memInactive)+')</span>';
+
+    // chart flow - loans vs payments monthly
+    const labels = (stats.charts.monthlyLoans||[]).map(x=>x.m).slice(-6);
+    const loanVals = (stats.charts.monthlyLoans||[]).map(x=>Number(x.s||0)).slice(-6);
+    const payVals = (stats.charts.monthlyPayments||[]).map(x=>Number(x.s||0)).slice(-6);
+    const lastLabels = labels.length?labels:['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور'];
+    drawBars($('#chSrvFlow'), lastLabels, [
+      {name:'وام‌ها', color:'#1C6E31', values: loanVals.length?loanVals:[0,0,0,0,0,0]},
+      {name:'پرداخت‌ها', color:'#9CCB3C', values: payVals.length?payVals:[0,0,0,0,0,0]}
+    ]);
+
+    // recent members
+    const rmBox = $('#srvDashMembers');
+    if(rmBox){
+      if(!stats.recent.members.length) rmBox.innerHTML='<p class="hint-t">عضوی ثبت نشده.</p>';
+      else rmBox.innerHTML='<div class="mini-list">'+stats.recent.members.map(m=>'<div class="mini-item"><span class="avatar sz-34">'+esc((m.name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(m.name||'—')+'</b><span>'+esc(m.member_no||'')+' · '+J.fmt(m.created_at||'')+'</span></span><span class="mi-v">'+(m.status==='active'?'فعال':'غیرفعال')+'</span></div>').join('')+'</div>';
+    }
+    // recent loans
+    const rlBox = $('#srvDashLoans');
+    if(rlBox){
+      if(!stats.recent.loans.length) rlBox.innerHTML='<p class="hint-t">وامی ثبت نشده. از منوی وام‌ها ثبت کنید.</p>';
+      else rlBox.innerHTML='<div class="mini-list">'+stats.recent.loans.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+J.fmt(l.created_at||'')+'</span></span><span class="mi-v">'+esc(l.status)+'</span></div>').join('')+'</div>';
+    }
+    // installments
+    const insBox = $('#srvDashIns');
+    if(insBox){
+      insBox.innerHTML = '<div class="mini-list"><div class="mini-item"><span class="avatar sz-34 amber">'+icon('clock',15)+'</span><span class="mi-t"><b>اقساط در انتظار</b><span>'+faDigits(stats.installments.pending)+' قسط</span></span><span class="mi-v">'+fmtMShort(stats.installments.totalPendingAmount)+'</span></div><div class="mini-item"><span class="avatar sz-34" style="background:var(--red-bg)">'+icon('warn',15)+'</span><span class="mi-t"><b>اقساط معوق</b><span>'+faDigits(stats.installments.overdue)+' قسط</span></span><span class="mi-v neg">'+faDigits(stats.installments.overdue)+'</span></div><div class="mini-item"><span class="avatar sz-34" style="background:var(--green-bg)">'+icon('check',15)+'</span><span class="mi-t"><b>پرداخت‌شده</b><span>'+faDigits(stats.installments.paid)+' قسط</span></span><span class="mi-v pos">'+faDigits(stats.installments.paid)+'</span></div></div>';
+    }
+    // finance summary
+    const finBox = $('#srvDashFinance');
+    if(finBox){
+      finBox.innerHTML = '<div class="kv-list"><div class="kv"><span class="k">موجودی کل</span><span class="v">'+fmtMShort(stats.funds.totalBalance)+' '+CUR()+'</span></div><div class="kv"><span class="k">واریزی</span><span class="v pos">+'+fmtMShort(stats.txns.deposit)+' '+CUR()+'</span></div><div class="kv"><span class="k">برداشت</span><span class="v neg">−'+fmtMShort(stats.txns.withdraw)+' '+CUR()+'</span></div><div class="kv"><span class="k">کل تراکنش‌ها</span><span class="v">'+faDigits(stats.txns.total)+'</span></div><div class="kv"><span class="k">کل پرداخت‌ها</span><span class="v">'+fmtMShort(stats.payments.totalAmount)+' '+CUR()+'</span></div></div>';
+    }
+
+  } catch(e){
+    $('#srvStats').innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>خطا در دریافت آمار: '+esc(e.message)+'</div></div>';
+  }
+}
+
+/* ── قلاب‌های مسیریابی: حالت سرور ── */
 (function hookSrvMode(){
   const _pgMembers = PAGES.members;
-  PAGES.members = function(arg){ if(SRV.on && srvReady()) return renderSrvMembersPage(); return _pgMembers(arg); };
+  PAGES.members = function(arg){ if(SRV.on && srvReady()){ if(arg && !isNaN(arg)) return srvViewMember(arg); return renderSrvMembersPage(); } return _pgMembers(arg); };
+  const _pgDash = PAGES.dashboard;
+  PAGES.dashboard = function(){ if(SRV.on && srvReady()) return renderSrvDashboard(); return _pgDash(); };
   const _renderSettings = renderSettings;
   renderSettings = function(){
     _renderSettings();
@@ -4375,6 +4617,7 @@ function srvMemberForm(m){
   };
   PAGES.settings = function(){ renderSettings(); };
 })();
+
 
 const ONBOARD_KEY = 'hesabat-onboard-v1';
 

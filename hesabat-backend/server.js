@@ -69,6 +69,9 @@ app.use('/api/users', require('./src/routes/users'));
 app.use('/api/institutions', require('./src/routes/institutions'));
 app.use('/api/institutions/:id/fields', require('./src/routes/fields'));
 app.use('/api/institutions/:id/members', require('./src/routes/members'));
+app.use('/api/institutions/:id/stats', require('./src/routes/stats'));
+app.use('/api/institutions/:id/loans', require('./src/routes/loans'));
+app.use('/api/institutions/:id/funds', require('./src/routes/funds'));
 
 /* سرو کردن فایل‌های پنل + لندینگ — سازگار با Render و Railway
    Railway وقتی Root Directory = hesabat-backend باشه، /app = hesabat-backend

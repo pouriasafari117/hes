@@ -1,10 +1,8 @@
 -- ═══════════════════════════════════════════════════════════════
--- Hesabat — Complete Schema (Final) — برای نصب تازه روی Supabase / Postgres
--- این فایل را به تنهایی در Supabase SQL Editor اجرا کن — همه چیز را می‌سازد
--- شامل: جداول + ستون‌های v2 + bot_email + member_no + join_requests + RLS + توابع + GRANT (tolerant)
+-- Hesabat — Complete Schema (Final v2) — داشبورد متصل به DB + اعضا + وام‌ها
+-- شامل: جداول قبلی + funds, accounts, loans, installments, payments, txns + stats
 -- ═══════════════════════════════════════════════════════════════
 
--- ── نقش اپ (اگر وجود ندارد، بساز؛ اگر اجازه نداری، بی‌خیال) ──
 do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'hesabat_app') then
     begin
@@ -14,7 +12,7 @@ do $$ begin
   end if;
 end $$;
 
--- ── جداول ──
+-- ── جداول پایه (قبلی) ──
 create table if not exists users (
   id            bigserial primary key,
   name          text not null,
@@ -32,8 +30,6 @@ create table if not exists users (
 create unique index if not exists idx_users_email_unique on users(lower(email));
 create unique index if not exists idx_users_phone_unique on users(lower(phone)) where phone is not null and phone <> '';
 create unique index if not exists idx_users_nid_unique on users(nid) where nid is not null and nid <> '';
-
--- برای سازگاری با DB های قدیمی که users.email unique داشت، ستون‌های جدید را اضافه کن
 alter table users add column if not exists phone text;
 alter table users add column if not exists nid text;
 alter table users add column if not exists father_name text;
@@ -123,6 +119,80 @@ create table if not exists institution_join_requests (
   unique (user_id, institution_id)
 );
 
+-- ── جداول جدید برای داشبورد و وام‌ها ──
+create table if not exists funds (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  name           text not null,
+  code           text,
+  status         text not null default 'active' check (status in ('active','inactive')),
+  notes          text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create table if not exists accounts (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  fund_id        bigint references funds(id) on delete set null,
+  name           text not null,
+  number         text,
+  type           text not null default 'پس‌انداز' check (type in ('پس‌انداز','جاری','قرض‌الحسنه')),
+  initial_balance bigint not null default 0,
+  status         text not null default 'active',
+  notes          text,
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists loans (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  member_id      bigint not null references members(id) on delete cascade,
+  fund_id        bigint references funds(id) on delete set null,
+  amount         bigint not null check (amount > 0),
+  fee_percent    numeric default 4,
+  installments_count integer not null default 12,
+  status         text not null default 'active' check (status in ('active','paid','overdue','cancelled')),
+  description    text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create table if not exists installments (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  loan_id        bigint not null references loans(id) on delete cascade,
+  member_id      bigint not null references members(id) on delete cascade,
+  due_date       date not null,
+  amount         bigint not null,
+  status         text not null default 'pending' check (status in ('pending','paid','overdue')),
+  paid_at        timestamptz,
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists payments (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  loan_id        bigint not null references loans(id) on delete cascade,
+  installment_id bigint references installments(id) on delete set null,
+  member_id      bigint not null references members(id) on delete cascade,
+  amount         bigint not null,
+  type           text not null default 'installment' check (type in ('installment','fee','other')),
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists txns (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  account_id     bigint references accounts(id) on delete set null,
+  member_id      bigint references members(id) on delete set null,
+  loan_id        bigint references loans(id) on delete set null,
+  type           text not null check (type in ('deposit','withdraw','loan_out','repayment','fee','transfer')),
+  amount         bigint not null,
+  description    text,
+  created_at     timestamptz not null default now()
+);
+
 create index if not exists idx_fields_inst  on field_definitions(institution_id);
 create index if not exists idx_members_inst on members(institution_id);
 create index if not exists idx_mfv_inst     on member_field_values(institution_id);
@@ -130,6 +200,19 @@ create index if not exists idx_mfv_field    on member_field_values(field_id);
 create index if not exists idx_instmem_inst on institution_members(institution_id);
 create index if not exists idx_join_req_inst on institution_join_requests(institution_id);
 create index if not exists idx_join_req_user on institution_join_requests(user_id);
+create index if not exists idx_funds_inst on funds(institution_id);
+create index if not exists idx_accounts_inst on accounts(institution_id);
+create index if not exists idx_accounts_fund on accounts(fund_id);
+create index if not exists idx_loans_inst on loans(institution_id);
+create index if not exists idx_loans_member on loans(member_id);
+create index if not exists idx_loans_fund on loans(fund_id);
+create index if not exists idx_ins_loan on installments(loan_id);
+create index if not exists idx_ins_inst on installments(institution_id);
+create index if not exists idx_ins_member on installments(member_id);
+create index if not exists idx_pay_loan on payments(loan_id);
+create index if not exists idx_pay_inst on payments(installment_id);
+create index if not exists idx_txns_inst on txns(institution_id);
+create index if not exists idx_txns_acc on txns(account_id);
 
 -- ── RLS ──
 create or replace function fn_is_member(iid bigint)
@@ -147,6 +230,12 @@ alter table field_definitions   enable row level security;
 alter table members             enable row level security;
 alter table member_field_values enable row level security;
 alter table institution_join_requests enable row level security;
+alter table funds enable row level security;
+alter table accounts enable row level security;
+alter table loans enable row level security;
+alter table installments enable row level security;
+alter table payments enable row level security;
+alter table txns enable row level security;
 
 alter table institutions        force row level security;
 alter table institution_members force row level security;
@@ -154,6 +243,12 @@ alter table field_definitions   force row level security;
 alter table members             force row level security;
 alter table member_field_values force row level security;
 alter table institution_join_requests force row level security;
+alter table funds force row level security;
+alter table accounts force row level security;
+alter table loans force row level security;
+alter table installments force row level security;
+alter table payments force row level security;
+alter table txns force row level security;
 
 drop policy if exists p_inst on institutions;
 create policy p_inst on institutions for all
@@ -186,7 +281,37 @@ create policy p_join_req on institution_join_requests for all
   with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id)
               or user_id = nullif(current_setting('app.user_id', true), '')::bigint);
 
--- ── توابع (با DROP اول برای جلوگیری از 42P13) ──
+drop policy if exists p_funds on funds;
+create policy p_funds on funds for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_accounts on accounts;
+create policy p_accounts on accounts for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_loans on loans;
+create policy p_loans on loans for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_installments on installments;
+create policy p_installments on installments for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_payments on payments;
+create policy p_payments on payments for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_txns on txns;
+create policy p_txns on txns for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+-- ── توابع (با DROP اول) ──
 drop function if exists fn_user_by_email(text);
 drop function if exists fn_user_by_phone(text);
 drop function if exists fn_register_user(text,text,text);
@@ -310,9 +435,9 @@ begin
 end;
 $$;
 
--- ── GRANT ها (tolerant — اگر role وجود نداشت، خطا نده) ──
+-- ── GRANT ها ──
 do $$ begin grant usage on schema public to hesabat_app; exception when others then null; end $$;
-do $$ begin grant select, insert, update, delete on institutions, field_definitions, members, member_field_values, institution_join_requests to hesabat_app; exception when others then null; end $$;
+do $$ begin grant select, insert, update, delete on institutions, field_definitions, members, member_field_values, institution_join_requests, funds, accounts, loans, installments, payments, txns to hesabat_app; exception when others then null; end $$;
 do $$ begin grant select on institution_members to hesabat_app; exception when others then null; end $$;
 do $$ begin grant usage, select on all sequences in schema public to hesabat_app; exception when others then null; end $$;
 do $$ begin grant execute on function fn_is_member(bigint) to hesabat_app; exception when others then null; end $$;

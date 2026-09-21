@@ -684,3 +684,37 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 .m-sec-b{padding:18px}
 #fldList .setting-row{padding:12px 8px;border-radius:10px;transition:background .15s}
 #fldList .setting-row:hover{background:rgba(28,110,49,.04)}
+
+/* ── بهبود منوی اعضا — دقیقا مثل قالب اصلی ── */
+.row-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.x-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--line);background:var(--card);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;color:var(--ink-2)}
+.x-btn:hover{background:var(--card-2);color:var(--ink);border-color:var(--ink-2)}
+.kv-list{display:flex;flex-direction:column}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line);font-size:.86rem}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--ink-2);font-weight:500}
+.kv .v{font-weight:700;color:var(--ink)}
+.mini-list{display:flex;flex-direction:column;gap:2px}
+.mini-item{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:10px;transition:background .15s}
+.mini-item:hover{background:rgba(28,110,49,.04)}
+.mi-t{display:flex;flex-direction:column;flex:1;min-width:0}
+.mi-t b{font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mi-t span{font-size:.75rem;color:var(--ink-2);margin-top:2px}
+.mi-v{font-weight:700;font-size:.85rem;white-space:nowrap}
+.mi-v.pos{color:var(--green-deep)}
+.mi-v.neg{color:var(--red)}
+.cell-main .avatar{flex:none}
+.row-link{color:var(--ink);text-decoration:none;font-weight:700}
+.row-link:hover{color:var(--green-deep);text-decoration:underline}
+.pager{display:flex;align-items:center;gap:10px}
+.tf-info{font-size:.82rem;color:var(--ink-2)}
+
+/* ── استامپ — طراحی قبلی حفظ شد ── */
+.stamp-fx{position:fixed; inset:0; z-index:4000; pointer-events:none; display:flex; align-items:flex-end; justify-content:flex-start; padding:34px}
+.stamp{color:#B3261E; opacity:0; transform:scale(2.5) rotate(-30deg); filter:blur(1px); border:3px solid currentColor; border-radius:12px; padding:8px 14px; font-weight:900; font-size:1.4rem; background:rgba(255,255,255,.9); box-shadow:0 4px 20px rgba(0,0,0,.15)}
+.stamp-fx.go .stamp{animation:stampPress .46s cubic-bezier(.2,.9,.25,1.2) forwards}
+.stamp-fx.go{animation:stampShake .5s ease-out}
+.stamp-fx.lift .stamp{animation:stampLift .45s ease forwards}
+@keyframes stampPress{0%{opacity:0;transform:scale(2.5) rotate(-30deg);filter:blur(4px)}40%{opacity:.96;transform:scale(1.05) rotate(-14deg);filter:blur(0)}70%{transform:scale(.98) rotate(-12deg)}100%{opacity:.96;transform:scale(1) rotate(-12deg);filter:blur(0)}}
+@keyframes stampShake{0%,52%{transform:none}60%{transform:translate(2px,4px) rotate(.35deg)}78%{transform:translate(-2px,1px) rotate(-.2deg)}100%{transform:none}}
+@keyframes stampLift{from{opacity:.96; transform:scale(1) rotate(-12deg)} to{opacity:0; transform:scale(1.05) rotate(-12deg) translateY(-18px)}}
