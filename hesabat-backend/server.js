@@ -44,9 +44,22 @@ app.get('/api/debug', async (req, res) => {
     const c2 = await pool.query('select count(*) as n from users');
     const c3 = await pool.query('select proname from pg_proc where proname like \'fn_%\' order by proname');
     const c4 = await pool.query('select count(*) as n from institutions');
-    const c5 = await pool.query('select id, name, slug, bot_email, owner_id, created_at from institutions order by id desc limit 20');
-    const c6 = await pool.query('select id, name, phone, nid, email, role_type, created_at from users order by id desc limit 20');
-    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], institutions_count: c4.rows[0], funcs: c3.rows.map(r=>r.proname), recent_institutions: c5.rows, recent_users: c6.rows });
+    let c5 = { rows: [] }, c5err = null;
+    try {
+      c5 = await pool.query('select id, name, slug, bot_email, owner_id, created_at from institutions order by id desc limit 20');
+    } catch (e) {
+      c5err = e.message;
+      try {
+        c5 = await pool.query('select id, name, slug, owner_id, created_at from institutions order by id desc limit 20');
+      } catch (e2) { c5 = { rows: [], error: e2.message }; }
+    }
+    let c6 = { rows: [] };
+    try {
+      c6 = await pool.query('select id, name, phone, nid, email, role_type, created_at from users order by id desc limit 20');
+    } catch (e) {
+      c6 = await pool.query('select id, name, email, created_at from users order by id desc limit 20');
+    }
+    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], institutions_count: c4.rows[0], funcs: c3.rows.map(r=>r.proname), recent_institutions: c5.rows, recent_users: c6.rows, debug_note: c5err ? 'bot_email missing, did you run migration? '+c5err : null });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,2000) });
   }
