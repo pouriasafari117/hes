@@ -77,7 +77,7 @@ r.get('/:loanId', asyncH(async (req, res) => {
 
 // POST loan
 r.post('/', asyncH(async (req, res) => {
-  const { memberId, amount, installmentsCount, feePercent, fundId, description } = req.body || {};
+  const { memberId, amount, installmentsCount, feePercent, fundId, description, plan, firstDue, intervalMonths } = req.body || {};
   if (!memberId || !amount) return res.status(400).json({ error: 'عضو و مبلغ الزامی است.' });
   const result = await withTenant(req.user, req.institutionId, async c => {
     const mem = (await c.query('select id from members where id=$1 and institution_id=$2 and deleted_at is null', [memberId, req.institutionId])).rows[0];
@@ -96,11 +96,27 @@ r.post('/', asyncH(async (req, res) => {
       [req.institutionId, memberId, fundId||null, parseInt(String(amount).replace(/[^0-9]/g,''))||0, parseFloat(fee)||0, parseInt(installmentsCount)||12, description||'']
     )).rows[0];
     const cnt = loan.installments_count;
-    const each = Math.floor(loan.amount / cnt);
-    const remainder = loan.amount - each*cnt;
+    /* برنامهٔ اقساط: اگر کلاینت «plan» (آرایهٔ مبلغ هر قسط) فرستاده باشد و طولش با تعداد اقساط برابر باشد، همان استفاده می‌شود؛
+       در غیر این صورت مثل قبل به‌صورت مساوی تقسیم و باقی‌مانده روی قسط آخر می‌نشیند. */
+    let amounts = null;
+    if (Array.isArray(plan)) {
+      const p = plan.slice(0, cnt).map(x => Math.max(0, parseInt(String(x).replace(/[^0-9]/g,''), 10) || 0));
+      if (p.length === cnt) amounts = p;
+    }
+    if (!amounts) {
+      const each = Math.floor(loan.amount / cnt);
+      const remainder = loan.amount - each*cnt;
+      amounts = Array.from({ length: cnt }, (_, i) => i===cnt-1 ? each+remainder : each);
+    }
+    /* تاریخ شروع اقساط: اگر کلاینت firstDue (ISO) فرستاده باشد از همان شروع می‌شود؛ وگرنه رفتار قبلی (از ماه آینده) حفظ است.
+       فاصلهٔ اقساط با intervalMonths (۱=ماهانه) قابل تنظیم است. */
+    const intM = Math.min(12, Math.max(1, parseInt(intervalMonths, 10) || 1));
+    const base = firstDue ? new Date(firstDue) : null;
+    const baseOk = base && !isNaN(base.getTime());
     for (let i=0;i<cnt;i++) {
-      const due = new Date(); due.setMonth(due.getMonth()+i+1);
-      const amt = i===cnt-1 ? each+remainder : each;
+      const due = baseOk ? new Date(base) : new Date();
+      due.setMonth(due.getMonth() + (baseOk ? i*intM : (i+1)));
+      const amt = amounts[i];
       await c.query(
         `insert into installments (institution_id, loan_id, member_id, due_date, amount) values ($1,$2,$3,$4,$5)`,
         [req.institutionId, loan.id, memberId, due.toISOString().slice(0,10), amt]

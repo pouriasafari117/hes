@@ -1625,21 +1625,21 @@ function memberForm(member){
     sub: isEdit ? esc(member.name) + ' · ' + esc(member.memberNo) : 'اطلاعات هویتی عضو جدید',
     size:'lg',
     body:
-      '<div class="m-sec">' + secH('۱','user','مشخصات هویتی') +
+      '<div class="m-sec t-green">' + secH('۱','user','مشخصات هویتی') +
         '<div class="m-sec-b"><div class="fields">' +
           '<div class="field"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="mfName" value="'+esc(isEdit?member.name:'')+'"><span class="err-msg"></span></div>' +
           '<div class="field"><label>نام پدر</label><input id="mfFather" value="'+esc(isEdit?member.father:'')+'"></div>' +
           '<div class="field"><label>تاریخ تولد'+(fieldReq('birthDate')?' <span class="req">*</span>':'')+'</label><input id="mfBirth" value="'+(isEdit?faDigits(member.birthDate):'')+'" data-iso="'+(isEdit&&/^\\d{4}-\\d{2}-\\d{2}$/.test(member.birthDate)?member.birthDate:'')+'" placeholder="۱۳۷۵/۰۴/۰۲"><span class="err-msg"></span><span class="help">از تقویم شمسی انتخاب کنید یا تایپ نمایید.</span></div>' +
         '</div></div>' +
       '</div>' +
-      '<div class="m-sec">' + secH('۲','send','اطلاعات تماس و شناسنامه‌ای') +
+      '<div class="m-sec t-amber">' + secH('۲','send','اطلاعات تماس و شناسنامه‌ای') +
         '<div class="m-sec-b"><div class="fields">' +
           '<div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="mfMobile" class="num-inp" value="'+esc(isEdit?member.mobile:'')+'" placeholder="0912xxxxxxx" maxlength="11"><span class="err-msg"></span><span class="help">هر فرمتی (۰۹۱۲…، +98 912…، ۹۱۲…) قبول است — خودکار مرتب می‌شود.</span></div>' +
           '<div class="field"><label>کد ملی <span class="req">*</span></label><input id="mfNid" class="num-inp" value="'+esc(isEdit?member.nationalId:'')+'" maxlength="10" placeholder="۱۰ رقم"><span class="err-msg"></span></div>' +
           (!isEdit ? '<div class="field"><label>شماره عضویت</label><input id="mfNo" value="'+esc(DB.settings.memberNoTemplate.replace(/\\{seq(?::(\\d+))?\\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'" disabled style="background:var(--card-2)"><span class="help">خودکار، از قالب شماره‌گذاری تنظیمات.</span></div>' : '') +
         '</div></div>' +
       '</div>' +
-      '<div class="m-sec" id="mfSecCustom" style="display:none">' + secH('۳','filter','اطلاعات تکمیلی (فیلدهای سفارشی مؤسسه)') +
+      '<div class="m-sec t-blue" id="mfSecCustom" style="display:none">' + secH('۳','filter','اطلاعات تکمیلی (فیلدهای سفارشی مؤسسه)') +
         '<div class="m-sec-b"><div class="fields" id="mfSec3"></div></div>' +
       '</div>' +
     (isEdit ? '<div class="alert a-info" style="margin-top:14px"><span class="al-ic">'+icon('info',16)+'</span><div>تاریخ عضویت: <b>'+J.fmtLong(member.joinedAt)+'</b> — شماره عضویت <b>'+esc(member.memberNo)+'</b> قابل تغییر نیست.</div></div>' : ''),
@@ -2025,14 +2025,14 @@ function loanForm(preset, presetMemberId){
   const today = J.todayIso();
   const ld = DB.settings.loanDefaults || {}; /* پیش‌فرض‌های وام از تنظیمات */
   const body =
-    '<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> عضو و صندوق</div><div class="m-sec-b"><div class="fields">' +
+    '<div class="m-sec t-green"><div class="m-sec-h"><span class="sn">۱</span> عضو و صندوق</div><div class="m-sec-b"><div class="fields">' +
       '<div class="field"><label>عضو <span class="req">*</span></label><select id="lfMember">' +
         '<option value="">— انتخاب عضو —</option>' + DB.members.filter(m=>m.status==='active').map(m=>'<option value="'+m.id+'"'+(presetMemberId===m.id?' selected':'')+'>'+esc(m.name)+'</option>').join('') + '</select><span class="err-msg"></span></div>' +
       '<div class="field"><label>صندوق <span class="req">*</span></label><select id="lfFund">' + DB.funds.filter(f=>f.status==='active').map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join('') + '</select><span class="err-msg"></span></div>' +
       '<div class="field full"><label>حساب پرداخت/دریافت</label><select id="lfAcc"></select><span class="help">برای پرداخت اصل وام و دریافت اقساط</span></div>' +
     '</div></div></div>' +
 
-    '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ‌ها</div><div class="m-sec-b"><div class="fields">' +
+    '<div class="m-sec t-amber"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ‌ها</div><div class="m-sec-b"><div class="fields">' +
       '<div class="field"><label>مبلغ اصل وام <small>('+CUR()+')</small> <span class="req">*</span></label><input id="lfAmt" class="num-inp"><span class="err-msg"></span></div>' +
       '<div class="field"><label>نرخ / کارمزد سالانه <small>(٪)</small></label><input id="lfRate" class="num-inp" value="'+esc(String(ld.rate!==undefined?ld.rate:4))+'"></div>' +
       '<div class="field"><label>تاریخ درخواست</label><input id="lfReq"></div>' +
@@ -2041,11 +2041,17 @@ function loanForm(preset, presetMemberId){
       '<div class="field"><label>وضعیت وام</label><select id="lfStatus"><option value="pending">در انتظار تصویب</option><option value="active" selected>فعال (تصویب‌شده)</option></select></div>' +
     '</div></div></div>' +
 
-    '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
+    '<div class="m-sec t-blue"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
       '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="lfMonths">'+(()=>{ const cur=ld.months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option'+(x===cur?' selected':'')+' value="'+x+'">'+faDigits(x)+'</option>').join(''); })()+'</select></div>' +
       '<div class="field"><label>فاصله / دوره اقساط</label><select id="lfInt"><option value="1"'+((ld.interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((ld.interval||1)==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((ld.interval||1)==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="lfFirst"><span class="err-msg"></span></div>' +
       '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="lfPer" class="num-inp"><span class="help">با تغییر مبلغ/تعداد، به‌صورت خودکار پیشنهاد می‌شود</span></div>' +
+      '<div class="field full"><label>نوع اقساط</label><div class="chips" id="lfKindChips"><span class="chip on" data-k="equal">مساوی — همه اقساط یک مبلغ</span><span class="chip" data-k="custom">متغیر — مبلغ هر قسط جداگانه</span></div><span class="help">در حالت «متغیر» مبلغ هر قسط را جداگانه وارد می‌کنی؛ مجموع باید دقیقاً با «مبلغ قابل‌بازپرداخت» برابر باشد.</span></div>' +
+      '<div class="field full" id="lfVarBox" style="display:none">' +
+        '<div class="var-head"><b>ویرایش مبلغ هر قسط</b><div style="display:flex;gap:6px"><button type="button" class="btn btn-ghost btn-xs" id="lfVarEq">'+icon('refresh',12)+' توزیع مساوی</button><button type="button" class="btn btn-soft btn-xs" id="lfVarBal">'+icon('check',12)+' تراز خودکار روی قسط آخر</button></div></div>' +
+        '<div class="var-grid" id="lfVarGrid"></div>' +
+        '<div class="var-sum" id="lfVarSum"></div>' +
+      '</div>' +
       '<div class="field full"><label>ضامن / ضامنین <small>(در صورت نیاز)</small></label><input id="lfGuar" placeholder="مثلاً: یک ضامن کارمند رسمی"></div>' +
       '<div class="field full"><label>توضیحات</label><textarea id="lfNotes"></textarea></div>' +
     '</div>' +
@@ -2080,15 +2086,60 @@ function loanForm(preset, presetMemberId){
   function suggest(){
     const amt = moneyVal(el('#lfAmt')), months = +el('#lfMonths').value, rate = parseFloat(faToEn(el('#lfRate').value))||0;
     if(amt > 0){ const per = Math.ceil(amt*(1+rate/100)/months/10000)*10000; setMoney(el('#lfPer'), per); }
+    if(lfKind==='custom') buildVarGrid();
     updateSum();
   }
   function updateSum(){
     const amt = moneyVal(el('#lfAmt')), per = moneyVal(el('#lfPer')), months = +el('#lfMonths').value;
+    const rate = parseFloat(faToEn(el('#lfRate').value))||0;
     el('#lfSum').innerHTML =
       '<div class="sum-line"><span>مبلغ اصل وام</span><b>'+fmtM(amt||0)+'</b></div>' +
-      '<div class="sum-line"><span>مبلغ هر قسط × '+faDigits(months)+' قسط</span><b>'+fmtM(per*months)+'</b></div>' +
-      '<div class="sum-line"><span>مجموع کارمزد تقریبی</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>';
+      '<div class="sum-line"><span>مبلغ قابل‌بازپرداخت ('+faDigits(months)+' قسط)</span><b>'+fmtM(per*months)+'</b></div>' +
+      (rate > 0 ? '<div class="sum-line"><span>مجموع کارمزد تقریبی ('+faDigits(rate)+'٪)</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>' : '');
+    updateVarUI();
   }
+  /* ── اقساط متغیر: مبلغ هر قسط جداگانه ── */
+  let lfKind = 'equal';
+  function varTarget(){ return moneyVal(el('#lfPer')) * (+el('#lfMonths').value); }
+  function equalPlan(){ const per = moneyVal(el('#lfPer')); return Array.from({length:+el('#lfMonths').value}, ()=>per); }
+  function buildVarGrid(prefill){
+    const grid = el('#lfVarGrid'); if(!grid) return; grid.innerHTML = '';
+    const months = +el('#lfMonths').value;
+    const base = (prefill && prefill.length===months) ? prefill : equalPlan();
+    for(let i=0;i<months;i++){
+      const it = document.createElement('div'); it.className = 'var-it';
+      it.innerHTML = '<span class="vn">'+faDigits(i+1)+'</span>';
+      const inp = document.createElement('input'); inp.className = 'num-inp vamt'; inp.dataset.i = i;
+      it.appendChild(inp); grid.appendChild(it);
+      attachMoney(inp); setMoney(inp, base[i]||0);
+      inp.addEventListener('input', updateVarUI);
+    }
+    updateVarUI();
+  }
+  function readPlan(){ const g = el('#lfVarGrid'); if(!g) return []; return Array.from(g.querySelectorAll('.vamt')).map(i=>moneyVal(i)); }
+  function updateVarUI(){
+    if(lfKind !== 'custom') return;
+    const sum = el('#lfVarSum'); if(!sum) return;
+    const plan = readPlan(); if(!plan.length) return;
+    const tot = plan.reduce((x,y)=>x+y,0), tg = varTarget(), diff = tg - tot;
+    sum.innerHTML = '<span>مجموع اقساط: <b>'+fmtM(tot)+'</b></span><span>مبلغ قابل‌بازپرداخت: <b>'+fmtM(tg)+'</b></span>' +
+      (diff===0 ? '<span class="badge b-green"><i class="bd"></i>تراز است</span>'
+                : '<span class="badge b-red"><i class="bd"></i>'+fmtM(Math.abs(diff))+' '+(diff>0?'کم‌تر':'بیش‌تر')+'</span>');
+  }
+  el('#lfKindChips').querySelectorAll('.chip').forEach(c => c.onclick = ()=>{
+    lfKind = c.dataset.k;
+    el('#lfKindChips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('on', x===c));
+    el('#lfVarBox').style.display = lfKind==='custom' ? '' : 'none';
+    if(lfKind==='custom') buildVarGrid();
+    updateVarUI();
+  });
+  el('#lfVarEq').onclick = ()=> buildVarGrid();
+  el('#lfVarBal').onclick = ()=>{
+    const plan = readPlan(); if(!plan.length) return;
+    const diff = varTarget() - plan.reduce((x,y)=>x+y,0);
+    if(diff!==0) plan[plan.length-1] = Math.max(0, (plan[plan.length-1]||0) + diff);
+    buildVarGrid(plan);
+  };
   el('#lfAmt').addEventListener('input', suggest);
   el('#lfMonths').addEventListener('change', suggest);
   el('#lfRate').addEventListener('input', suggest);
@@ -2109,10 +2160,17 @@ function loanForm(preset, presetMemberId){
     if(!okf){ toast('برخی فیلدها ناقص است.','err'); return; }
     const status = el('#lfStatus').value;
     const payIso = jdVal(el('#lfPay'));
+    let _plan = null;
+    if(lfKind === 'custom'){
+      _plan = readPlan();
+      const _t = _plan.reduce((x,y)=>x+y,0), _g = varTarget();
+      if(_t !== _g){ toast('مجموع اقساط ('+fmtM(_t)+') با مبلغ قابل‌بازپرداخت ('+fmtM(_g)+') برابر نیست — «تراز خودکار» را بزنید یا مبلغ‌ها را اصلاح کنید.','err'); return; }
+    }
     const loan = {
       id: uid('l'), memberId, fundId, accountId: accId || null,
       amount: amt, rate: parseFloat(faToEn(el('#lfRate').value))||0, months, intervalMonths:intM,
       installmentAmount: moneyVal(el('#lfPer')) || Math.ceil(amt/months/10000)*10000,
+      plan: _plan,
       requestDate: jdVal(el('#lfReq')) || today, approveDate: jdVal(el('#lfApp')), payDate: payIso,
       firstDue: jdVal(el('#lfFirst')), guarantors: fieldVal(el('#lfGuar')) || 'بدون ضامن',
       status, notes: fieldVal(el('#lfNotes')), createdAt: J.nowIso()
@@ -2137,10 +2195,12 @@ function loanForm(preset, presetMemberId){
 function buildSchedule(loan){
   const fd = J.iso2j(loan.firstDue);
   const existing = loanInstallments(loan.id).length;
+  const plan = Array.isArray(loan.plan) ? loan.plan : null;
   for(let k = existing; k < loan.months; k++){
     const d = J.addMonths(fd.jy, fd.jm, fd.jd, k * loan.intervalMonths);
+    const amt = (plan && plan[k] !== undefined && plan[k] !== null) ? +plan[k] : loan.installmentAmount;
     DB.installments.push({ id: uid('ins'), loanId: loan.id, no: k+1, dueDate: J.j2iso(d.jy,d.jm,d.jd),
-      amount: loan.installmentAmount, paidAmount: 0, paidDate: '' });
+      amount: amt, paidAmount: 0, paidDate: '' });
   }
 }
 
@@ -3323,7 +3383,13 @@ function renderUiSec(box){
 function renderDataSec(box){
     const body = box; const s = DB.settings; const canEdit = can('settingsEdit'); const disAttr = canEdit ? '' : ' disabled style="opacity:.55;pointer-events:none"';
     
+    let _srcSrv = false;
+    try{ _srcSrv = (typeof SRV!=='undefined' && SRV.on && srvReady()); }catch(e){}
     body.innerHTML =
+      '<div class="alert '+(_srcSrv?'a-info':'a-warn')+'" style="margin-bottom:13px"><span class="al-ic">'+icon('info',16)+'</span><div>' +
+        (_srcSrv ? '<b>منبع دادهٔ نمایش: سرور PostgreSQL.</b> عملیات این بخش روی «دادهٔ محلی (دمو)» انجام می‌شود و هیچ اثری روی داده‌های سرور ندارد؛ پس پاک‌سازیِ این‌جا عددهای داشبورد سرور را صفر نمی‌کند.'
+                 : '<b>منبع دادهٔ نمایش: حافظهٔ محلی مرورگر (دمو).</b> عملیات این بخش روی همین داده اعمال می‌شود؛ «شروع از صفر» همهٔ رکوردها را برای همیشه پاک می‌کند و دادهٔ نمونه دوباره ساخته نمی‌شود.') +
+      '</div></div>' +
       '<div class="setting-row"><div class="sr-t"><b>پشتیبان‌گیری از داده دمو</b><p>خروجی JSON از همه رکوردهای ذخیره‌شده در مرورگر.</p></div>' +
       '<button class="btn btn-soft btn-sm" id="setBackup">'+icon('download',14)+' دانلود</button></div>' +
       '<div class="setting-row"><div class="sr-t"><b>بازگردانی از فایل JSON</b><p>جایگزینی کامل داده‌های فعلی با فایل پشتیبان (خروجی همین پنل). قبل از جایگزینی، تأیید گرفته می‌شود.</p></div>' +
@@ -4327,7 +4393,17 @@ function injectSrvSec(){
 function renderSrvSec(){
   const box = $('#srvBox'); if(!box) return;
   const conn = srvReady();
+  const dsOn = SRV.on && srvReady();
+  const dsCard = (k, on, ic, t, d) => '<div class="ds-card'+(on?' on':'')+'" data-ds="'+k+'" role="button" tabindex="0">' +
+    '<span class="ds-ic">'+icon(ic,17)+'</span><span class="ds-t"><b>'+t+'</b><p>'+d+'</p></span>' +
+    '<span class="ds-check">'+(on?icon('check',12):'')+'</span></div>';
   box.innerHTML =
+    '<div style="margin-bottom:6px"><b style="font-size:.93rem">منبع داده</b><p style="font-size:.78rem;color:var(--ink-2);margin-top:3px">پنل داده‌ها را از کجا بخواند؟ همهٔ صفحات (داشبورد، اعضا، وام‌ها، گزارش‌ها) بر اساس این انتخاب پر می‌شوند.</p></div>' +
+    '<div class="ds-grid">' +
+      dsCard('local', !dsOn, 'wallet', 'حافظهٔ محلی مرورگر (دمو)', 'داده‌ها روی همین مرورگر ذخیره می‌شود؛ برای آزمایش سریع. نیازی به سرور نیست.') +
+      dsCard('server', dsOn, 'bank', 'سرور PostgreSQL', conn ? 'متصل به مؤسسهٔ «'+esc(SRV.instName||('#'+SRV.instId))+'» — داده‌ها از API خوانده می‌شود.' : 'داده‌ها از پایگاه‌دادهٔ واقعی از طریق API خوانده می‌شود. ابتدا اتصال را از فرم پایین بسازید.') +
+    '</div>' +
+    '<div class="card-h" style="padding:14px 0 8px;border:0"><h3 style="font-size:.82rem">'+icon('gear',15)+' تنظیمات اتصال سرور</h3></div>' +
     '<div class="setting-row"><div class="sr-t"><b>وضعیت اتصال</b><p>' +
       (conn ? 'متصل به <b>' + esc(SRV.base) + '</b> — مؤسسهٔ <b>' + esc(SRV.instName || ('#' + SRV.instId)) + '</b> (' + esc((SRV.user && SRV.user.name) || '') + ')</p>'
             : 'هنوز به سروری متصل نشده‌اید. ابتدا وارد شوید یا حساب بسازید.</p>') +
@@ -4408,6 +4484,31 @@ function renderSrvSec(){
     SRV.token = ''; SRV.user = null; SRV.instId = null; SRV.instName = ''; SRV.on = false; srvSave(); srvDropFieldsCache();
     toast('اتصال قطع شد.', 'ok'); renderSrvSec();
   };
+  /* انتخاب منبع داده */
+  box.querySelectorAll('.ds-card').forEach(c => c.onclick = async ()=>{
+    if(c.dataset.ds === 'local'){
+      if(SRV.on && srvReady()){
+        const okc = await askConfirm({ title:'تغییر منبع داده به لوکال', ok:'بله، روی دمو برگرد',
+          text:'همهٔ صفحات دوباره از «حافظهٔ محلی مرورگر (دمو)» خوانده می‌شوند. اتصال سرور حفظ می‌شود و هر وقت بخواهی از همین‌جا فعالش می‌کنی.' });
+        if(!okc) return;
+        SRV.on = false; srvSave(); toast('منبع داده: لوکال (دمو)','ok');
+      }
+      renderSrvSec(); try{ route(); }catch(e){} return;
+    }
+    if(!srvReady()){
+      toast('هنوز به سروری متصل نیستی — اول با فرم «تنظیمات اتصال سرور» همین بخش وارد شو و مؤسسه را انتخاب کن.','warn');
+      const f = $id('srvBase'); if(f){ try{ f.focus(); f.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
+      return;
+    }
+    if(!SRV.on){
+      try { await srvLoadFields(true); } catch(e){ toast('خطا در اتصال: '+e.message, 'err'); return; }
+      SRV.on = true; srvSave();
+      toast('منبع داده: سرور — اعضا، وام‌ها و گزارش‌ها از PostgreSQL می‌آیند.','ok');
+    }
+    renderSrvSec();
+    if(SRV.on && srvReady() && document.getElementById('secFld')){ const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb); }
+    try{ route(); }catch(e){}
+  });
   const bt = $id('srvToggle');
   if(bt) bt.onclick = async ()=>{
     if(!SRV.on){
@@ -4679,7 +4780,7 @@ async function srvViewMember(id, cachedRows){
     sub: 'پرونده عضو · '+esc(m.member_no||'')+' · '+ (m.status==='active'?'فعال':'غیرفعال'),
     size:'md',
     body: '<div class="m-sec"><div class="m-sec-h">اطلاعات هویتی</div><div class="m-sec-b"><div class="kv-list">'+rowsHtml+'</div></div></div>' +
-          '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v">'+esc(m.status)+'</span></div></div></div></div>',
+          '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(m.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(m.status==='active'?'فعال':'غیرفعال')+'</span></span></div></div></div></div>',
     foot: '<button class="btn btn-ghost btn-sm" data-x>بستن</button><button class="btn btn-solid btn-sm" id="srvViewEdit">'+icon('pen',14)+' ویرایش</button>',
     onOpen(h){
       h.el.querySelector('[data-x]').onclick=()=>h.close();
@@ -4745,9 +4846,9 @@ function srvMemberForm(m){
       sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'')+' · '+faDigits(totalFields)+' فیلد' : 'حالت سرور — '+faDigits(totalFields)+' فیلد از تنظیمات — فیلد جدید اضافه کردی؟ همینجا ظاهر میشه (کش پاک شد)',
       size:'lg',
       body: '<div class="alert a-info" style="border-radius:12px;margin-bottom:16px"><span class="al-ic">'+icon('info',16)+'</span><div><b>فیلد جدید اضافه کردی؟</b> کش پاک شد — الان <b>'+faDigits(totalFields)+' فیلد</b> از DB لود شد. اگر فیلد جدید نمی‌بینی، صفحه را رفرش کن.</div></div>' +
-            '<div class="m-sec" style="border-radius:16px;border:1px solid #e8f5e9;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#e8f5e9,#f1f8e9);padding:14px 18px"><span class="sn" style="background:#1C6E31;color:white">۱</span> مشخصات فردی — با تقویم شمسی کامل</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec1+'</div></div></div>' +
-            (sec2 ? '<div class="m-sec" style="border-radius:16px;border:1px solid #fff3e0;margin-top:14px;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#fff3e0,#ffe0b2);padding:14px 18px"><span class="sn" style="background:#ef6c00;color:white">۲</span> اطلاعات تماس</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec2+'</div></div></div>' : '') +
-            (sec3 ? '<div class="m-sec" style="border-radius:16px;border:1px solid #e3f2fd;margin-top:14px;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#e3f2fd,#bbdefb);padding:14px 18px"><span class="sn" style="background:#1565c0;color:white">۳</span> سایر اطلاعات سفارشی</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec3+'</div></div></div>' : '') +
+            '<div class="m-sec t-green"><div class="m-sec-h"><span class="sn">۱</span> مشخصات فردی</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec1+'</div></div></div>' +
+            (sec2 ? '<div class="m-sec t-amber" style="margin-top:14px"><div class="m-sec-h"><span class="sn">۲</span> اطلاعات تماس</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec2+'</div></div></div>' : '') +
+            (sec3 ? '<div class="m-sec t-blue" style="margin-top:14px"><div class="m-sec-h"><span class="sn">۳</span> سایر اطلاعات سفارشی</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec3+'</div></div></div>' : '') +
             '<div id="srvFormErr" style="display:none;color:var(--red);font-size:13px;margin-top:14px;padding:12px;background:#ffebee;border:1px solid #ffcdd2;border-radius:12px"></div>',
       foot: '<button class="btn btn-ghost btn-sm" data-x style="border-radius:12px">انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave" style="border-radius:12px;padding:11px 20px;box-shadow:0 4px 12px rgba(28,110,49,.3)">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
       onOpen(h){
@@ -5019,7 +5120,7 @@ async function srvLoanDetail(loanId){
               const jDate = J.iso2j(i.due_date);
               const fullMonth = jDate ? J.MONTHS[jDate.jm-1] : '';
               const fullDate = J.fmtLong(i.due_date);
-              return '<tr><td class="c-fa-num"><b>'+fullDate+'</b><br><small class="hint-t">'+fullMonth+' ماه '+ (jDate?faDigits(jDate.jy):'') +' — '+J.fmt(i.due_date)+'</small></td><td class="c-fa-num c-strong">'+fmtN(i.amount)+'</td><td><span class="badge '+(i.status==='paid'?'b-green':'b-amber')+'">'+esc(i.status)+'</span></td><td class="c-fa-num">'+(i.paid_at?J.fmtLong(i.paid_at)+'<br><small>'+J.fmt(i.paid_at)+'</small>':'—')+'</td><td>'+(i.status!=='paid'?'<button class="btn btn-soft btn-xs" data-pay="'+i.id+'">پرداخت</button>':'<span class="badge b-green">تسویه</span>')+'</td></tr>';
+              return '<tr><td class="c-fa-num"><b>'+fullDate+'</b><br><small class="hint-t">'+fullMonth+' ماه '+ (jDate?faDigits(jDate.jy):'') +' — '+J.fmt(i.due_date)+'</small></td><td class="c-fa-num c-strong">'+fmtN(i.amount)+'</td><td><span class="badge '+(i.status==='paid'?'b-green':'b-amber')+'"><i class="bd"></i>'+(typeof faInsStatus==='function'?faInsStatus(i.status):i.status)+'</span></td><td class="c-fa-num">'+(i.paid_at?J.fmtLong(i.paid_at)+'<br><small>'+J.fmt(i.paid_at)+'</small>':'—')+'</td><td>'+(i.status!=='paid'?'<button class="btn btn-soft btn-xs" data-pay="'+i.id+'">پرداخت</button>':'<span class="badge b-green">تسویه</span>')+'</td></tr>';
             }).join('')+
           '</tbody></table></div>':'<div class="card-b"><p class="hint-t">قسطی وجود ندارد.</p></div>')+
         '</div>' +
@@ -5068,22 +5169,28 @@ async function srvLoanForm(presetMemberId){
     '<div class="m-head"><h3>ثبت وام جدید<span class="m-sub">فرم چندبخشی — عضو، مبلغ، برنامه اقساط — کارمزد از تنظیمات: '+faDigits(feeDefault)+'%</span></h3>' +
     '<button class="x-btn" data-close aria-label="بستن">'+icon('x',15)+'</button></div>' +
     '<div class="m-body">' +
-      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> عضو و صندوق</div><div class="m-sec-b"><div class="fields">' +
+      '<div class="m-sec t-green"><div class="m-sec-h"><span class="sn">۱</span> عضو و صندوق</div><div class="m-sec-b"><div class="fields">' +
         '<div class="field"><label>عضو <span class="req">*</span></label><select id="slfMember"><option value="">— انتخاب عضو —</option>'+memberOpts+'</select><span class="err-msg"></span></div>' +
         '<div class="field"><label>صندوق</label><select id="slfFund"><option value="">— انتخاب صندوق —</option>'+fundOpts+'</select><span class="help">صندوقی که وام از آن پرداخت می‌شود</span></div>' +
         '<div class="field full"><label>حساب پرداخت</label><select id="slfAcc"><option value="">— انتخاب حساب —</option></select><span class="help">برای پرداخت اصل وام</span></div>' +
       '</div></div></div>' +
-      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ‌ها</div><div class="m-sec-b"><div class="fields">' +
+      '<div class="m-sec t-amber"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ‌ها</div><div class="m-sec-b"><div class="fields">' +
         '<div class="field"><label>مبلغ اصل وام <small>('+CUR()+')</small> <span class="req">*</span></label><input id="slfAmt" class="num-inp" placeholder="مثلاً 50000000"><span class="err-msg"></span></div>' +
         '<div class="field"><label>نرخ / کارمزد سالانه <small>(٪) — از تنظیمات</small></label><input id="slfFee" class="num-inp" value="'+esc(String(feeDefault))+'"><span class="help">اگر 0 بزنید بدون کارمزد</span></div>' +
         '<div class="field"><label>تاریخ درخواست</label><input id="slfReq" placeholder="1403/02/15"></div>' +
         '<div class="field"><label>تاریخ پرداخت</label><input id="slfPay" placeholder="1403/02/16"></div>' +
       '</div></div></div>' +
-      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
+      '<div class="m-sec t-blue"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
         '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="slfCnt"><option value="6"'+(cntDefault==6?' selected':'')+'>6</option><option value="12"'+(cntDefault==12?' selected':'')+'>12</option><option value="18"'+(cntDefault==18?' selected':'')+'>18</option><option value="24"'+(cntDefault==24?' selected':'')+'>24</option><option value="36"'+(cntDefault==36?' selected':'')+'>36</option><option value="48"'+(cntDefault==48?' selected':'')+'>48</option></select></div>' +
         '<div class="field"><label>فاصله اقساط</label><select id="slfInt"><option value="1" selected>ماهانه</option><option value="2">دوماه یک‌بار</option><option value="3">سه‌ماه یک‌بار</option></select></div>' +
         '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="slfFirst" placeholder="1403/03/15"><span class="err-msg"></span></div>' +
         '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="slfPer" class="num-inp"><span class="help">خودکار محاسبه می‌شود</span></div>' +
+        '<div class="field full"><label>نوع اقساط</label><div class="chips" id="slfKindChips"><span class="chip on" data-k="equal">مساوی — همه اقساط یک مبلغ</span><span class="chip" data-k="custom">متغیر — مبلغ هر قسط جداگانه</span></div><span class="help">در حالت «متغیر» مبلغ هر قسط را جداگانه وارد می‌کنی؛ مجموع باید دقیقاً با «مبلغ قابل‌بازپرداخت» برابر باشد.</span></div>' +
+        '<div class="field full" id="slfVarBox" style="display:none">' +
+          '<div class="var-head"><b>ویرایش مبلغ هر قسط</b><div style="display:flex;gap:6px"><button type="button" class="btn btn-ghost btn-xs" id="slfVarEq">'+icon('refresh',12)+' توزیع مساوی</button><button type="button" class="btn btn-soft btn-xs" id="slfVarBal">'+icon('check',12)+' تراز خودکار روی قسط آخر</button></div></div>' +
+          '<div class="var-grid" id="slfVarGrid"></div>' +
+          '<div class="var-sum" id="slfVarSum"></div>' +
+        '</div>' +
         '<div class="field full"><label>توضیحات</label><textarea id="slfDesc" rows="2" placeholder="اختیاری"></textarea></div>' +
       '</div><div class="card-b" style="border-top:1px dashed var(--line);background:var(--card-2);margin-top:12px;border-radius:10px"><div id="slfSum"></div></div></div></div>' +
       '<div id="slfErr" style="display:none;color:var(--red);font-size:12px;margin:12px;padding:10px;background:var(--red-bg);border-radius:8px"></div>' +
@@ -5119,8 +5226,9 @@ async function srvLoanForm(presetMemberId){
   el('#slfFund').addEventListener('change', loadAccounts);
   loadAccounts();
 
+  function slfNum(x){ return parseInt(String(x||'').replace(/[^0-9]/g,''))||0; }
   function updateSum(){
-    const amt = parseInt((el('#slfAmt').value||'').replace(/[^0-9]/g,''))||0;
+    const amt = slfNum(el('#slfAmt').value);
     const months = parseInt(el('#slfCnt').value)||12;
     const rate = parseFloat(faToEn(el('#slfFee').value))||0;
     const perEl = el('#slfPer');
@@ -5128,13 +5236,58 @@ async function srvLoanForm(presetMemberId){
       const per = Math.ceil(amt*(1+rate/100)/months/10000)*10000;
       if(typeof setMoney==='function') setMoney(perEl, per);
       else perEl.value = per;
+      if(slfKind==='custom') slfBuildGrid();
     }
-    const per = parseInt((el('#slfPer').value||'').replace(/[^0-9]/g,''))||0;
+    const per = slfNum(perEl.value);
     el('#slfSum').innerHTML =
       '<div class="sum-line"><span>مبلغ اصل وام</span><b>'+fmtM(amt||0)+'</b></div>' +
-      '<div class="sum-line"><span>مبلغ هر قسط × '+faDigits(months)+' قسط</span><b>'+fmtM(per*months)+'</b></div>' +
-      '<div class="sum-line"><span>مجموع کارمزد ('+faDigits(rate)+'٪)</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>';
+      '<div class="sum-line"><span>مبلغ قابل‌بازپرداخت ('+faDigits(months)+' قسط)</span><b>'+fmtM(per*months)+'</b></div>' +
+      (rate > 0 ? '<div class="sum-line"><span>مجموع کارمزد ('+faDigits(rate)+'٪)</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>' : '');
+    slfUpdateVar();
   }
+  /* ── اقساط متغیر (حالت سرور) ── */
+  let slfKind = 'equal';
+  function slfVarTarget(){ return slfNum(el('#slfPer').value) * (parseInt(el('#slfCnt').value)||12); }
+  function slfBuildGrid(prefill){
+    const grid = el('#slfVarGrid'); if(!grid) return; grid.innerHTML = '';
+    const months = parseInt(el('#slfCnt').value)||12;
+    const per = slfNum(el('#slfPer').value);
+    const base = (prefill && prefill.length===months) ? prefill : Array.from({length:months}, ()=>per);
+    for(let i=0;i<months;i++){
+      const it = document.createElement('div'); it.className = 'var-it';
+      it.innerHTML = '<span class="vn">'+faDigits(i+1)+'</span>';
+      const inp = document.createElement('input'); inp.className = 'num-inp vamt'; inp.dataset.i = i;
+      it.appendChild(inp); grid.appendChild(it);
+      if(typeof attachMoney==='function') attachMoney(inp);
+      if(typeof setMoney==='function') setMoney(inp, base[i]||0); else inp.value = base[i]||0;
+      inp.addEventListener('input', slfUpdateVar);
+    }
+    slfUpdateVar();
+  }
+  function slfReadPlan(){ const g = el('#slfVarGrid'); if(!g) return []; return Array.from(g.querySelectorAll('.vamt')).map(i=>slfNum(i.value)); }
+  function slfUpdateVar(){
+    if(slfKind !== 'custom') return;
+    const sum = el('#slfVarSum'); if(!sum) return;
+    const plan = slfReadPlan(); if(!plan.length) return;
+    const tot = plan.reduce((x,y)=>x+y,0), tg = slfVarTarget(), diff = tg - tot;
+    sum.innerHTML = '<span>مجموع اقساط: <b>'+fmtM(tot)+'</b></span><span>مبلغ قابل‌بازپرداخت: <b>'+fmtM(tg)+'</b></span>' +
+      (diff===0 ? '<span class="badge b-green"><i class="bd"></i>تراز است</span>'
+                : '<span class="badge b-red"><i class="bd"></i>'+fmtM(Math.abs(diff))+' '+(diff>0?'کم‌تر':'بیش‌تر')+'</span>');
+  }
+  el('#slfKindChips').querySelectorAll('.chip').forEach(c => c.onclick = ()=>{
+    slfKind = c.dataset.k;
+    el('#slfKindChips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('on', x===c));
+    el('#slfVarBox').style.display = slfKind==='custom' ? '' : 'none';
+    if(slfKind==='custom') slfBuildGrid();
+    slfUpdateVar();
+  });
+  el('#slfVarEq').onclick = ()=> slfBuildGrid();
+  el('#slfVarBal').onclick = ()=>{
+    const plan = slfReadPlan(); if(!plan.length) return;
+    const diff = slfVarTarget() - plan.reduce((x,y)=>x+y,0);
+    if(diff!==0) plan[plan.length-1] = Math.max(0, (plan[plan.length-1]||0) + diff);
+    slfBuildGrid(plan);
+  };
   el('#slfAmt').addEventListener('input', updateSum);
   el('#slfCnt').addEventListener('change', updateSum);
   el('#slfFee').addEventListener('input', updateSum);
@@ -5152,9 +5305,18 @@ async function srvLoanForm(presetMemberId){
     if(!mid){ err.style.display=''; err.textContent='عضو را انتخاب کنید.'; return; }
     if(!amt || Number(amt)<=0){ err.style.display=''; err.textContent='مبلغ وام را وارد کنید.'; return; }
     if(!first){ err.style.display=''; err.textContent='تاریخ اولین سررسید الزامی است.'; return; }
+    const payload = { memberId: parseInt(mid), amount: amt, installmentsCount: parseInt(cnt), feePercent: fee, description: desc,
+      intervalMonths: parseInt(el('#slfInt').value)||1 };
+    try { const fd = (typeof jdVal==='function') ? jdVal(el('#slfFirst')) : ''; if(fd) payload.firstDue = fd; } catch(e){}
+    if(slfKind === 'custom'){
+      const pl = slfReadPlan();
+      const tot = pl.reduce((x,y)=>x+y,0), tg = slfVarTarget();
+      if(tot !== tg){ err.style.display=''; err.textContent = 'مجموع اقساط ('+fmtM(tot)+') با مبلغ قابل‌بازپرداخت ('+fmtM(tg)+') برابر نیست — «تراز خودکار» را بزنید یا مبلغ‌ها را اصلاح کنید.'; return; }
+      payload.plan = pl;
+    }
     const btn = el('#slfSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
     try {
-      await srvFetch('POST', '/api/institutions/'+SRV.instId+'/loans', { memberId: parseInt(mid), amount: amt, installmentsCount: parseInt(cnt), feePercent: fee, description: desc });
+      await srvFetch('POST', '/api/institutions/'+SRV.instId+'/loans', payload);
       toast('وام ثبت شد.','ok');
       if(typeof stampFx==='function') stampFx({ text:'ثبت شد', sub:'وام '+fmtM(amt)+' — '+J.fmt(J.todayIso()), color:'#1C6E31', hold:1100, onDone:()=>{ close(); if(typeof srvLoadLoans==='function') srvLoadLoans(); }});
       else { close(); if(typeof srvLoadLoans==='function') srvLoadLoans(); }
@@ -5358,7 +5520,7 @@ async function srvLoadFunds(){
       return;
     }
     box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>نام صندوق</th><th>کد</th><th>تعداد حساب</th><th>موجودی کل</th><th>وضعیت</th><th></th></tr></thead><tbody>' +
-      funds.map(f=>'<tr><td><b>'+esc(f.name)+'</b><br><small class="hint-t">'+esc(f.notes||'')+'</small></td><td>'+esc(f.code||'—')+'</td><td class="c-fa-num">'+faDigits(f.accounts_count||0)+'</td><td class="c-fa-num c-strong">'+fmtM(f.total_balance||0)+'</td><td><span class="badge '+(f.status==='active'?'b-green':'b-gray')+'">'+esc(f.status)+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-editf="'+f.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-delf="'+f.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
+      funds.map(f=>'<tr><td><b>'+esc(f.name)+'</b><br><small class="hint-t">'+esc(f.notes||'')+'</small></td><td>'+esc(f.code||'—')+'</td><td class="c-fa-num">'+faDigits(f.accounts_count||0)+'</td><td class="c-fa-num c-strong">'+fmtM(f.total_balance||0)+'</td><td><span class="badge '+(f.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(f.status==='active'?'فعال':'غیرفعال')+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-editf="'+f.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-delf="'+f.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
       '</tbody></table></div>';
     box.querySelectorAll('[data-editf]').forEach(b=> b.onclick=()=> srvFundForm(funds.find(x=>String(x.id)===b.dataset.editf)));
     box.querySelectorAll('[data-delf]').forEach(b=> b.onclick=async()=>{
@@ -5384,7 +5546,7 @@ async function srvLoadAccounts(){
       return;
     }
     box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>نام حساب</th><th>شماره</th><th>صندوق</th><th>نوع</th><th>موجودی اولیه</th><th>وضعیت</th><th></th></tr></thead><tbody>' +
-      accs.map(a=>'<tr><td><b>'+esc(a.name)+'</b></td><td class="c-fa-num">'+esc(a.number||'—')+'</td><td>'+esc(a.fund_name||'—')+'</td><td>'+esc(a.type||'')+'</td><td class="c-fa-num c-strong">'+fmtM(a.initial_balance||0)+'</td><td><span class="badge '+(a.status==='active'?'b-green':'b-gray')+'">'+esc(a.status)+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-edita="'+a.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-dela="'+a.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
+      accs.map(a=>'<tr><td><b>'+esc(a.name)+'</b></td><td class="c-fa-num">'+esc(a.number||'—')+'</td><td>'+esc(a.fund_name||'—')+'</td><td>'+esc(a.type||'')+'</td><td class="c-fa-num c-strong">'+fmtM(a.initial_balance||0)+'</td><td><span class="badge '+(a.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(a.status==='active'?'فعال':'غیرفعال')+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-edita="'+a.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-dela="'+a.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
       '</tbody></table></div>';
     box.querySelectorAll('[data-edita]').forEach(b=> b.onclick=()=> srvAccountForm(accs.find(x=>String(x.id)===b.dataset.edita)));
     box.querySelectorAll('[data-dela]').forEach(b=> b.onclick=async()=>{

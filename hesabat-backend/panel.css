@@ -822,3 +822,52 @@ body.theme-dark ::selection{background:rgba(183,228,94,.3)}
 /* وضعیت برجستهٔ نتایج جستجوی سریع (کیبورد) */
 .dp-item.qs-hl{background:rgba(28,110,49,.1)}
 body.theme-dark .dp-item.qs-hl{background:rgba(59,175,95,.14)}
+
+/* ═══════════ ۱۴۰۵ — پلیس‌هولدر راست‌چین (RTL) ═══════════ */
+.inp::placeholder,
+.field input::placeholder,
+.field select::placeholder,
+.field textarea::placeholder,
+.m-modal input::placeholder,
+.m-modal textarea::placeholder,
+.m-drawer input::placeholder,
+.m-drawer textarea::placeholder{direction:rtl; text-align:right}
+
+/* ═══════════ بخش‌های رنگی فرم‌های چندبخشی (عضو/وام) ═══════════ */
+.m-sec.t-green{border-color:rgba(28,110,49,.28)}
+.m-sec.t-green>.m-sec-h{background:linear-gradient(90deg,rgba(28,110,49,.10),rgba(28,110,49,.03));color:#1C6E31;border-bottom-color:rgba(28,110,49,.16)}
+.m-sec.t-green>.m-sec-h .sn{background:#1C6E31}
+.m-sec.t-amber{border-color:rgba(217,138,27,.34)}
+.m-sec.t-amber>.m-sec-h{background:linear-gradient(90deg,rgba(217,138,27,.12),rgba(217,138,27,.04));color:#94610C;border-bottom-color:rgba(217,138,27,.20)}
+.m-sec.t-amber>.m-sec-h .sn{background:#D98A1B}
+.m-sec.t-blue{border-color:rgba(21,101,192,.26)}
+.m-sec.t-blue>.m-sec-h{background:linear-gradient(90deg,rgba(21,101,192,.09),rgba(21,101,192,.03));color:#0E4D96;border-bottom-color:rgba(21,101,192,.15)}
+.m-sec.t-blue>.m-sec-h .sn{background:#1565C0}
+body.theme-dark .m-sec.t-green>.m-sec-h{color:#7ED494;background:linear-gradient(90deg,rgba(63,175,95,.16),rgba(63,175,95,.05));border-bottom-color:rgba(126,212,148,.16)}
+body.theme-dark .m-sec.t-amber>.m-sec-h{color:#F0B45F;background:linear-gradient(90deg,rgba(217,138,27,.18),rgba(217,138,27,.06));border-bottom-color:rgba(240,180,95,.16)}
+body.theme-dark .m-sec.t-blue>.m-sec-h{color:#8FB9EC;background:linear-gradient(90deg,rgba(90,150,230,.17),rgba(90,150,230,.05));border-bottom-color:rgba(143,185,236,.15)}
+
+/* ═══════════ انتخاب منبع داده (تنظیمات ▸ اتصال سرور) ═══════════ */
+.ds-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:6px}
+.ds-card{position:relative;display:flex;gap:11px;align-items:flex-start;border:1.5px solid var(--line);border-radius:14px;background:var(--card);padding:13px 14px;cursor:pointer;transition:border-color .15s, background .15s, box-shadow .15s}
+.ds-card:hover{border-color:var(--ink-2)}
+.ds-card.on{border-color:var(--green-deep);background:rgba(28,110,49,.05);box-shadow:0 0 0 3px rgba(28,110,49,.07)}
+.ds-card .ds-ic{width:36px;height:36px;border-radius:11px;background:var(--card-2);display:inline-flex;align-items:center;justify-content:center;color:var(--ink-2);flex:none;transition:.15s}
+.ds-card.on .ds-ic{background:var(--green-deep);color:#fff}
+.ds-card .ds-t{flex:1;min-width:0}
+.ds-card .ds-t b{font-size:.88rem;display:block}
+.ds-card .ds-t p{font-size:.74rem;color:var(--ink-2);margin-top:3px;line-height:1.7}
+.ds-card .ds-check{position:absolute;top:10px;left:10px;width:20px;height:20px;border-radius:50%;background:var(--green-deep);color:#fff;display:inline-flex;align-items:center;justify-content:center}
+.ds-card:not(.on) .ds-check{display:none}
+body.theme-dark .ds-card.on{background:rgba(183,228,94,.06);box-shadow:0 0 0 3px rgba(183,228,94,.06)}
+@media(max-width:640px){.ds-grid{grid-template-columns:1fr}}
+
+/* ═══════════ ویرایشگر اقساط متغیر (فرم وام) ═══════════ */
+.var-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px dashed var(--line);border-bottom:0;border-radius:12px 12px 0 0;background:var(--card-2);padding:9px 12px;font-size:.84rem}
+.var-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border:1px dashed var(--line);border-top:0;padding:12px;max-height:238px;overflow:auto;background:var(--card)}
+@media(max-width:640px){.var-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.var-it{display:flex;align-items:center;gap:6px;min-width:0}
+.var-it .vn{min-width:26px;height:30px;display:inline-flex;align-items:center;justify-content:center;background:var(--card-2);border:1px solid var(--line);border-radius:8px;font-size:.72rem;font-weight:700;color:var(--ink-2);flex:none}
+.var-it .vamt{height:32px;padding:5px 8px;font-size:.8rem;border-radius:9px}
+.var-sum{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px dashed var(--line);border-top:0;border-radius:0 0 12px 12px;background:var(--card-2);padding:8px 12px;font-size:.8rem}
+body.theme-dark .var-it .vn{background:var(--card);}
