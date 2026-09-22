@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#ffffff">
-<title>Sprout — Watch your money pile up</title>
+<meta name="theme-color" content="#F4F0E2">
+<meta name="description" content="حساب‌ها — سامانه فارسی مدیریت صندوق‌های قرض‌الحسنه و مؤسسات مالی: اعضا، وام، اقساط شمسی، گزارش‌ها و نمودارها.">
+<title>حساب‌ها — مدیریت صندوق، وام و اقساط</title>
 <!-- ═══ PILE v8 — قاب سفید ۲۰px + گرادیان + اعداد فارسی ═══ -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -295,7 +296,7 @@ try{
           <circle cx="16" cy="16" r="13.5" fill="#2E9E4C"/>
           <circle cx="16" cy="16" r="13.5" fill="none" stroke="#1C6E31" stroke-width="2.6"/>
           <circle cx="16" cy="16" r="9" fill="none" stroke="#BFE8A8" stroke-width="1.6" stroke-dasharray="3.4 2.6"/>
-          <text x="16" y="20.6" text-anchor="middle" font-size="13.5" font-weight="600" font-family="Fredoka, sans-serif" fill="#EAF9D6">$</text>
+          <text x="16" y="20.6" text-anchor="middle" font-size="13.5" font-weight="600" font-family="IBM Plex Sans Arabic, Tahoma, sans-serif" fill="#EAF9D6">ح</text>
         </svg>
         <span data-i="brand"></span>
       </a>
@@ -487,7 +488,7 @@ function makeSprite(color, shaded, dpr){
   c.fillStyle=ink;
   c.font=numFont(Math.round(BILL_H*.37));
   c.textAlign='center'; c.textBaseline='middle';
-  c.fillText('$',0,cy+BILL_H*.02);
+  c.fillText(faNums ? '﷼' : '$', 0, cy+BILL_H*.02);
 
   if(shaded){
     c.globalCompositeOperation='source-atop';
@@ -671,46 +672,46 @@ var SQUIG = '<svg class="squiggle" viewBox="0 0 200 20" preserveAspectRatio="non
 
 var T = {
   en: {
-    title:'Sprout — Watch your money pile up',
-    brand:'Sprout', navRates:'Rates', navHow:'How it works', navHelp:'Help',
+    title:'Hesabat — Funds, loans & installments, in one place',
+    brand:'Hesabat', navRates:'Features', navHow:'How it works', navHelp:'Help',
     login:'Log in', open:'Open account',
-    eyebrow:'Sprout Savings · FDIC insured',
-    h1:'Watch your money<br><span class="hl">pile up'+SQUIG+'</span>',
-    sub:'Round-ups and payday sweeps, parked at 4.60% APY. No fees, no minimums, no fine print — you live, it piles up.',
-    ctaPrimary:'Start saving free', ctaSecondary:'See how it works',
-    statApy:'APY', statFee:'Monthly fees', statSaved:'Saved this week',
-    apyV:'4.60<em>%</em>', feeV:'$0',
+    eyebrow:'Hesabat Panel · Qarz-al-Hasaneh & fund management',
+    h1:'Members, loans & installments<br><span class="hl">all in one place'+SQUIG+'</span>',
+    sub:'From member sign-up to Jalali installment schedules, funds & accounts, charts and reports — built for Qarz-al-Hasaneh funds and small financial institutions.',
+    ctaPrimary:'Start free', ctaSecondary:'Enter the panel',
+    statApy:'Setup time', statFee:'Monthly fee', statSaved:'Loans paid this week',
+    apyV:'5 min', feeV:'$0',
     hint:'Brush through the bills — click to work the drawer.',
     toasts:{
-      brand:'Just a demo — but the carpet is very real.',
-      rates:'That page isn’t wired up in this demo.',
-      how:'How it works: money goes in, money piles up.',
-      help:'No help centre yet — the carpet needs no instructions.',
-      login:'Login isn’t part of this demo — go nudge the bills instead.',
-      open:'Account opening isn’t wired up — the drawer, however, opens for free.',
-      cta:'One day this opens an account. Today it only opens the cash drawer.'
+      brand:'Hesabat — a friendly home for your fund.',
+      rates:'Members with custom fields, loans & Jalali installments, funds & accounts, charts & reports, CSV export and print — fully Persian and RTL.',
+      how:'Three steps: open a manager account, shape your member form, register the first loan. The rest is automatic.',
+      help:'Demo account: user «admin», password «1234» — or open a fresh account right here.',
+      login:'Taking you to the panel…',
+      open:'Account wizard opens in the panel…',
+      cta:'The wizard opens in the panel — three quick steps.'
     },
     sndOn:'Mute sound', sndOff:'Unmute sound'
   },
   fa: {
-    title:'اسپروت — ببین پولت چطور روی هم می‌چینه',
-    brand:'اسپروت', navRates:'نرخ‌ها', navHow:'چطور کار می‌کنه', navHelp:'راهنما',
+    title:'حساب‌ها — مدیریت صندوق، وام و اقساط، همه‌جا یکجا',
+    brand:'حساب‌ها', navRates:'امکانات', navHow:'چطور کار می‌کنه', navHelp:'راهنما',
     login:'ورود', open:'افتتاح حساب',
-    eyebrow:'پس‌انداز اسپروت · سود روزشمار',
-    h1:'ببین پولتو<br><span class="hl">روی هم می‌چینه'+SQUIG+'</span>',
-    sub:'خرده‌ی خریدها و واریز خودکارِ آخر ماه، با سود سالانه ۴٫۶۰٪. بدون کارمزد، بدون حداقل موجودی، بدون ریزه‌کاری — تو زندگی کن، پول خودش می‌چینه.',
-    ctaPrimary:'رایگان شروع کن', ctaSecondary:'چطور کار می‌کنه؟',
-    statApy:'سود سالانه', statFee:'کارمزد ماهانه', statSaved:'پس‌انداز این هفته',
-    apyV:'۴٫۶۰<em>٪</em>', feeV:'$۰',
+    eyebrow:'سامانه مدیریت صندوق‌های قرض‌الحسنه و مؤسسات مالی',
+    h1:'عضو، وام و اقساط<br><span class="hl">همه‌جا یکجا'+SQUIG+'</span>',
+    sub:'از ثبت عضو با فیلدهای دلخواه تا برنامه اقساط شمسی، صندوق‌ها و حساب‌ها، نمودارها و گزارش‌های آماده چاپ — ساخته‌شده برای قرض‌الحسنه‌ها و صندوق‌های خانوادگی.',
+    ctaPrimary:'رایگان شروع کن', ctaSecondary:'ورود به پنل',
+    statApy:'زمان راه‌اندازی', statFee:'کارمزد ماهانه', statSaved:'وام پرداخت‌شده این هفته',
+    apyV:'۵ دقیقه', feeV:'۰ تومان',
     hint:'ماوس رو بکش لای پول‌ها — کلیک کن تا کشوی صندوق جیرینگ بده!',
     toasts:{
-      brand:'فقط دموئه — ولی فرش پول کاملاً واقعیه!',
-      rates:'این صفحه تو این دمو وصل نیست.',
-      how:'چطور کار می‌کنه؟ پول میاد تو، پول رو هم می‌چینه.',
-      help:'هنوز راهنمایی نداریم — فرش که راهنما نمی‌خواد!',
-      login:'ورود تو این دمو نیست — برو بیل‌ها رو هُل بده.',
-      open:'افتتاح حساب هنوز وصل نیست — ولی کشوی صندوق رایگان باز می‌شه!',
-      cta:'یه روز اینجا حساب باز می‌کنه. امروز فقط کشوی صندوق باز می‌شه — جیرینگ!'
+      brand:'حساب‌ها — خانه‌ی قشنگِ صندوق شما 🌿',
+      rates:'مدیریت اعضا با فیلدهای دلخواه، وام و اقساط شمسی، صندوق‌ها و حساب‌ها، نمودارها و گزارش‌ها، خروجی CSV و چاپ — تماماً فارسی و راست‌به‌چپ.',
+      how:'سه قدم: افتتاح حساب مدیر، چیدن فرم عضو، ثبت اولین وام. بقیه‌ش خودکاره!',
+      help:'حساب نمایشی: کاربر «admin» با رمز «1234» — یا همین‌جا افتتاح حساب کن.',
+      login:'میریم به پنل ورود…',
+      open:'ویزارد افتتاح حساب تو پنل باز می‌شه…',
+      cta:'ویزارد تو پنل باز می‌شه — سه تا مرحله، تموم!'
     },
     sndOn:'قطع صدا', sndOff:'پخش صدا'
   }
@@ -718,7 +719,11 @@ var T = {
 
 var lang = document.documentElement.lang === 'fa' ? 'fa' : 'en';
 
-function fmtMoney(n){ return '$' + n.toLocaleString(lang==='fa' ? 'fa-IR' : 'en-US'); }
+function fmtMoney(n){
+  return lang==='fa'
+    ? n.toLocaleString('fa-IR') + ' تومان'
+    : '$' + n.toLocaleString('en-US');
+}
 
 function broadcastLang(){
   try{
@@ -967,9 +972,9 @@ function renderTicker(){ if(tickerEl) tickerEl.textContent = fmtMoney(saved); }
 setInterval(function(){ saved += 3 + Math.floor(Math.random()*17); renderTicker(); }, 1300);
 
 bindStub('lnkBrand','brand');   bindStub('lnkRates','rates');
-bindStub('lnkHow','how');       bindStub('lnkHow2','how');
+bindStub('lnkHow','how');
 bindStub('lnkHelp','help');
-['lnkLogin'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html';});});
+['lnkLogin','lnkHow2'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html';});});
 ['lnkOpen','lnkCta'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){e.preventDefault();location.href='Panel.html#/onboarding';});});
 
 setLang(lang);
