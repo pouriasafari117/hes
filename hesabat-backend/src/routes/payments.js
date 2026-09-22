@@ -1,69 +1,101 @@
 const express = require('express');
-const { withTenant } = require('../db');
-const { asyncH, requireAuth, requireInstitution } = require('../mw');
+const { authMiddleware, mustBeMember } = require('../mw');
 
-const r = express.Router({ mergeParams: true });
-r.use(requireAuth, requireInstitution);
+module.exports = (pool) => {
+  const router = express.Router();
 
-// GET payments ?loanId=
-r.get('/', asyncH(async (req, res) => {
-  const loanId = req.query.loanId ? parseInt(req.query.loanId,10) : null;
-  const rows = await withTenant(req.user, req.institutionId, async c => {
-    if (loanId) {
-      return (await c.query('select * from payments where institution_id=$1 and loan_id=$2 order by created_at desc', [req.institutionId, loanId])).rows;
-    }
-    return (await c.query('select * from payments where institution_id=$1 order by created_at desc limit 100', [req.institutionId])).rows;
-  });
-  res.json({ payments: rows });
-}));
-
-// POST payment
-r.post('/', asyncH(async (req, res) => {
-  const { loanId, installmentId, amount, type } = req.body || {};
-  if (!loanId || !amount) return res.status(400).json({ error: 'وام و مبلغ الزامی است.' });
-  const amt = parseInt(String(amount).replace(/[^0-9]/g,''))||0;
-  if (amt<=0) return res.status(400).json({ error: 'مبلغ نامعتبر.' });
-
-  const result = await withTenant(req.user, req.institutionId, async c => {
-    const loan = (await c.query('select id, member_id from loans where id=$1 and institution_id=$2', [loanId, req.institutionId])).rows[0];
-    if (!loan) return { nf:true };
-
-    // اگر قسط مشخص شده، آن را پرداخت‌شده کن
-    if (installmentId) {
-      const ins = (await c.query('select id, amount, status from installments where id=$1 and loan_id=$2', [installmentId, loanId])).rows[0];
-      if (ins) {
-        await c.query("update installments set status='paid', paid_at=now() where id=$1", [installmentId]);
-      }
-    } else {
-      // اولین قسط pending را پرداخت کن
-      const ins = (await c.query("select id from installments where loan_id=$1 and status='pending' order by due_date limit 1", [loanId])).rows[0];
-      if (ins) {
-        await c.query("update installments set status='paid', paid_at=now() where id=$1", [ins.id]);
-      }
-    }
-
-    const pay = (await c.query(
-      `insert into payments (institution_id, loan_id, installment_id, member_id, amount, type) values ($1,$2,$3,$4,$5,$6) returning *`,
-      [req.institutionId, loanId, installmentId||null, loan.member_id, amt, type||'installment']
-    )).rows[0];
-
-    // تراکنش واریز
+  // GET /institutions/:institutionId/payments — لیست تمام پرداخت‌ها
+  router.get('/:institutionId/payments', authMiddleware, mustBeMember(pool), async (req, res) => {
     try {
-      await c.query(`insert into txns (institution_id, member_id, loan_id, type, amount, description) values ($1,$2,$3,'deposit',$4,$5)`,
-        [req.institutionId, loan.member_id, loanId, amt, 'پرداخت قسط وام #'+loanId]);
-    } catch(e){}
-
-    // اگر همه اقساط پرداخت شد، وام تسویه
-    const pending = (await c.query("select count(*)::int as n from installments where loan_id=$1 and status!='paid'", [loanId])).rows[0].n;
-    if (pending===0) {
-      await c.query("update loans set status='paid', updated_at=now() where id=$1", [loanId]);
+      const result = await pool.query(
+        `SELECT id, member_id, amount, description, created_at, updated_at
+         FROM payments
+         WHERE institution_id = $1
+         ORDER BY created_at DESC`,
+        [req.institutionId]
+      );
+      res.json(result.rows);
+    } catch (e) {
+      console.error('[Payments] GET error:', e.message);
+      res.status(500).json({ error: 'Failed to fetch payments' });
     }
-
-    return { payment: pay };
   });
 
-  if (result.nf) return res.status(404).json({ error: 'وام پیدا نشد.' });
-  res.status(201).json(result);
-}));
+  // POST /institutions/:institutionId/payments — ثبت پرداخت جدید
+  router.post('/:institutionId/payments', authMiddleware, mustBeMember(pool), async (req, res) => {
+    const { member_id, amount, description } = req.body;
 
-module.exports = r;
+    if (!member_id || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid member_id or amount' });
+    }
+
+    try {
+      const result = await pool.query(
+        `INSERT INTO payments (institution_id, member_id, amount, description)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, member_id, amount, description, created_at, updated_at`,
+        [req.institutionId, member_id, amount, description || '']
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (e) {
+      console.error('[Payments] POST error:', e.message);
+      res.status(500).json({ error: 'Failed to create payment' });
+    }
+  });
+
+  // PATCH /institutions/:institutionId/payments/:paymentId — ویرایش پرداخت
+  router.patch('/:institutionId/payments/:paymentId', authMiddleware, mustBeMember(pool), async (req, res) => {
+    const { paymentId } = req.params;
+    const { amount, description } = req.body;
+
+    if (amount !== undefined && (typeof amount !== 'number' || amount <= 0)) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE payments
+         SET amount = COALESCE($1, amount),
+             description = COALESCE($2, description),
+             updated_at = NOW()
+         WHERE id = $3 AND institution_id = $4
+         RETURNING id, member_id, amount, description, created_at, updated_at`,
+        [amount || null, description || null, paymentId, req.institutionId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Payment not found' });
+      }
+
+      res.json(result.rows[0]);
+    } catch (e) {
+      console.error('[Payments] PATCH error:', e.message);
+      res.status(500).json({ error: 'Failed to update payment' });
+    }
+  });
+
+  // DELETE /institutions/:institutionId/payments/:paymentId — حذف پرداخت
+  router.delete('/:institutionId/payments/:paymentId', authMiddleware, mustBeMember(pool), async (req, res) => {
+    const { paymentId } = req.params;
+
+    try {
+      const result = await pool.query(
+        `DELETE FROM payments
+         WHERE id = $1 AND institution_id = $2
+         RETURNING id`,
+        [paymentId, req.institutionId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Payment not found' });
+      }
+
+      res.sendStatus(204);
+    } catch (e) {
+      console.error('[Payments] DELETE error:', e.message);
+      res.status(500).json({ error: 'Failed to delete payment' });
+    }
+  });
+
+  return router;
+};

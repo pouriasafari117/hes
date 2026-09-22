@@ -4,7 +4,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
-/* بارگذاری سادهٔ .env بدون وابستگی */
+/* بارگذاری ساده .env بدون وابستگی */
 try {
   const envPath = path.join(__dirname, '.env');
   if (fs.existsSync(envPath)) {
@@ -28,90 +28,72 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/health', async (req, res) => {
+/* بارگذاری استخر دیتابیس */
+const { pool, withTenant } = require('./src/db');
+
+/* مسیرهای اعلان‌شده */
+app.use('/', require('./src/routes/auth')(pool));
+app.use('/', require('./src/routes/users')(pool));
+app.use('/', require('./src/routes/institutions')(pool));
+app.use('/', require('./src/routes/members')(pool));
+app.use('/', require('./src/routes/funds')(pool));
+app.use('/', require('./src/routes/accounts')(pool));
+app.use('/', require('./src/routes/payments')(pool));
+app.use('/', require('./src/routes/loans')(pool));
+app.use('/', require('./src/routes/stats')(pool));
+app.use('/', require('./src/routes/fields')(pool));
+
+/* Health Check Endpoint */
+app.get('/health', async (req, res) => {
   try {
-    const { pool } = require('./src/db');
-    const c1 = await pool.query('select 1 as ok');
-    res.json({ ok: true, service: 'hesabat-backend', v: 2, db_ok: true, db: c1.rows[0] });
+    const result = await pool.query('SELECT NOW()');
+    res.json({ status: 'ok', timestamp: result.rows[0].now });
   } catch (e) {
-    res.json({ ok: false, service: 'hesabat-backend', v: 2, db_ok: false, error: e.message, code: e.code });
+    console.error('[Health] Database error:', e.message);
+    res.status(503).json({ status: 'error', message: e.message });
   }
 });
-app.get('/api/debug', async (req, res) => {
-  try {
-    const { pool } = require('./src/db');
-    const c1 = await pool.query('select 1 as ok');
-    const c2 = await pool.query('select count(*) as n from users');
-    const c3 = await pool.query('select proname from pg_proc where proname like \'fn_%\' order by proname');
-    const c4 = await pool.query('select count(*) as n from institutions');
-    let c5 = { rows: [] }, c5err = null;
-    try {
-      c5 = await pool.query('select id, name, slug, bot_email, owner_id, created_at from institutions order by id desc limit 20');
-    } catch (e) {
-      c5err = e.message;
-      try {
-        c5 = await pool.query('select id, name, slug, owner_id, created_at from institutions order by id desc limit 20');
-      } catch (e2) { c5 = { rows: [], error: e2.message }; }
-    }
-    let c6 = { rows: [] };
-    try {
-      c6 = await pool.query('select id, name, phone, nid, email, role_type, created_at from users order by id desc limit 20');
-    } catch (e) {
-      c6 = await pool.query('select id, name, email, created_at from users order by id desc limit 20');
-    }
-    res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], institutions_count: c4.rows[0], funcs: c3.rows.map(r=>r.proname), recent_institutions: c5.rows, recent_users: c6.rows, debug_note: c5err ? 'bot_email missing, did you run migration? '+c5err : null });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,2000) });
-  }
-});
-app.use('/api/auth', require('./src/routes/auth'));
-app.use('/api/users', require('./src/routes/users'));
-app.use('/api/institutions', require('./src/routes/institutions'));
-app.use('/api/institutions/:id/fields', require('./src/routes/fields'));
-app.use('/api/institutions/:id/members', require('./src/routes/members'));
-app.use('/api/institutions/:id/stats', require('./src/routes/stats'));
-app.use('/api/institutions/:id/loans', require('./src/routes/loans'));
-app.use('/api/institutions/:id/funds', require('./src/routes/funds'));
-app.use('/api/institutions/:id/accounts', require('./src/routes/accounts'));
-app.use('/api/institutions/:id/payments', require('./src/routes/payments'));
-app.use('/api/institutions/:id/txns', require('./src/routes/txns'));
 
-/* سرو کردن فایل‌های پنل + لندینگ — سازگار با Render و Railway
-   Railway وقتی Root Directory = hesabat-backend باشه، /app = hesabat-backend
-   و فایل‌های پنل یا در .. (ریشه ریپو) هستند یا در خود __dirname (اگر کپی شده باشند) */
-function findFile(name) {
-  const candidates = [
-    path.join(__dirname, '..', name),
-    path.join(__dirname, name),
-    path.join(process.cwd(), '..', name),
-    path.join(process.cwd(), name),
-  ];
-  for (const p of candidates) if (fs.existsSync(p)) return p;
-  return candidates[0];
-}
-const PANEL_DIR_CANDIDATES = [path.join(__dirname, '..'), __dirname, path.join(process.cwd(), '..'), process.cwd()];
-function panelExists(f) {
-  for (const d of PANEL_DIR_CANDIDATES) if (fs.existsSync(path.join(d, f))) return true;
-  return false;
-}
-
-app.get('/Panel.html', (req, res) => res.sendFile(findFile('Panel.html')));
-app.get('/panel.html', (req, res) => res.sendFile(findFile('Panel.html')));
-app.get('/panel.css', (req, res) => res.sendFile(findFile('panel.css')));
-app.get('/panel.js', (req, res) => res.sendFile(findFile('panel.js')));
-app.get('/Hesabat.html', (req, res) => res.sendFile(findFile('Hesabat.html')));
-app.get('/hesabat.html', (req, res) => res.sendFile(findFile('Hesabat.html')));
-app.get('/', (req, res) => {
-  if (panelExists('Hesabat.html')) return res.sendFile(findFile('Hesabat.html'));
-  if (panelExists('Panel.html')) return res.sendFile(findFile('Panel.html'));
-  return res.redirect('/Panel.html');
+/* 404 Handler */
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
-app.use((req, res) => res.status(404).json({ error: 'مسیر پیدا نشد.' }));
+/* Error Handler */
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'خطای داخلی سرور.' });
+  console.error('[Express] Error:', err.message);
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-const PORT = +(process.env.PORT || 4000);
-app.listen(PORT, () => console.log(`Hesabat API on http://localhost:${PORT}`));
+/* شروع سرور */
+const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, () => {
+  console.log(`[Server] listening on port ${PORT}`);
+});
+
+/* Graceful Shutdown */
+const gracefulShutdown = async (signal) => {
+  console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  
+  server.close(async () => {
+    console.log('[Server] HTTP server closed');
+    
+    try {
+      await pool.end();
+      console.log('[Server] Database pool closed');
+    } catch (e) {
+      console.error('[Server] Error closing pool:', e.message);
+    }
+    
+    process.exit(0);
+  });
+
+  // اگر بعد از 10 ثانیه بسته نشد، خروج اجباری
+  setTimeout(() => {
+    console.error('[Server] Forced shutdown');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -1,30 +1,52 @@
 const { verifyToken } = require('./auth');
-const { pool } = require('./db');
 
-function asyncH(fn) {
-  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-}
+/* middleware برای تشخیص و validation کردن JWT token
+   token را از Authorization header خواند (Bearer <token>) */
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const m = auth.match(/^Bearer\s+(\S+)$/);
+  const token = m?.[1];
 
-function requireAuth(req, res, next) {
-  const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'توکن ارسال نشده است.' });
-  const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: 'توکن نامعتبر یا منقضی است.' });
-  req.user = { id: payload.uid, name: payload.name, email: payload.email };
+  if (!token) {
+    return res.status(401).json({ error: 'Missing authorization token' });
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  req.user = { id: decoded.uid, name: decoded.name, email: decoded.email };
   next();
 }
 
-/* راستی‌آزمایی دسترسی به مؤسسه (بند ۱۱): اول عضویت، بعد کانتکست */
-async function requireInstitution(req, res, next) {
-  try {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isFinite(id)) return res.status(400).json({ error: 'شناسه مؤسسه نامعتبر است.' });
-    const r = await pool.query('select 1 from fn_my_institutions($1) where id = $2', [req.user.id, id]);
-    if (r.rowCount === 0) return res.status(403).json({ error: 'به این مؤسسه دسترسی ندارید.' });
-    req.institutionId = id;
-    next();
-  } catch (e) { next(e); }
+/* middleware برای عضویت در موسسه (بررسی دسترسی)
+   ابتدا یک کوئری با SECURITY DEFINER اجرا می‌کند تا عضویت را بررسی کند */
+function mustBeMember(pool) {
+  return async (req, res, next) => {
+    const institutionId = req.params.institutionId || req.body.institutionId;
+    if (!institutionId) {
+      return res.status(400).json({ error: 'institutionId required' });
+    }
+
+    try {
+      // اجرای fn_is_member با SECURITY DEFINER (اجازه می‌دهد بدون تنظیم context)
+      const result = await pool.query(
+        'SELECT fn_is_member($1, $2) AS is_member',
+        [req.user.id, institutionId]
+      );
+      
+      if (!result.rows[0]?.is_member) {
+        return res.status(403).json({ error: 'Not a member of this institution' });
+      }
+
+      req.institutionId = institutionId;
+      next();
+    } catch (e) {
+      console.error('[Auth] Error checking membership:', e.message);
+      res.status(500).json({ error: 'Membership check failed' });
+    }
+  };
 }
 
-module.exports = { asyncH, requireAuth, requireInstitution };
+module.exports = { authMiddleware, mustBeMember };

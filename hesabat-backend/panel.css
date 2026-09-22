@@ -718,3 +718,41 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 @keyframes stampPress{0%{opacity:0;transform:scale(2.5) rotate(-30deg);filter:blur(4px)}40%{opacity:.96;transform:scale(1.05) rotate(-14deg);filter:blur(0)}70%{transform:scale(.98) rotate(-12deg)}100%{opacity:.96;transform:scale(1) rotate(-12deg);filter:blur(0)}}
 @keyframes stampShake{0%,52%{transform:none}60%{transform:translate(2px,4px) rotate(.35deg)}78%{transform:translate(-2px,1px) rotate(-.2deg)}100%{transform:none}}
 @keyframes stampLift{from{opacity:.96; transform:scale(1) rotate(-12deg)} to{opacity:0; transform:scale(1.05) rotate(-12deg) translateY(-18px)}}
+
+/* Connection Status Indicator */
+.srv-conn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--green-deep, #1C6E31);
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: var(--green-light, #F0F9EB);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.srv-conn .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green-base, #2E9E4C);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.srv-conn.disconnected {
+  color: var(--red-deep, #9B2C2C);
+  background: var(--red-light, #FDE8E8);
+}
+
+.srv-conn.disconnected .dot {
+  background: var(--red-base, #D63333);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

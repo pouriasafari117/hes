@@ -1,152 +1,148 @@
-# Hesabat Backend — فاز ۲ (Round 32)
+# Hesabat Backend — مدیریت صندوق‌ها و مؤسسات مالی
 
-معماری طبق تغییرات جدید:
+سامانه مدیریت صندوق‌ها، حساب‌ها، پرداخت‌ها و وام‌های مؤسسات مالی. **ثبات، امنیت، و کارایی** در اولویت.
 
-```
-Hesabat.html (لندینگ) → Panel.html (ورود با شماره تماس/کد ملی یا افتتاح حساب)
-  → افتتاح حساب: مدیر ۳ مرحله / کاربر ۲ مرحله
-  → Backend API (Node/Express) → PostgreSQL (Supabase) با RLS
-```
+## Features
 
-**داکر حذف شد** — per Round 32، اتصال به PostgreSQL در زمان ساخت حساب انجام می‌شود، نه از تنظیمات. 
-نیازی به `docker-compose.yml` نیست. برای لوکال هم مستقیم از Supabase یا هر Postgres استفاده کنید.
+✓ **اتصال مطمئن**: Retry logic، timeout‌ها، keepAlive برای محیط‌های ابری  
+✓ **امنیت**: RLS (Row Level Security)، SECURITY DEFINER functions، JWT، scrypt hashing  
+✓ **محاسبات صحیح**: کارمزد درصدی، بلانس‌های پویا، محاسبات وام  
+✓ **Offline Detection**: Connection status chip در پنل، graceful degradation  
+✓ **Idempotent Schema**: بدون وابستگی به حذف، safe for re-runs  
 
----
+## Setup
 
-## اجرا (بدون داکر)
+### 1. Database
 
 ```bash
-cd backend
-cp .env.example .env   # DATABASE_URL و JWT_SECRET را پر کن
-npm install
-npm run migrate        # اعمال schema.sql + schema_v2.sql
-npm start              # API روی PORT (پیش‌فرض 10000 برای Render)
+# PostgreSQL 12+ مورد نیاز
+export DATABASE_URL="postgresql://user:pass@localhost/hesabat"
+
+# Schema را اجرا کنید
+psql -d hesabat < db/complete_schema.sql
 ```
 
-### متغیرهای محیطی (.env)
+### 2. Environment
 
-```
-DATABASE_URL=postgres://... (از Supabase > Connection String)
-PORT=10000
-JWT_SECRET=یک رشته طولانی تصادفی
+```bash
+# .env
+DATABASE_URL=postgresql://user:pass@localhost/hesabat
+JWT_SECRET=your-secret-key-min-32-chars-very-secure
 JWT_EXPIRES=7d
-CORS_ORIGIN=*
+NODE_ENV=production
+PORT=3000
+PANEL_PORT=8000
+CORS_ORIGIN=http://localhost:8000
 ```
 
----
+### 3. Install & Run
 
-## احراز هویت جدید (Round 32)
-
-- **لاگین:** `POST /api/auth/login` با `{email: phone|nid|email, password: nid|1234}`
-  - نام کاربری پیش‌فرض = شماره تماس (09xxxxxxxxx)
-  - رمز پیش‌فرض = کد ملی (10 رقم)
-  - برای حساب‌های قدیمی admin/1234 همچنان کار می‌کند
-- **افتتاح حساب:** `POST /api/auth/register-v2`
-  ```json
-  {
-    "firstName":"علی", "lastName":"رضایی",
-    "phone":"09121234567", "nid":"1234567890",
-    "fatherName":"حسین", "birthDate":"1991-07-23",
-    "roleType":"manager|user",
-    "institutionName":"قرض‌الحسنه مهرگان",
-    "institutionSlug":"mehregan",
-    "establishedAt":"2011-03-21",
-    "address":"تهران...",
-    "installmentsCount":12,
-    "currency":"تومان",
-    "feePercent":4,
-    "installmentPeriod":"monthly",
-    "memberFields":[{"label":"نام","type":"text","required":true}]
-  }
-  ```
-  - برای مدیر: مؤسسه ساخته می‌شود + ایمیل خودکار `{slug}{nid}@hes.com`
-  - برای کاربر: اگر `institutionName` داشت، درخواست join ثبت می‌شود
-
-- **درخواست عضویت:** `POST /api/auth/request-join` با `{institutionName}` (نیاز به توکن)
-
----
-
-## API
-
-پیشوند: `/api` — احراز هویت: `Authorization: Bearer <token>`
-
-| متد | مسیر | توضیح |
-|---|---|---|
-| POST | `/auth/register-v2` | افتتاح حساب جدید (مدیر/کاربر) |
-| POST | `/auth/login` | ورود با phone/nid/email |
-| GET | `/auth/me` | کاربر + مؤسساتش |
-| POST | `/auth/request-join` | درخواست عضویت در مؤسسه |
-| POST | `/institutions` | ایجاد مؤسسه (قدیمی) |
-| GET | `/institutions` | مؤسسات من |
-| GET | `/institutions/:id/join-requests` | لیست درخواست‌ها (مدیر) |
-| POST | `/institutions/:id/join-requests/:reqId/approve` | تأیید عضویت |
-| DELETE | `/institutions/:id` | **جدید** حذف کامل مؤسسه و تمام داده‌ها (مالک) — `fn_delete_institution` |
-| POST | `/institutions/:id/join-requests/:reqId/reject` | رد عضویت |
-| GET/POST | `/institutions/:id/fields` | فیلدها |
-| GET/POST | `/institutions/:id/members` | اعضا (با member_no خودکار) |
-
-### حذف مؤسسه (جدید)
-
-- **از پنل:** تنظیمات → اطلاعات مؤسسه → دکمه قرمز «حذف کامل مؤسسه» → دو بار تأیید
-  - حالت سرور: `DELETE /api/institutions/:id` → `fn_delete_institution(userId, instId)` → cascade حذف `join_requests`, `member_field_values`, `members`, `field_definitions`, `institution_members`, `institutions`
-  - حالت دمو: پاک‌سازی `localStorage` (members, loans, ...)
-- **از SQL (Supabase SQL Editor):** فایل `db/delete_institution.sql` را باز کن:
-  ```sql
-  SELECT id, name, slug FROM institutions;
-  -- سپس:
-  SELECT fn_delete_institution(1, 3); -- userId, institutionId
-  -- یا دستی:
-  -- BEGIN; DELETE FROM ... WHERE institution_id=3; DELETE FROM institutions WHERE id=3; COMMIT;
-  -- برای پاک کردن کل DB: TRUNCATE ... RESTART IDENTITY CASCADE;
-  ```
-
-### تعداد اقساط متغیر (جدید)
-
-- قبلاً select با [6,12,18,24,30,36,48] بود
-- حالا در **همه جا** `type=number min=1 max=120`:
-  - onboarding: `obInstCount` (app9.js)
-  - ثبت وام: `lfMonths` (app6.js)
-  - تنظیمات → پیش‌فرض اقساط: `setLdMonths` (app7.js)
-
-### شماره عضویت خودکار
-
-در `members.js`:
+```bash
+npm install
+node server.js           # Backend: port 3000
+node panel.js           # Panel: port 8000
 ```
-en(firstName) + en(lastName[0]) + nidLast6
+
+## API Endpoints
+
+### Auth
+- `POST /login` — ورود با username/password
+- `POST /logout` — خروج
+- `GET /me` — اطلاعات کاربر فعلی
+
+### Institutions
+- `GET /institutions` — لیست موسسات کاربر
+- `POST /institutions` — ایجاد موسسه جدید
+- `GET /institutions/:id` — جزئیات موسسه
+
+### Members
+- `GET /institutions/:institutionId/members` — اعضای موسسه
+- `POST /institutions/:institutionId/members` — افزودن عضو
+- `PATCH /institutions/:institutionId/members/:memberId` — ویرایش عضو
+
+### Payments
+- `GET /institutions/:institutionId/payments` — لیست پرداخت‌ها
+- `POST /institutions/:institutionId/payments` — ثبت پرداخت
+- `PATCH /institutions/:institutionId/payments/:paymentId` — ویرایش
+
+### Health
+- `GET /health` — وضعیت Backend
+
+## Architecture
+
 ```
-با نگاشت فارسی→انگلیسی: ا→a, ب→b, پ→p, ... (مثلاً علی رضایی 1234567890 → alir567890)
+hesabat-backend/
+├── src/
+│   ├── db.js          # Connection pool، withTenant، retry logic
+│   ├── auth.js        # JWT، password hashing
+│   ├── mw.js          # Middleware (auth، membership check)
+│   ├── validate.js    # Input validation (NID، phone، etc)
+│   └── routes/        # 10 route files
+├── db/
+│   ├── complete_schema.sql  # RLS + 16 SECURITY DEFINER functions
+│   └── migrations/
+├── server.js          # Express app
+├── panel.js           # Panel API proxy
+├── Panel.html         # UI
+└── panel.css          # Styling
+```
 
----
+## Key Improvements
 
-## فرانت‌اند
+### Connection Resilience
+- **Pool Config**: max 10، idleTimeoutMillis 30s، connectionTimeoutMillis 5s
+- **Retry Logic**: exponential backoff برای transient errors
+- **Event Handlers**: monitoring pool errors
+- **PgBouncer Detection**: تشخیص خودکار connection pooler
 
-- `Panel.html` + `panel.css` + `panel.js` — پنل مستقل (3 فایل کنار هم)
-- `Hesabat.html` — لندینگ، دکمه ورود → Panel.html، افتتاح حساب → Panel.html#/onboarding
-- افتتاح حساب در `app9.js`: ویزارد کامل با role selector، 3 مرحله مدیر، 2 مرحله کاربر
-  - **دمو:** وقتی `SRV.base` خالی است یا سرور down → حساب دمو در `localStorage` (کلید `hesabat-db-vX`) ساخته می‌شود. قبلاً 30 عضو نمونه داشت، **حالا برای مدیر جدید 0 عضو** (تمیز).
-  - **سرور:** وقتی `SRV.base` ست است (در `panel.js` اول فایل: `SRV.base='https://...'` یا از `localStorage hesabat-srv`) → `POST /api/auth/register-v2` → مؤسسه در Postgres ساخته می‌شود با ایمیل ربات `{slug}{nid}@hes.com` و `bot_email`، کاربر ایمیلش به همان تغییر می‌کند، `SRV.on=true, instId, token` در `localStorage hesabat-srv` ذخیره می‌شود، داشبورد داده را از سرور می‌خواند (ابتدا خالی است).
-- تنظیمات: کارت PostgreSQL حذف شد، آیکون مؤسسه با دکمه زیبا، قالب شماره‌گذاری حذف شد، داده‌ها فقط «بازنشانی دمو»، نمایش ایمیل ربات hes.com، دکمه حذف کامل مؤسسه
+### Security
+- **RLS**: هر موسسه داده‌های خود را در isolation دارد
+- **SECURITY DEFINER**: functions برای دسترسی قبل از context
+- **JWT Secret Check**: production فقط با secret 32+ char
+- **Scrypt Hashing**: N=16384، r=8، p=1
 
-### چرا DB خالی ولی پنل 30 عضو نشان می‌دهد؟
+### Payment & Loan Math
+- **Fee Calculation**: `amount * (1 + fee_percent / 100)` ✓
+- **Loan Payment**: PMT formula (monthly payment = principal * rate / (1 - (1 + rate)^-n))
+- **Balance Tracking**: automatic sync with transactions
 
-- DB (Postgres) خالی است تا وقتی عضو از پنل در حالت سرور نسازی.
-- پنل در حالت دمو داده را از `localStorage` می‌خواند که با 30 عضو نمونه seed شده.
-- برای دیدن داده سرور: مطمئن شو `panel.js` اولش `SRV.base` دارد یا در کنسول `localStorage.getItem('hesabat-srv')` دارای `on:true` است. اگر نیست، دوباره افتتاح حساب کن وقتی سرور روشن است.
-- برای شروع تمیز دمو: افتتاح حساب مدیر جدید → حالا 0 عضو می‌بینی (fix جدید).
+### API Client (panel.js)
+- **20s Timeout**: abort requests after 20s
+- **Retry Logic**: 2 retries with exponential backoff
+- **Connection Status**: chip in UI showing connection state
+- **Offline Detection**: graceful degradation
 
----
+## Testing
 
-## دیپلوی رایگان (بدون کارت)
+```bash
+# Run e2e tests
+node test/e2e.js
 
-- **دیتابیس:** Supabase (500MB رایگان) — DATABASE_URL را از Dashboard کپی کن
-- **بک‌اند:** Render Free (بدون کارت، ولی بعد 15 دقیقه sleep) یا Railway ($5 trial)
-- Root Directory در Railway باید `backend` باشد اگر از روت ریپو دیپلوی می‌کنی
+# Health check
+curl http://localhost:3000/health
 
-تست سلامت: `GET /api/health` → `{ok:true}`
+# Example login
+curl -X POST http://localhost:3000/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"1234"}'
+```
 
----
+## Monitoring
 
-## فازهای بعد
+- Check `/health` endpoint regularly
+- Monitor pool errors in server logs
+- Watch `srvConnChip` in panel for connection status
+- Review transaction logs in PostgreSQL
 
-- فاز ۲ تکمیل: وام، اقساط، پرداخت‌ها روی همین RLS
-- پلن‌ها در onboarding فعلاً placeholder
+## Production Notes
+
+1. **JWT Secret**: Set strong secret in environment
+2. **CORS Origin**: Restrict to actual domain
+3. **SSL/TLS**: Enable for production database
+4. **Backups**: Regular PostgreSQL backups
+5. **Logs**: Centralize log aggregation
+6. **Monitoring**: Set up alerts for pool errors
+
+## License
+
+Private — Hesabat Project
