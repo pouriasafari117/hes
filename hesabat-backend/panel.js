@@ -525,7 +525,6 @@ const qLoan   = id => DB.loans.find(l => l.id === id);
 const qUser   = id => DB.users.find(u => u.id === id);
 function memberLoans(mid){ return DB.loans.filter(l => l.memberId === mid); }
 function loanInstallments(lid){ return DB.installments.filter(i => i.loanId === lid).sort((a,b)=>a.no-b.no); }
-function loanInstallments(lid){ return DB.installments.filter(i => i.loanId === lid).sort((a,b)=>a.no-b.no); }
 function loanPayments(lid){ return DB.payments.filter(p => p.loanId === lid).sort((a,b)=> (b.date||'').localeCompare(a.date||'')); }
 function insStatus(ins){
   if(ins.paidAmount >= ins.amount) return 'paid';
@@ -553,9 +552,22 @@ function memberDebt(mid){
 function memberPaid(mid){
   return DB.payments.filter(p=>{ const l=qLoan(p.loanId); return l && l.memberId===mid; }).reduce((s,p)=>s+p.amount,0);
 }
-function loanBadge(st){
-  const map = {pending:'b-blue', active:'b-green', paid:'b-lime', cancelled:'b-gray'};
-  return '<span class="badge '+map[st]+'"><i class="bd"></i>'+LOAN_STATUS_FA[st]+'</span>';
+/* وضعیت مؤثر وام: تسویه و معوق از روی اقساط استنتاج می‌شود تا حتی اگر
+   فیلد status به‌روز نشده باشد، نمایش همیشه درست باشد */
+function loanEffStatus(l){
+  if(!l) return 'active';
+  if(l.status === 'pending' || l.status === 'cancelled') return l.status;
+  const ins = loanInstallments(l.id);
+  if(ins.length && ins.every(i => i.paidAmount >= i.amount)) return 'paid';
+  if(l.status === 'paid') return 'paid';
+  const t = J.todayIso();
+  if(ins.some(i => i.dueDate < t && i.paidAmount < i.amount)) return 'overdue';
+  return 'active';
+}
+function loanBadge(lor){
+  const st = (lor && typeof lor === 'object') ? loanEffStatus(lor) : lor;
+  const map = {pending:'b-blue', active:'b-green', overdue:'b-red', paid:'b-lime', cancelled:'b-gray'};
+  return '<span class="badge '+(map[st]||'b-gray')+'"><i class="bd"></i>'+(LOAN_STATUS_FA[st]||st)+'</span>';
 }
 function memberStatusBadge(st){
   return st==='active' ? '<span class="badge b-green"><i class="bd"></i>فعال</span>' : '<span class="badge b-gray"><i class="bd"></i>غیرفعال</span>';
@@ -1656,7 +1668,7 @@ function memberProfile(id){
     loans(){ return loans.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>مبلغ وام</th><th>صندوق</th><th>اقساط</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th>تاریخ درخواست</th><th></th></tr></thead><tbody>' +
       loans.map(l => '<tr><td class="c-strong c-fa-num">'+fmtM(l.amount)+'</td><td>'+esc((qFund(l.fundId)||{}).name||'—')+'</td>' +
         '<td class="c-fa-num">'+faDigits(l.months)+'</td><td class="c-fa-num">'+fmtN(loanPaidSum(l))+'</td><td class="c-fa-num'+(loanBalance(l)?'" style="color:var(--red)':'')+'">'+fmtN(loanBalance(l))+'</td>' +
-        '<td>'+loanBadge(l.status)+'</td><td class="c-fa-num">'+J.fmt(l.requestDate)+'</td>' +
+        '<td>'+loanBadge(l)+'</td><td class="c-fa-num">'+J.fmt(l.requestDate)+'</td>' +
         '<td style="text-align:left"><a class="btn btn-soft btn-sm" href="#/app/loans/'+l.id+'">جزئیات</a></td></tr>').join('') +
       '</tbody></table></div>' : emptyState({icon:'loan', title:'وامی ثبت نشده', desc:'برای این عضو هنوز وامی ایجاد نشده است.', action:'<button class="btn btn-solid btn-sm" onclick="guard(\'loanAdd\',()=>loanForm(null,\''+m.id+'\'))">'+icon('plus',14)+' ثبت وام</button>'}); },
     ins(){ return insAll.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>قسط</th><th>وام</th><th>سررسید</th><th>مبلغ</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th style="text-align:left">عملیات</th></tr></thead><tbody>' +
@@ -1851,12 +1863,19 @@ function renderLoans(){
     '<div class="ph-actions"><button class="btn btn-solid btn-sm" id="btnAddLoan" style="padding:11px 17px;font-size:.88rem">'+icon('plus',15)+' ثبت وام جدید</button></div></div>' +
     '<div class="toolbar">' +
       '<div class="t-search">'+icon('search',15)+'<input id="lQ" placeholder="جستجو: نام عضو، کد ملی، موبایل، شماره عضویت…" value="'+esc(loansState.q)+'"></div>' +
+      '<span class="t-lbl">وضعیت:</span><select class="t-select" id="lStatus">' +
+        '<option value="all">همه</option><option value="active">فعال</option><option value="overdue">معوق</option><option value="pending">در انتظار تصویب</option><option value="paid">تسویه‌شده</option><option value="cancelled">لغو شده</option></select>' +
+      '<span class="t-lbl">صندوق:</span><select class="t-select" id="lFund">' +
+        '<option value="all">همه</option>' + DB.funds.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join('') + '</select>' +
       '<button class="btn btn-ghost btn-sm" id="lReset" style="margin-inline-start:auto">'+icon('refresh',13)+' حذف فیلتر</button>' +
     '</div>' +
     '<div class="card tight" id="lTblWrap"></div>';
   $('#btnAddLoan').onclick = ()=> guard('loanAdd', ()=> loanForm());
+  $('#lStatus').value = loansState.status; $('#lFund').value = loansState.fund;
   $('#lQ').addEventListener('input', e => { loansState.q = e.target.value; loansState.page=1; renderLoansTable(); });
-  $('#lReset').onclick = ()=>{ loansState.q=''; loansState.page=1; renderLoans(); };
+  $('#lStatus').addEventListener('change', e => { loansState.status = e.target.value; loansState.page=1; renderLoansTable(); });
+  $('#lFund').addEventListener('change', e => { loansState.fund = e.target.value; loansState.page=1; renderLoansTable(); });
+  $('#lReset').onclick = ()=>{ loansState.q=''; loansState.status='all'; loansState.fund='all'; loansState.page=1; renderLoans(); };
   renderLoansTable();
 }
 function filteredLoans(){
@@ -1864,6 +1883,8 @@ function filteredLoans(){
   const q = loansState.q.trim(), qe = faToEn(q);
   if(q) list = list.filter(l => { const m = qMember(l.memberId);
     return m && (m.name.includes(q) || m.nationalId.includes(qe) || m.mobile.includes(qe) || m.memberNo.toLowerCase().includes(q.toLowerCase())); });
+  if(loansState.status !== 'all') list = list.filter(l => loanEffStatus(l) === loansState.status);
+  if(loansState.fund !== 'all') list = list.filter(l => l.fundId === loansState.fund);
   return list.sort((a,b)=>(b.requestDate||'').localeCompare(a.requestDate||''));
 }
 function renderLoansTable(){
@@ -1881,7 +1902,7 @@ function renderLoansTable(){
       '<td class="c-fa-num">'+faDigits(l.months)+'</td>' +
       '<td class="c-fa-num">'+fmtN(paidS)+'</td>' +
       '<td class="c-fa-num'+(bal?'" style="color:var(--red)':'')+'">'+fmtN(bal)+'</td>' +
-      '<td>'+loanBadge(l.status)+'</td><td class="c-fa-num">'+J.fmt(l.requestDate)+'</td>' +
+      '<td>'+loanBadge(l)+'</td><td class="c-fa-num">'+J.fmt(l.requestDate)+'</td>' +
       '<td style="text-align:left"><a class="btn btn-soft btn-sm" href="#/app/loans/'+l.id+'">جزئیات '+icon('chevS',11)+'</a></td></tr>'; }).join('') +
     '</tbody></table></div>' +
     '<div class="tbl-foot"><span class="tf-info">'+faDigits(list.length)+' وام · صفحه '+faDigits(loansState.page)+' از '+faDigits(pages)+'</span>'+pagerHtml(loansState.page, list.length, per)+'</div>';
@@ -2025,7 +2046,7 @@ function loanDetail(id){
   const nextIns = ins.find(i => i.paidAmount < i.amount);
   main.innerHTML =
     '<div class="page-head"><div><a href="#/app/loans" class="login-back" style="margin-bottom:6px">'+icon('arrowL',14)+' فهرست وام‌ها</a>' +
-      '<h1>وام '+esc(m?m.name:'—')+'</h1><div class="ph-sub">'+loanBadge(l.status)+' &nbsp; ثبت در '+J.fmt(l.createdAt)+'</div></div>' +
+      '<h1>وام '+esc(m?m.name:'—')+'</h1><div class="ph-sub">'+loanBadge(l)+' &nbsp; ثبت در '+J.fmt(l.createdAt)+'</div></div>' +
       '<div class="ph-actions">' +
         (l.status==='pending' ? '<button class="btn btn-solid btn-sm" id="ldActivate" style="padding:11px 17px;font-size:.88rem">'+icon('check',15)+' تصویب و فعال‌سازی</button>' : '') +
         (l.status==='active' ? '<button class="btn btn-solid btn-sm" id="ldPay" style="padding:11px 17px;font-size:.88rem">'+icon('coins',15)+' ثبت پرداخت</button>' +
@@ -2259,15 +2280,22 @@ function paymentForm(presetLoanId, presetInsId){
           ref:'FIS-'+(5000+DB.payments.length), tracking:'', notes:'بازپرداخت قسط '+faDigits(ins.no)+' — '+(member?member.name:''), user:SESSION.name });
         acc.balance += amt;
         audit('ثبت پرداخت '+fmtM(amt)+' قسط '+faDigits(ins.no)+' وام '+(member?member.name:''), 'loan:'+lid);
+        /* اگر همهٔ اقساط تسویه شد، وضعیت وام خودکار «تسویه‌شده» می‌شود */
+        let settled = false;
+        if(loan.status === 'active' && loanInstallments(lid).every(i => i.paidAmount >= i.amount)){
+          loan.status = 'paid'; settled = true;
+          audit('تسویهٔ کامل وام '+(member?member.name:''), 'loan:'+lid);
+        }
         saveDb();
         /* خلاصه وضعیت */
         const newSt = insStatus(ins);
         let kind = 'ok', msg = 'پرداخت کامل ثبت شد.';
-        if(applied < amt && extra > 0){ kind = 'warn'; msg = 'اضافه‌پرداخت ثبت شد.' + extraNote; }
-        else if(amt < remain){ kind = 'warn'; msg = 'پرداخت ناقص ثبت شد؛ مانده قسط '+fmtN(ins.amount-ins.paidAmount)+' '+CUR()+' باقی است.'; }
+        if(settled){ kind = 'ok'; msg = 'پرداخت ثبت شد و وام «'+(member?member.name:'')+'» به‌طور کامل تسویه شد. 🎉'; }
+        if(!settled && applied < amt && extra > 0){ kind = 'warn'; msg = 'اضافه‌پرداخت ثبت شد.' + extraNote; }
+        else if(!settled && amt < remain){ kind = 'warn'; msg = 'پرداخت ناقص ثبت شد؛ مانده قسط '+fmtN(ins.amount-ins.paidAmount)+' '+CUR()+' باقی است.'; }
         toast(msg, kind);
         /* مُهر تأیید با رنگ انتخابی از تنظیمات */
-        stampFx({ text: kind==='ok' ? 'پرداخت شد' : 'ثبت شد',
+        stampFx({ text: settled ? 'تسویه شد' : (kind==='ok' ? 'پرداخت شد' : 'ثبت شد'),
           sub: fmtM(amt)+' — '+J.fmt(dateIso),
           color: kind==='ok' ? stampColor('payment') : stampColor('member'),
           hold: 1050,
@@ -6105,10 +6133,13 @@ async function submitOnboarding(){
       return;
     }
     bindNewLogin();
-    patchSettings();
-    patchMemberForm();
-    patchUserPanel();
-    fixPopupFont();
+    /* این چهار پچ در نسخه‌های قدیمی وجود داشتند و بعداً حذف شدند؛
+       اگر نباشند نباید کل مراحل راه‌اندازی (مخصوصاً روتر افتتاح حساب) بشکند */
+    ['patchSettings','patchMemberForm','patchUserPanel','fixPopupFont'].forEach(function(fname){
+      try {
+        if (typeof window[fname] === 'function') window[fname]();
+      } catch(e){ console.warn('[init] ' + fname + ' failed:', e); }
+    });
 
     // روتر برای onboarding - بسیار مقاوم
     function doOnboardRoute(){
