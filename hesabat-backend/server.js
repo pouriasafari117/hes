@@ -18,6 +18,14 @@ try {
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+/* هدرهای امنیتی پایه — بدون وابستگی تازه */
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 /* CORS برای اتصال پنل از هر مبدأ (فایل محلی یا سرور دیگر) */
 const CORS = process.env.CORS_ORIGIN || '*';
 app.use((req, res, next) => {
@@ -28,6 +36,24 @@ app.use((req, res, next) => {
   next();
 });
 
+/* محدودکنندهٔ نرخ ساده برای مسیرهای ورود/ثبت‌نام (جلوگیری از حدس رمز) */
+const _rl = new Map();
+function rateLimit(windowMs, max, msg){
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = (req.ip || 'x') + '|' + req.path;
+    const arr = (_rl.get(key) || []).filter(t => now - t < windowMs);
+    if (arr.length >= max){
+      res.setHeader('Retry-After', Math.ceil(windowMs / 1000));
+      return res.status(429).json({ error: msg || 'درخواست‌های زیاد؛ کمی بعد دوباره بکوشید.' });
+    }
+    arr.push(now); _rl.set(key, arr);
+    if (_rl.size > 5000) _rl.clear(); /* پاکسازی اسراف‌گونه نگذاریم */
+    next();
+  };
+}
+app.use('/api/auth', rateLimit(5 * 60 * 1000, 30));
+
 app.get('/api/health', async (req, res) => {
   try {
     const { pool } = require('./src/db');
@@ -37,6 +63,9 @@ app.get('/api/health', async (req, res) => {
     res.json({ ok: false, service: 'hesabat-backend', v: 2, db_ok: false, error: e.message, code: e.code });
   }
 });
+/* مسیر دیباگ فقط وقتی روشن است که صراحتاً فعال شده باشد:
+   ENABLE_DEBUG=1  (در محیط production پیش‌فرض خاموش است و 404 می‌دهد) */
+if (process.env.ENABLE_DEBUG === '1') {
 app.get('/api/debug', async (req, res) => {
   try {
     const { pool } = require('./src/db');
@@ -61,9 +90,10 @@ app.get('/api/debug', async (req, res) => {
     }
     res.json({ ok: true, db: c1.rows[0], users_count: c2.rows[0], institutions_count: c4.rows[0], funcs: c3.rows.map(r=>r.proname), recent_institutions: c5.rows, recent_users: c6.rows, debug_note: c5err ? 'bot_email missing, did you run migration? '+c5err : null });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail, stack: e.stack?.slice(0,2000) });
+    res.status(500).json({ ok: false, error: e.message, code: e.code, detail: e.detail });
   }
 });
+}
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/users', require('./src/routes/users'));
 app.use('/api/institutions', require('./src/routes/institutions'));
@@ -114,4 +144,14 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = +(process.env.PORT || 4000);
+
+/* هشدار امنیتی هنگام اجرا با تنظیمات توسعهٔ پیش‌فرض روی محیط واقعی */
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-only-secret-change-me') {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[SECURITY] JWT_SECRET تعیین نشده؛ در production حتماً JWT_SECRET قوی ست کنید.');
+  } else {
+    console.warn('[DEV] JWT_SECRET تنظیم نشده — فقط برای توسعهٔ محلی مناسب است.');
+  }
+}
+
 app.listen(PORT, () => console.log(`Hesabat API on http://localhost:${PORT}`));
