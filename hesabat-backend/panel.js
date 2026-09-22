@@ -1301,7 +1301,7 @@ function pageDashboard(){
       '</div></div>' +
 
     '<div class="grid g-stats">' +
-      stat('','users','تعداد کل اعضا', fmtN(totalM), faDigits(activeM)+' عضو فعال') +
+      stat('','users','تعداد کل اعضا', fmtN(totalM), faDigits(DB.members.filter(m=>memberDebt(m.id)>0).length)+' عضو با بدهی جاری') +
       stat(debtSum?'s-red':'s-lime','loan','بدهی جاری کل', fmtMShort(debtSum)+' <small>'+CUR()+'</small>', faDigits(openLoans.length)+' وام در حال بازپرداخت') +
       stat(todaysPaySum?'s-lime':'','coins','دریافتی امروز', fmtMShort(todaysPaySum)+' <small>'+CUR()+'</small>', faDigits(todaysPays.length)+' پرداخت · '+faDigits(todayDue.length)+' قسط سررسید امروز') +
       stat('s-teal','coins','وام‌های تسویه‌شده', fmtMShort(paidLoansSum)+' <small>'+CUR()+'</small>', faDigits(paidLoans.length)+' وام') +
@@ -1619,32 +1619,43 @@ async function toggleMember(id){
 /* فرم افزودن/ویرایش عضو — فقط ۵ فیلد طبق PSD */
 function memberForm(member){
   const isEdit = !!member;
+  const secH = (n, ic, title) => '<div class="m-sec-h"><span class="sn">'+n+'</span>'+icon(ic,15)+' '+title+'</div>';
   const m = openModal({
     title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید',
-    sub: isEdit ? esc(member.name) + ' · ' + esc(member.memberNo) : 'اطلاعات هویتی پایه عضو',
+    sub: isEdit ? esc(member.name) + ' · ' + esc(member.memberNo) : 'اطلاعات هویتی عضو جدید',
     size:'lg',
-    body: '<div class="fields">' +
-      '<div class="field"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="mfName" value="'+esc(isEdit?member.name:'')+'"><span class="err-msg"></span></div>' +
-      '<div class="field"><label>نام پدر</label><input id="mfFather" value="'+esc(isEdit?member.father:'')+'"></div>' +
-      '<div class="field"><label>تاریخ تولد <span class="req">*</span> <small>(از تقویم انتخاب کنید یا تایپ نمایید)</small></label><input id="mfBirth" value="'+(isEdit?faDigits(member.birthDate):'')+'" data-iso="'+(isEdit&&/^\d{4}-\d{2}-\d{2}$/.test(member.birthDate)?member.birthDate:'')+'"><span class="err-msg"></span></div>' +
-      '<div class="field"><label>شماره موبایل <span class="req">*</span> <small>(هر فرمتی: ۰۹۱۲…، +98 912…، ۹۱۲… — خودکار مرتب می‌شود)</small></label><input id="mfMobile" class="num-inp" value="'+esc(isEdit?member.mobile:'')+'" placeholder="09xxxxxxxxx" maxlength="11"><span class="err-msg"></span></div>' +
-      '<div class="field"><label>کد ملی <span class="req">*</span> <small>(۱۰ رقم — فاصله، خط تیره و رقم لاتین مهم نیست)</small></label><input id="mfNid" class="num-inp" value="'+esc(isEdit?member.nationalId:'')+'" maxlength="10"><span class="err-msg"></span></div>' +
-      (!isEdit ? '<div class="field"><label>شماره عضویت</label><input id="mfNo" value="'+esc(DB.settings.memberNoTemplate.replace(/\{seq(?::(\d+))?\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'" disabled style="background:var(--card-2)"><span class="help">به‌صورت خودکار از قالب شماره‌گذاری تنظیمات ساخته می‌شود.</span></div>' : '') +
-    '</div>' +
-    (isEdit ? '<div class="alert a-info" style="margin-top:14px"><span class="al-ic">'+icon('info',16)+'</span><div>تاریخ عضویت: <b>'+J.fmtLong(member.joinedAt)+'</b> — شماره عضویت <b>'+esc(member.memberNo)+'</b> قابل تغییر نیست.</div>' : ''),
+    body:
+      '<div class="m-sec">' + secH('۱','user','مشخصات هویتی') +
+        '<div class="m-sec-b"><div class="fields">' +
+          '<div class="field"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="mfName" value="'+esc(isEdit?member.name:'')+'"><span class="err-msg"></span></div>' +
+          '<div class="field"><label>نام پدر</label><input id="mfFather" value="'+esc(isEdit?member.father:'')+'"></div>' +
+          '<div class="field"><label>تاریخ تولد'+(fieldReq('birthDate')?' <span class="req">*</span>':'')+'</label><input id="mfBirth" value="'+(isEdit?faDigits(member.birthDate):'')+'" data-iso="'+(isEdit&&/^\\d{4}-\\d{2}-\\d{2}$/.test(member.birthDate)?member.birthDate:'')+'" placeholder="۱۳۷۵/۰۴/۰۲"><span class="err-msg"></span><span class="help">از تقویم شمسی انتخاب کنید یا تایپ نمایید.</span></div>' +
+        '</div></div>' +
+      '</div>' +
+      '<div class="m-sec">' + secH('۲','send','اطلاعات تماس و شناسنامه‌ای') +
+        '<div class="m-sec-b"><div class="fields">' +
+          '<div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="mfMobile" class="num-inp" value="'+esc(isEdit?member.mobile:'')+'" placeholder="0912xxxxxxx" maxlength="11"><span class="err-msg"></span><span class="help">هر فرمتی (۰۹۱۲…، +98 912…، ۹۱۲…) قبول است — خودکار مرتب می‌شود.</span></div>' +
+          '<div class="field"><label>کد ملی <span class="req">*</span></label><input id="mfNid" class="num-inp" value="'+esc(isEdit?member.nationalId:'')+'" maxlength="10" placeholder="۱۰ رقم"><span class="err-msg"></span></div>' +
+          (!isEdit ? '<div class="field"><label>شماره عضویت</label><input id="mfNo" value="'+esc(DB.settings.memberNoTemplate.replace(/\\{seq(?::(\\d+))?\\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'" disabled style="background:var(--card-2)"><span class="help">خودکار، از قالب شماره‌گذاری تنظیمات.</span></div>' : '') +
+        '</div></div>' +
+      '</div>' +
+      '<div class="m-sec" id="mfSecCustom" style="display:none">' + secH('۳','filter','اطلاعات تکمیلی (فیلدهای سفارشی مؤسسه)') +
+        '<div class="m-sec-b"><div class="fields" id="mfSec3"></div></div>' +
+      '</div>' +
+    (isEdit ? '<div class="alert a-info" style="margin-top:14px"><span class="al-ic">'+icon('info',16)+'</span><div>تاریخ عضویت: <b>'+J.fmtLong(member.joinedAt)+'</b> — شماره عضویت <b>'+esc(member.memberNo)+'</b> قابل تغییر نیست.</div></div>' : ''),
     foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="mfSave">'+icon('check',14)+' ذخیره '+(isEdit?'تغییرات':'عضو')+'</button>',
     onOpen(h){
-      /* فیلدهای پایهٔ خاموش‌شده از فرم حذف می‌شوند؛ فیلدهای سفارشی الگو اضافه می‌شوند */
+      /* فیلدهای پایهٔ خاموش‌شده از فرم حذف می‌شوند؛ فیلدهای سفارشی در بخش سوم می‌نشینند */
       [['father','#mfFather'],['mobile','#mfMobile'],['nationalId','#mfNid'],['birthDate','#mfBirth']].forEach(([k,sel])=>{
         if(!fieldOn(k)){ const el=h.el.querySelector(sel); if(el){ const fd=el.closest('.field'); if(fd) fd.remove(); } }
       });
       const _cf = FIELDS().filter(f=>!f.core);
       if(_cf.length){
-        const holder=h.el.querySelector('.fields');
+        const holder=h.el.querySelector('#mfSec3');
         const mk=document.createElement('div');
         mk.innerHTML=_cf.map(f=>'<div class="field"><label>'+esc(f.label)+(f.req?' <span class="req">*</span>':'')+'</label><input id="mf_x_'+f.key+'"'+(f.type==='num'?' class="num-inp"':'')+' value="'+esc(isEdit?String((member.x||{})[f.key]||''):'')+'"><span class="err-msg"></span></div>').join('');
-        const ref = isEdit ? null : holder.lastElementChild;
-        while(mk.firstChild) holder.insertBefore(mk.firstChild, ref);
+        while(mk.firstChild) holder.appendChild(mk.firstChild);
+        h.el.querySelector('#mfSecCustom').style.display = '';
       }
       attachJDate(h.el.querySelector('#mfBirth'));
       if(isEdit && member.birthDate){ const j = J.parse(member.birthDate); if(j) setJd(h.el.querySelector('#mfBirth'), J.j2iso(j.jy,j.jm,j.jd)); }
@@ -1732,7 +1743,7 @@ function memberProfile(id){
       '</div></div>' +
 
     '<div class="grid g-4">' +
-      '<div class="stat"><div class="stat-top"><span class="s-ic">'+icon('loan',15)+'</span>تعداد وام‌ها</div><div class="stat-val">'+faDigits(loans.length)+'</div><div class="stat-sub">'+faDigits(loans.filter(l=>l.status==='active').length)+' فعال</div></div>' +
+      '<div class="stat"><div class="stat-top"><span class="s-ic">'+icon('loan',15)+'</span>تعداد وام‌ها</div><div class="stat-val">'+faDigits(loans.length)+'</div><div class="stat-sub">'+faDigits(loans.filter(l=>loanEffStatus(l)==='overdue').length)+' معوق · '+faDigits(loans.filter(l=>loanEffStatus(l)==='active').length)+' در حال بازپرداخت</div></div>' +
       '<div class="stat s-red"><div class="stat-top"><span class="s-ic">'+icon('warn',15)+'</span>بدهی جاری</div><div class="stat-val">'+(debt?fmtM(debt):'صفر')+'</div><div class="stat-sub">مانده اقساط پرداخت‌نشده</div></div>' +
       '<div class="stat s-teal"><div class="stat-top"><span class="s-ic">'+icon('coins',15)+'</span>مجموع پرداخت‌ها</div><div class="stat-val">'+fmtMShort(paid)+' <small>'+CUR()+'</small></div><div class="stat-sub">'+faDigits(pays.length)+' پرداخت</div></div>' +
       '<div class="stat s-amber"><div class="stat-top"><span class="s-ic">'+icon('calendar',15)+'</span>اقساط باز</div><div class="stat-val">'+faDigits(insAll.filter(i=>i.paidAmount<i.amount).length)+'</div><div class="stat-sub">'+faDigits(insAll.filter(i=>insStatus(i)==='overdue').length)+' سررسیدگذشته</div></div>' +
@@ -1950,7 +1961,7 @@ PAGES.loans = function(arg){ if(arg){ loanDetail(arg); return; } renderLoans(); 
 function renderLoans(){
   const main = $('#main');
   main.innerHTML =
-    '<div class="page-head"><div><h1>وام‌ها</h1><div class="ph-sub">'+faDigits(DB.loans.length)+' وام ثبت‌شده · '+faDigits(DB.loans.filter(l=>l.status==='active').length)+' فعال</div></div>' +
+    '<div class="page-head"><div><h1>وام‌ها</h1><div class="ph-sub">'+faDigits(DB.loans.length)+' وام · بدهی جاری کل '+fmtMShort(DB.loans.filter(l=>l.status!=='pending'&&l.status!=='cancelled').reduce((s2,lx)=>s2+loanBalance(lx),0))+' '+CUR()+'</div></div>' +
     '<div class="ph-actions"><button class="btn btn-solid btn-sm" id="btnAddLoan" style="padding:11px 17px;font-size:.88rem">'+icon('plus',15)+' ثبت وام جدید</button></div></div>' +
     '<div class="toolbar">' +
       '<div class="t-search">'+icon('search',15)+'<input id="lQ" placeholder="جستجو: نام عضو، کد ملی، موبایل، شماره عضویت…" value="'+esc(loansState.q)+'"></div>' +
@@ -4699,13 +4710,13 @@ function srvMemberForm(m){
         const opts = f.options.map(o=>'<option value="'+esc(o)+'" '+(o===v?'selected':'')+'>'+esc(o)+'</option>').join('');
         input = '<select id="sf_'+f.key+'" style="border-radius:12px;padding:12px"><option value="">— انتخاب —</option>'+opts+'</select>';
       } else if(type==='date'){
-        input = '<div style="position:relative"><input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">📅</span></div><small style="color:var(--ink-2)">از تقویم شمسی انتخاب کنید — تماما شمسی</small>';
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--green-deep);display:inline-flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/><path d="m9 15 2 2 4-4"/></svg></span></div><small style="color:var(--ink-2)">تقویم شمسی</small>';
       } else if(type==='number'){
         input = '<input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="'+esc(f.label)+'" style="border-radius:12px;padding:12px">';
       } else if(type==='mobile'){
-        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="09123456789" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">📱</span></div>';
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="09123456789" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--green-deep);display:inline-flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.13.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.44c.9.34 1.84.57 2.8.7A2 2 0 0 1 22 16.9Z"/></svg></span></div>';
       } else if(type==='nid'){
-        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="1234567890" maxlength="10" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">🪪</span></div>';
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="1234567890" maxlength="10" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--green-deep);display:inline-flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 5.8v5.4c0 4.6 3 7.6 7 9 4-1.4 7-4.4 7-9V5.8Z"/><path d="m9.2 11.6 2 2 3.8-3.9"/></svg></span></div>';
       } else {
         input = '<input id="sf_'+f.key+'" value="'+esc(v)+'" placeholder="'+esc(f.label)+'" style="border-radius:12px;padding:12px">';
       }
@@ -4822,12 +4833,11 @@ async function renderSrvDashboard(){
       '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+icon(ic,16)+'</span>'+label+'</div><div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
 
     $('#srvStats').innerHTML =
-      stat('','users','تعداد کل اعضا', fmtN(stats.members.total), faDigits(stats.members.active)+' فعال · '+faDigits(stats.members.newThisMonth)+' جدید این ماه') +
-      stat('s-lime','check','اعضای فعال', fmtN(stats.members.active), faDigits(Math.round(stats.members.active/Math.max(1,stats.members.total)*100))+'٪ کل') +
-      stat('','loan','کل وام‌ها', fmtN(stats.loans.total), fmtMShort(stats.loans.totalAmount)+' '+CUR()+' · '+faDigits(stats.loans.active)+' فعال') +
-      stat('s-teal','coins','وام‌های فعال', fmtN(stats.loans.active), (stats.loans.overdue?faDigits(stats.loans.overdue)+' معوق':'بدون معوق')) +
-      stat('s-red','warn','اقساط معوق', fmtN(stats.installments.overdue), fmtMShort(stats.installments.totalPendingAmount)+' مانده') +
-      stat('s-amber','clock','اقساط در انتظار', fmtN(stats.installments.pending), faDigits(stats.installments.paid)+' پرداخت‌شده') +
+      stat('','users','تعداد کل اعضا', fmtN(stats.members.total), faDigits(stats.members.newThisMonth)+' عضو جدید این ماه') +
+      stat((stats.installments.totalPendingAmount?'s-red':'s-lime'),'loan','مانده کل اقساط', fmtMShort(stats.installments.totalPendingAmount)+' <small>'+CUR()+'</small>', faDigits(stats.installments.pending+stats.installments.overdue)+' قسط باز') +
+      stat('','loan','کل وام‌ها', fmtN(stats.loans.total), fmtMShort(stats.loans.totalAmount)+' '+CUR()) +
+      stat((stats.installments.overdue?'s-red':'s-teal'),'warn','اقساط معوق', fmtN(stats.installments.overdue), 'روی '+faDigits(stats.loans.overdue||0)+' وام') +
+      stat('s-amber','clock','اقساط در انتظار', fmtN(stats.installments.pending), faDigits(stats.installments.paid)+' قسط تسویه‌شده') +
       stat('','bank','موجودی صندوق‌ها', fmtMShort(stats.funds.totalBalance)+' <small>'+CUR()+'</small>', faDigits(stats.funds.total)+' صندوق · '+faDigits(stats.funds.accounts)+' حساب') +
       stat('s-lime','wallet','پرداخت‌ها', fmtMShort(stats.payments.totalAmount)+' <small>'+CUR()+'</small>', faDigits(stats.payments.total)+' تراکنش');
 
@@ -5202,7 +5212,7 @@ async function renderSrvMemberProfile(memberId){
             '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
               '<span style="background:rgba(255,255,255,.2);backdrop-filter:blur(8px);padding:6px 14px;border-radius:20px;font-size:.82rem;border:1px solid rgba(255,255,255,.25)">'+(m.status==='active'?'✓ فعال':'○ غیرفعال')+'</span>' +
               '<span style="background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.82rem">🆔 '+esc(m.member_no||'')+'</span>' +
-              '<span style="background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.82rem">📅 '+J.fmtLong(m.created_at||'')+'</span>' +
+              '<span style="background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.82rem"><span style="display:inline-flex;vertical-align:middle;margin-inline-end:3px;color:var(--green-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/></svg></span> '+J.fmtLong(m.created_at||'')+'</span>' +
             '</div></div>' +
           '</div>' +
         '</div></div>' +
@@ -5211,7 +5221,7 @@ async function renderSrvMemberProfile(memberId){
         '<button class="btn btn-solid btn-sm" id="srvPmLoan" style="padding:12px 22px;border-radius:12px;box-shadow:0 4px 12px rgba(28,110,49,.3)">'+icon('loan',15)+' ثبت وام جدید</button></div></div>' +
 
       '<div class="grid g-4" style="margin-top:18px">' +
-        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#2e7d32;font-weight:600">کل وام‌ها</span><span style="width:36px;height:36px;background:#1C6E31;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('loan',18)+'</span></div><div style="font-size:1.8rem;font-weight:800;margin-top:8px;color:#1b5e20">'+faDigits(loans.length)+'</div><div style="font-size:.78rem;color:#388e3c;margin-top:4px">'+faDigits(loans.filter(l=>l.status==='active').length)+' فعال</div></div></div>' +
+        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#2e7d32;font-weight:600">کل وام‌ها</span><span style="width:36px;height:36px;background:#1C6E31;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('loan',18)+'</span></div><div style="font-size:1.8rem;font-weight:800;margin-top:8px;color:#1b5e20">'+faDigits(loans.length)+'</div><div style="font-size:.78rem;color:#388e3c;margin-top:4px">'+faDigits(loans.filter(l=>l.status==='active').length)+' در حال بازپرداخت · '+faDigits(loans.filter(l=>l.status==='paid').length)+' تسویه‌شده</div></div></div>' +
         '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#fff3e0 0%,#ffe0b2 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#e65100;font-weight:600">مجموع وام‌ها</span><span style="width:36px;height:36px;background:#ef6c00;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('coins',18)+'</span></div><div style="font-size:1.4rem;font-weight:800;margin-top:8px;color:#bf360c">'+fmtMShort(loans.reduce((s,l)=>s+Number(l.amount||0),0))+'</div><div style="font-size:.78rem;color:#ef6c00">'+CUR()+'</div></div></div>' +
         '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#fce4ec 0%,#f8bbd0 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#ad1457;font-weight:600">وضعیت عضویت</span><span style="width:36px;height:36px;background:#c2185b;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('users',18)+'</span></div><div style="font-size:1.3rem;font-weight:800;margin-top:8px;color:#880e4f">'+(m.status==='active'?'فعال':'غیرفعال')+'</div><div style="font-size:.78rem;color:#ad1457">'+esc(m.member_no||'')+'</div></div></div>' +
         '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#e3f2fd 0%,#90caf9 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#0d47a1;font-weight:600">عضویت شمسی</span><span style="width:36px;height:36px;background:#1565c0;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('calendar',18)+'</span></div><div style="font-size:1rem;font-weight:800;margin-top:8px;color:#0d47a1">'+J.fmtLong(m.created_at||'')+'</div><div style="font-size:.78rem;color:#1565c0">'+J.fmt(m.created_at||'')+'</div></div></div>' +
@@ -5260,7 +5270,7 @@ async function renderSrvMemberProfile(memberId){
     } else {
       loansBox.innerHTML = '<div style="padding:8px"><div class="mini-list">'+loans.map(l=>{
         const fee = l.fee_percent!=null ? faDigits(l.fee_percent)+'٪' : '—';
-        return '<div class="mini-item" style="padding:14px;border-radius:12px;margin-bottom:6px;background:linear-gradient(90deg,#fafafa,#f5f5f5);border:1px solid #eee"><span class="avatar sz-40 teal" style="border-radius:12px;width:44px;height:44px">'+icon('loan',20)+'</span><span class="mi-t"><b style="font-size:.95rem">'+fmtM(l.amount)+' '+CUR()+'</b><span style="display:flex;gap:6px;margin-top:4px"><span class="badge b-gray" style="font-size:.7rem">'+faDigits(l.installments_count)+' قسط</span><span class="badge b-amber" style="font-size:.7rem">'+fee+'</span><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'" style="font-size:.7rem">'+faLoanStatus(l.status)+'</span></span><span style="font-size:.75rem;color:var(--ink-2);margin-top:4px">📅 '+J.fmtLong(l.created_at||'')+'</span></span><button class="btn btn-soft btn-xs" data-ld="'+l.id+'" style="border-radius:20px">جزئیات</button></div>';
+        return '<div class="mini-item" style="padding:14px;border-radius:12px;margin-bottom:6px;background:linear-gradient(90deg,#fafafa,#f5f5f5);border:1px solid #eee"><span class="avatar sz-40 teal" style="border-radius:12px;width:44px;height:44px">'+icon('loan',20)+'</span><span class="mi-t"><b style="font-size:.95rem">'+fmtM(l.amount)+' '+CUR()+'</b><span style="display:flex;gap:6px;margin-top:4px"><span class="badge b-gray" style="font-size:.7rem">'+faDigits(l.installments_count)+' قسط</span><span class="badge b-amber" style="font-size:.7rem">'+fee+'</span><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'" style="font-size:.7rem">'+faLoanStatus(l.status)+'</span></span><span style="font-size:.75rem;color:var(--ink-2);margin-top:4px"><span style="display:inline-flex;vertical-align:middle;margin-inline-end:3px;color:var(--green-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/></svg></span> '+J.fmtLong(l.created_at||'')+'</span></span><button class="btn btn-soft btn-xs" data-ld="'+l.id+'" style="border-radius:20px">جزئیات</button></div>';
       }).join('')+'</div></div>';
       loansBox.querySelectorAll('[data-ld]').forEach(b=> b.onclick=()=> srvLoanDetail(b.dataset.ld));
     }
@@ -5280,9 +5290,9 @@ async function renderSrvMemberProfile(memberId){
       timeline(){
         return '<div class="timeline" style="position:relative;padding-right:20px">' +
           '<div style="position:absolute;right:7px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,#1C6E31,#c8e6c9)"></div>' +
-          '<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1C6E31;border-radius:50%;border:3px solid white;box-shadow:0 0 0 3px #e8f5e9"></div><div class="tl-t" style="font-weight:700">عضو ثبت شد</div><div class="tl-d" style="color:var(--ink-2);font-size:.85rem;margin-top:4px">📅 '+J.fmtLong(m.created_at||'')+' — '+esc(m.created_at||'')+'</div></div>' +
+          '<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1C6E31;border-radius:50%;border:3px solid white;box-shadow:0 0 0 3px #e8f5e9"></div><div class="tl-t" style="font-weight:700">عضو ثبت شد</div><div class="tl-d" style="color:var(--ink-2);font-size:.85rem;margin-top:4px"><span style="display:inline-flex;vertical-align:middle;margin-inline-end:3px;color:var(--green-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/></svg></span> '+J.fmtLong(m.created_at||'')+' — '+esc(m.created_at||'')+'</div></div>' +
           '<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#f57f17;border-radius:50%;border:3px solid white"></div><div class="tl-t">آخرین ویرایش</div><div class="tl-d">'+J.fmtLong(m.updated_at||m.created_at||'')+'</div></div>' +
-          loans.map(l=>'<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1565c0;border-radius:50%;border:3px solid white"></div><div class="tl-t">وام '+fmtM(l.amount)+' ثبت شد</div><div class="tl-d">📅 '+J.fmtLong(l.created_at||'')+' — '+faDigits(l.installments_count)+' قسط، کارمزد '+faDigits(l.fee_percent||0)+'% — وضعیت: '+faLoanStatus(l.status)+'</div></div>').join('') +
+          loans.map(l=>'<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1565c0;border-radius:50%;border:3px solid white"></div><div class="tl-t">وام '+fmtM(l.amount)+' ثبت شد</div><div class="tl-d"><span style="display:inline-flex;vertical-align:middle;margin-inline-end:3px;color:var(--green-deep)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/></svg></span> '+J.fmtLong(l.created_at||'')+' — '+faDigits(l.installments_count)+' قسط، کارمزد '+faDigits(l.fee_percent||0)+'% — وضعیت: '+faLoanStatus(l.status)+'</div></div>').join('') +
         '</div>';
       },
       fields(){
