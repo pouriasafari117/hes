@@ -466,6 +466,15 @@ function loadDb(){
       /* تور ایمنی برای داده‌های قدیمی: هیچ عضوی نباید فیلد پایهٔ گم‌شده داشته باشد */
       d.members.forEach(m=>{ ['name','father','mobile','nationalId','birthDate','memberNo'].forEach(k=>{ if(typeof m[k]!=='string') m[k]=''; });
         if(!m.name.trim()) m.name='(عضو بدون نام)'; });
+      /* خودترمیمی وام‌ها: اگر مجموع پرداخت‌ها به مبلغ وام رسیده یا همه اقساط کامل‌اند، وضعیت «تسویه‌شده» شود */
+      try{
+        (d.loans||[]).forEach(l=>{
+          if(l.status !== 'active') return;
+          const ins = (d.installments||[]).filter(i=>i.loanId===l.id);
+          const paidSum = ins.reduce((s,i)=>s+(+i.paidAmount||0),0);
+          if((l.amount>0 && paidSum >= l.amount) || (ins.length && ins.every(i=>(+i.paidAmount||0) >= (+i.amount||0)))) l.status = 'paid';
+        });
+      }catch(e){}
       if(d.settings && Array.isArray(d.settings.memberFields)) d.settings.memberFields = d.settings.memberFields.filter(f=>f && f.key && f.label);
       return d; } }
   }catch(e){}
@@ -587,6 +596,7 @@ function loanEffStatus(l){
   const ins = loanInstallments(l.id);
   if(ins.length && ins.every(i => i.paidAmount >= i.amount)) return 'paid';
   if(l.status === 'paid') return 'paid';
+  if(l.amount > 0 && loanPaidSum(l) >= l.amount) return 'paid'; /* با رسیدن مجموع پرداخت‌ها به مبلغ وام */
   const t = J.todayIso();
   if(ins.some(i => i.dueDate < t && i.paidAmount < i.amount)) return 'overdue';
   return 'active';
@@ -1268,6 +1278,12 @@ function pageDashboard(){
   const odSum = odIns.reduce((s,i)=> s+(i.amount-i.paidAmount), 0);
   const unpaidSum = DB.installments.filter(i=>{ const l=qLoan(i.loanId); return l && l.status==='active' && i.paidAmount < i.amount; })
     .reduce((s,i)=> s+(i.amount-i.paidAmount), 0);
+  /* شاخص‌های کلیدی مدیریتی — جایگزین کارت‌های کم‌کاربرد «اعضای فعال» و «وام‌های فعال» */
+  const openLoans = DB.loans.filter(l => l.status !== 'pending' && l.status !== 'cancelled' && loanEffStatus(l) !== 'paid');
+  const debtSum = openLoans.reduce((s,l)=> s + loanBalance(l), 0);
+  const todaysPays = DB.payments.filter(p => (p.date||'') === t);
+  const todaysPaySum = todaysPays.reduce((s,p)=> s + p.amount, 0);
+  const todayDue = DB.installments.filter(i => { const l = qLoan(i.loanId); return l && l.status === 'active' && i.dueDate === t && i.paidAmount < i.amount; });
   const fundsBalance = DB.accounts.filter(a=>a.status==='active').reduce((s,a)=>s+a.balance,0);
   const activeAccs = DB.accounts.filter(a=>a.status==='active').length;
 
@@ -1286,8 +1302,8 @@ function pageDashboard(){
 
     '<div class="grid g-stats">' +
       stat('','users','تعداد کل اعضا', fmtN(totalM), faDigits(activeM)+' عضو فعال') +
-      stat('s-lime','check','اعضای فعال', fmtN(activeM), faDigits(Math.round(activeM/Math.max(1,totalM)*100))+'٪ کل اعضا') +
-      stat('','loan','وام‌های فعال', fmtN(activeLoans.length), faDigits(DB.loans.filter(l=>l.status==='pending').length)+' در انتظار تصویب') +
+      stat(debtSum?'s-red':'s-lime','loan','بدهی جاری کل', fmtMShort(debtSum)+' <small>'+CUR()+'</small>', faDigits(openLoans.length)+' وام در حال بازپرداخت') +
+      stat(todaysPaySum?'s-lime':'','coins','دریافتی امروز', fmtMShort(todaysPaySum)+' <small>'+CUR()+'</small>', faDigits(todaysPays.length)+' پرداخت · '+faDigits(todayDue.length)+' قسط سررسید امروز') +
       stat('s-teal','coins','وام‌های تسویه‌شده', fmtMShort(paidLoansSum)+' <small>'+CUR()+'</small>', faDigits(paidLoans.length)+' وام') +
       stat('s-red','warn','اقساط سررسیدگذشته', fmtMShort(odSum)+' <small>'+CUR()+'</small>', faDigits(odIns.length)+' قسط معوق') +
       stat('s-amber','clock','اقساط پرداخت‌نشده', fmtMShort(unpaidSum)+' <small>'+CUR()+'</small>', 'مانده کل اقساط جاری') +
@@ -2131,7 +2147,7 @@ function loanDetail(id){
       '<h1>وام '+esc(m?m.name:'—')+'</h1><div class="ph-sub">'+loanBadge(l)+' &nbsp; ثبت در '+J.fmt(l.createdAt)+'</div></div>' +
       '<div class="ph-actions">' +
         (l.status==='pending' ? '<button class="btn btn-solid btn-sm" id="ldActivate" style="padding:11px 17px;font-size:.88rem">'+icon('check',15)+' تصویب و فعال‌سازی</button>' : '') +
-        (l.status==='active' ? '<button class="btn btn-solid btn-sm" id="ldPay" style="padding:11px 17px;font-size:.88rem">'+icon('coins',15)+' ثبت پرداخت</button>' +
+        (loanEffStatus(l)!=='paid' && (l.status==='active') ? '<button class="btn btn-solid btn-sm" id="ldPay" style="padding:11px 17px;font-size:.88rem">'+icon('coins',15)+' ثبت پرداخت</button>' +
           '<button class="btn btn-danger btn-sm" id="ldCancel" style="padding:11px 17px;font-size:.88rem">'+icon('ban',15)+' لغو وام</button>' : '') +
       '</div></div>' +
 
@@ -2247,7 +2263,8 @@ SHORTCUTS.paymentAdd = ()=> paymentForm();
 
 /* فرم ثبت پرداخت — با تشخیص ناقص/اضافه/تکراری */
 function paymentForm(presetLoanId, presetInsId){
-  const activeLoans = DB.loans.filter(l => l.status === 'active');
+  /* فقط وام‌های تسویه‌نشده — با رسیدن مجموع پرداخت‌ها به مبلغ وام، وام از لیست بیرون می‌رود */
+  const activeLoans = DB.loans.filter(l => { const st = loanEffStatus(l); return st === 'active' || st === 'overdue'; });
   const accs = DB.accounts.filter(a => a.status === 'active');
   const m = openModal({
     title:'ثبت پرداخت قسط', sub:'موفق، ناقص، اضافه‌پرداخت و تکراری به‌صورت خودکار تشخیص داده می‌شود', size:'lg',
@@ -2330,6 +2347,11 @@ function paymentForm(presetLoanId, presetInsId){
         need(!!dateIso, elx('#pfDate'), 'تاریخ پرداخت معتبر نیست.');
         if(!okf){ toast('برخی فیلدها ناقص است.','err'); return; }
         const ins = curIns(), loan = qLoan(lid), member = qMember(loan.memberId);
+        /* وام تسویه‌نشده باید بماند: اگر با رسیدن به مبلغ وام تسویه شده، پرداخت جدید قابل قبول نیست */
+        if(loanEffStatus(loan) === 'paid'){
+          toast('این وام پیش‌تر به‌طور کامل تسویه شده و قابل واریز نیست.','warn');
+          return;
+        }
         const ref = fieldVal(elx('#pfRef'));
         /* تشخیص پرداخت تکراری */
         if(ref){
@@ -2346,13 +2368,21 @@ function paymentForm(presetLoanId, presetInsId){
         /* ثبت روی قسط انتخابی */
         ins.paidAmount += applied;
         if(ins.paidAmount >= ins.amount){ ins.paidAmount = ins.amount; ins.paidDate = dateIso; }
-        /* اضافه‌پرداخت → قسط بعدی */
+        /* اضافه‌پرداخت → به‌طور آبشاری روی «همهٔ» اقساط بعدی پخش می‌شود
+           تا با یک پرداخت بزرگ، وام کاملاً تسویه شود و واریز ادامه پیدا نکند */
         let extraNote = '';
         if(extra > 0){
           const nexts = loanInstallments(lid).filter(i => i.paidAmount < i.amount);
-          if(nexts.length){ const nx = nexts[0]; nx.paidAmount = Math.min(nx.amount, nx.paidAmount + extra); if(nx.paidAmount>=nx.amount) nx.paidDate = dateIso;
-            extraNote = ' اضافه‌پرداخت به قسط '+faDigits(nx.no)+' منظور شد.'; }
-          else extraNote = ' اضافه‌پرداخت به‌عنوان بستانکاری عضو نزد صندوق ماند.';
+          let covered = 0;
+          for(const nx of nexts){
+            if(extra <= 0) break;
+            const take = Math.min(nx.amount - nx.paidAmount, extra);
+            nx.paidAmount += take; extra -= take; covered++;
+            if(nx.paidAmount >= nx.amount){ nx.paidAmount = nx.amount; nx.paidDate = dateIso; }
+          }
+          extraNote = covered > 0
+            ? ' اضافه‌پرداخت به '+faDigits(covered)+' قسط بعدی منظور شد.'
+            : ' اضافه‌پرداخت به‌عنوان بستانکاری عضو نزد صندوق ماند.';
         }
         const accId = elx('#pfAcc').value;
         const acc = qAccount(accId);
@@ -2362,10 +2392,11 @@ function paymentForm(presetLoanId, presetInsId){
           ref:'FIS-'+(5000+DB.payments.length), tracking:'', notes:'بازپرداخت قسط '+faDigits(ins.no)+' — '+(member?member.name:''), user:SESSION.name });
         acc.balance += amt;
         audit('ثبت پرداخت '+fmtM(amt)+' قسط '+faDigits(ins.no)+' وام '+(member?member.name:''), 'loan:'+lid);
-        /* اگر همهٔ اقساط تسویه شد، وضعیت وام خودکار «تسویه‌شده» می‌شود */
+        /* اگر همهٔ اقساط تسویه شد یا مجموع پرداخت‌ها به مبلغ وام رسید، وضعیت وام خودکار «تسویه‌شده» می‌شود و اقساط باز هم رسماً بسته می‌شوند */
         let settled = false;
-        if(loan.status === 'active' && loanInstallments(lid).every(i => i.paidAmount >= i.amount)){
+        if(loan.status === 'active' && loanEffStatus(loan) === 'paid'){
           loan.status = 'paid'; settled = true;
+          loanInstallments(lid).forEach(i=>{ if(i.paidAmount < i.amount){ i.paidAmount = i.amount; if(!i.paidDate) i.paidDate = dateIso; } });
           audit('تسویهٔ کامل وام '+(member?member.name:''), 'loan:'+lid);
         }
         saveDb();
