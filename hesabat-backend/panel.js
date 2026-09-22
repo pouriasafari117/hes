@@ -4441,13 +4441,16 @@ async function srvViewMember(id, cachedRows){
   });
 }
 
+
 function srvMemberForm(m){
   srvLoadFieldsCached().then(fields => {
     const isEdit = !!m;
     const vals = (m && m.values) ? m.values : {};
-    // Build inputs like demo memberForm
-    const inputs = fields.map(f => {
-      const v = vals[f.key] || '';
+    // Separate core fields
+    const coreMap = {};
+    fields.forEach(f=>{ coreMap[f.key]=f; });
+    // Build inputs with calendar for date
+    const makeInput = (f, v) => {
       const req = f.is_required ? ' <span class="req">*</span>' : '';
       const type = f.type;
       let input = '';
@@ -4458,24 +4461,43 @@ function srvMemberForm(m){
         const opts = f.options.map(o=>'<option value="'+esc(o)+'" '+(o===v?'selected':'')+'>'+esc(o)+'</option>').join('');
         input = '<select id="sf_'+f.key+'"><option value="">— انتخاب —</option>'+opts+'</select>';
       } else if(type==='date'){
-        input = '<input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'">';
+        input = '<input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'"><small>از تقویم انتخاب کنید</small>';
       } else if(type==='number' || type==='mobile' || type==='nid'){
         input = '<input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
       } else {
         input = '<input id="sf_'+f.key+'" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
       }
       return '<div class="field"><label>'+esc(f.label)+req+'</label>'+input+'<span class="err-msg"></span></div>';
-    }).join('');
+    };
+
+    // Group fields: first 3, next 3, rest
+    const coreKeys = ['name','father','birthDate','mobile','nationalId'];
+    const ordered = [];
+    coreKeys.forEach(k=>{ const f=fields.find(x=>x.key===k); if(f) ordered.push(f); });
+    fields.forEach(f=>{ if(!coreKeys.includes(f.key)) ordered.push(f); });
+
+    const sec1 = ordered.slice(0,3).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    const sec2 = ordered.slice(3,6).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    const sec3 = ordered.slice(6).map(f=>makeInput(f, vals[f.key]||'')).join('');
 
     const h = openModal({
       title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید',
-      sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'') : 'اطلاعات هویتی پایه عضو — حالت سرور (PostgreSQL)',
+      sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'') : 'اطلاعات هویتی پایه عضو — حالت سرور (PostgreSQL) — فیلدها از تنظیمات',
       size:'lg',
-      body: '<div class="fields">'+inputs+'</div>' +
+      body: '<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> مشخصات فردی</div><div class="m-sec-b"><div class="fields">'+sec1+'</div></div></div>' +
+            (sec2 ? '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> اطلاعات تماس</div><div class="m-sec-b"><div class="fields">'+sec2+'</div></div></div>' : '') +
+            (sec3 ? '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> سایر اطلاعات</div><div class="m-sec-b"><div class="fields">'+sec3+'</div></div></div>' : '') +
             '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:10px;padding:10px;background:var(--red-bg);border-radius:8px"></div>',
       foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
       onOpen(h){
         h.el.querySelector('[data-x]').onclick = ()=> h.close();
+        // Attach calendar for date fields
+        fields.forEach(f=>{
+          if(f.type==='date'){
+            const el = document.getElementById('sf_'+f.key);
+            if(el && typeof attachJDate==='function') attachJDate(el);
+          }
+        });
         const saveBtn = h.el.querySelector('#srvMemSave');
         saveBtn.onclick = async ()=>{
           const values = {};
@@ -4485,7 +4507,6 @@ function srvMemberForm(m){
             values[f.key] = f.type === 'bool' ? (el.checked ? 'true' : 'false') : (el.value || '').trim();
           }
           const errBox = h.el.querySelector('#srvFormErr');
-          // simple validation
           for(const f of fields){
             if(f.is_required && !values[f.key]){
               errBox.style.display='';
@@ -4499,14 +4520,14 @@ function srvMemberForm(m){
           try {
             if(m) await srvFetch('PATCH', '/api/institutions/' + SRV.instId + '/members/' + m.id, { values });
             else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
-            // stamp
             const nm = Object.values(values)[0] || 'عضو';
             const mno = m ? m.member_no : ('M-'+Date.now().toString().slice(-6));
             stampFx({ text:'ثبت شد', sub:'عضویت '+esc(mno)+' — '+J.fmt(J.todayIso()), color: (typeof stampColor==='function'?stampColor('member'):'#B3261E'), hold:1100, onDone:()=>{
               toast(isEdit ? 'عضو به‌روزرسانی شد.' : 'عضو «'+esc(nm)+'» ثبت شد.', 'ok');
               h.close();
               srvFieldsCache=null;
-              srvLoadMembersData();
+              if(typeof srvLoadMembersData==='function') srvLoadMembersData();
+              else if(typeof srvLoadMembers==='function') srvLoadMembers();
             }});
           } catch(e){
             errBox.style.display='';
@@ -4519,6 +4540,7 @@ function srvMemberForm(m){
     });
   }).catch(e => toast(e.message, 'err'));
 }
+
 
 
 /* ── قلاب‌های مسیریابی: حالت سرور فقط اعضا و فیلدها را عوض می‌کند؛ بقیه دمو می‌ماند ── */
@@ -4691,61 +4713,144 @@ async function srvLoanDetail(loanId){
         (ins.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>سررسید</th><th>مبلغ</th><th>وضعیت</th><th>پرداخت</th></tr></thead><tbody>'+ins.map(i=>'<tr><td class="c-fa-num">'+J.fmt(i.due_date)+'</td><td class="c-fa-num">'+fmtN(i.amount)+'</td><td><span class="badge '+(i.status==='paid'?'b-green':'b-amber')+'">'+esc(i.status)+'</span></td><td class="c-fa-num">'+(i.paid_at?J.fmt(i.paid_at):'—')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="card-b"><p class="hint-t">قسطی وجود ندارد.</p></div>')+
       '</div>';
 
+  
+    const payBtn = document.getElementById('srvLoanPay');
+    if(payBtn) payBtn.onclick = ()=> srvPaymentForm(l.id);
+    const backBtn = document.getElementById('srvLoanBack');
+    if(backBtn) backBtn.onclick = ()=> location.hash='#/app/loans';
   } catch(e){
     main.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>';
   }
 }
 
+
 async function srvLoanForm(presetMemberId){
-  let members = [];
+  let members = [], funds = [], inst = null;
   try {
-    const mData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/members?page=1&pageSize=200');
+    const [mData, fData, iData] = await Promise.all([
+      srvFetch('GET', '/api/institutions/'+SRV.instId+'/members?page=1&pageSize=200'),
+      srvFetch('GET', '/api/institutions/'+SRV.instId+'/funds').catch(()=>({funds:[]})),
+      srvFetch('GET', '/api/institutions/'+SRV.instId).then(r=>r.institution||r).catch(()=>null)
+    ]);
     members = mData.rows||[];
+    funds = fData.funds||[];
+    inst = iData;
   } catch(e){ toast(e.message,'err'); return; }
   if(!members.length){ toast('ابتدا حداقل یک عضو ثبت کنید.','warn'); return; }
 
-  const opts = members.map(m=>{
+  const feeDefault = inst ? (inst.fee_percent!=null ? inst.fee_percent : 4) : 4;
+  const cntDefault = inst ? (inst.installments_count||12) : 12;
+
+  const memberOpts = members.map(m=>{
     const nm = m.values ? (Object.values(m.values)[0]||m.member_no) : m.member_no;
     return '<option value="'+m.id+'"'+(String(presetMemberId)===String(m.id)?' selected':'')+'>'+esc(nm)+' ('+esc(m.member_no||'')+')</option>';
   }).join('');
 
-  openModal({
-    title:'ثبت وام جدید',
-    sub:'حالت سرور — ثبت در PostgreSQL',
-    size:'lg',
-    body:'<div class="fields">'+
-      '<div class="field"><label>عضو <span class="req">*</span></label><select id="slfMember"><option value="">— انتخاب عضو —</option>'+opts+'</select><span class="err-msg"></span></div>'+
-      '<div class="field"><label>مبلغ وام <span class="req">*</span> <small>('+CUR()+')</small></label><input id="slfAmt" class="num-inp" placeholder="مثلاً 50000000"><span class="err-msg"></span></div>'+
-      '<div class="field"><label>تعداد اقساط</label><select id="slfCnt"><option value="6">6</option><option value="12" selected>12</option><option value="18">18</option><option value="24">24</option><option value="36">36</option></select></div>'+
-      '<div class="field"><label>کارمزد ٪</label><input id="slfFee" class="num-inp" value="4"></div>'+
-      '<div class="field full"><label>توضیحات</label><textarea id="slfDesc" rows="2" placeholder="اختیاری"></textarea></div>'+
-      '<div id="slfErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px;padding:10px;background:var(--red-bg);border-radius:8px"></div>'+
-    '</div>',
-    foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="slfSave">'+icon('check',14)+' ثبت وام</button>',
-    onOpen(h){
-      h.el.querySelector('[data-x]').onclick=()=>h.close();
-      h.el.querySelector('#slfSave').onclick=async ()=>{
-        const mid = h.el.querySelector('#slfMember').value;
-        const amt = h.el.querySelector('#slfAmt').value.replace(/[^0-9]/g,'');
-        const cnt = h.el.querySelector('#slfCnt').value;
-        const fee = h.el.querySelector('#slfFee').value;
-        const desc = h.el.querySelector('#slfDesc').value;
-        const err = h.el.querySelector('#slfErr');
-        if(!mid){ err.style.display=''; err.textContent='عضو را انتخاب کنید.'; return; }
-        if(!amt || Number(amt)<=0){ err.style.display=''; err.textContent='مبلغ وام را وارد کنید.'; return; }
-        const btn = h.el.querySelector('#slfSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
-        try {
-          await srvFetch('POST', '/api/institutions/'+SRV.instId+'/loans', { memberId: parseInt(mid), amount: amt, installmentsCount: parseInt(cnt), feePercent: fee, description: desc });
-          toast('وام ثبت شد.','ok');
-          stampFx({ text:'ثبت شد', sub:'وام '+fmtM(amt)+' — '+J.fmt(J.todayIso()), color:'#1C6E31', hold:1100, onDone:()=>{ h.close(); srvLoadLoans(); }});
-        } catch(e){
-          err.style.display=''; err.innerHTML = esc(e.message) + (e.details?'<br>'+e.details.join('<br>'):'');
-          btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت وام';
-        }
-      };
+  const fundOpts = funds.length ? funds.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join('') : '<option value="">— بدون صندوق —</option>';
+
+  const drawerWrap = document.createElement('div');
+  drawerWrap.className = 'drawer-wrap';
+  drawerWrap.innerHTML = '<div class="m-drawer" role="dialog" aria-modal="true">' +
+    '<div class="m-head"><h3>ثبت وام جدید<span class="m-sub">فرم چندبخشی — عضو، مبلغ، برنامه اقساط — کارمزد از تنظیمات: '+faDigits(feeDefault)+'%</span></h3>' +
+    '<button class="x-btn" data-close aria-label="بستن">'+icon('x',15)+'</button></div>' +
+    '<div class="m-body">' +
+      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> عضو و صندوق</div><div class="m-sec-b"><div class="fields">' +
+        '<div class="field"><label>عضو <span class="req">*</span></label><select id="slfMember"><option value="">— انتخاب عضو —</option>'+memberOpts+'</select><span class="err-msg"></span></div>' +
+        '<div class="field"><label>صندوق</label><select id="slfFund"><option value="">— انتخاب صندوق —</option>'+fundOpts+'</select><span class="help">صندوقی که وام از آن پرداخت می‌شود</span></div>' +
+        '<div class="field full"><label>حساب پرداخت</label><select id="slfAcc"><option value="">— انتخاب حساب —</option></select><span class="help">برای پرداخت اصل وام</span></div>' +
+      '</div></div></div>' +
+      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ‌ها</div><div class="m-sec-b"><div class="fields">' +
+        '<div class="field"><label>مبلغ اصل وام <small>('+CUR()+')</small> <span class="req">*</span></label><input id="slfAmt" class="num-inp" placeholder="مثلاً 50000000"><span class="err-msg"></span></div>' +
+        '<div class="field"><label>نرخ / کارمزد سالانه <small>(٪) — از تنظیمات</small></label><input id="slfFee" class="num-inp" value="'+esc(String(feeDefault))+'"><span class="help">اگر 0 بزنید بدون کارمزد</span></div>' +
+        '<div class="field"><label>تاریخ درخواست</label><input id="slfReq" placeholder="1403/02/15"></div>' +
+        '<div class="field"><label>تاریخ پرداخت</label><input id="slfPay" placeholder="1403/02/16"></div>' +
+      '</div></div></div>' +
+      '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
+        '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="slfCnt"><option value="6"'+(cntDefault==6?' selected':'')+'>6</option><option value="12"'+(cntDefault==12?' selected':'')+'>12</option><option value="18"'+(cntDefault==18?' selected':'')+'>18</option><option value="24"'+(cntDefault==24?' selected':'')+'>24</option><option value="36"'+(cntDefault==36?' selected':'')+'>36</option><option value="48"'+(cntDefault==48?' selected':'')+'>48</option></select></div>' +
+        '<div class="field"><label>فاصله اقساط</label><select id="slfInt"><option value="1" selected>ماهانه</option><option value="2">دوماه یک‌بار</option><option value="3">سه‌ماه یک‌بار</option></select></div>' +
+        '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="slfFirst" placeholder="1403/03/15"><span class="err-msg"></span></div>' +
+        '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="slfPer" class="num-inp"><span class="help">خودکار محاسبه می‌شود</span></div>' +
+        '<div class="field full"><label>توضیحات</label><textarea id="slfDesc" rows="2" placeholder="اختیاری"></textarea></div>' +
+      '</div><div class="card-b" style="border-top:1px dashed var(--line);background:var(--card-2);margin-top:12px;border-radius:10px"><div id="slfSum"></div></div></div></div>' +
+      '<div id="slfErr" style="display:none;color:var(--red);font-size:12px;margin:12px;padding:10px;background:var(--red-bg);border-radius:8px"></div>' +
+    '</div>' +
+    '<div class="m-foot"><span class="grow" style="font-size:.8rem;color:var(--ink-2)">پس از ذخیره، برنامه اقساط ساخته می‌شود.</span><button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="slfSave">'+icon('check',14)+' ثبت وام</button></div>' +
+  '</div>';
+  document.getElementById('modalRoot').appendChild(drawerWrap);
+  document.body.style.overflow='hidden';
+  const close = ()=>{ drawerWrap.remove(); document.body.style.overflow=''; };
+  drawerWrap.addEventListener('mousedown', e=>{ if(e.target===drawerWrap) close(); });
+  drawerWrap.querySelector('[data-close]').onclick=close;
+  drawerWrap.querySelector('[data-x]').onclick=close;
+
+  const el = id => drawerWrap.querySelector(id);
+  if(typeof attachMoney==='function'){ attachMoney(el('#slfAmt')); attachMoney(el('#slfPer')); attachMoney(el('#slfFee')); }
+  if(typeof attachJDate==='function'){
+    ['#slfReq','#slfPay','#slfFirst'].forEach(s=>{ const e=el(s); if(e) attachJDate(e); });
+  }
+  const today = J.todayIso();
+  if(typeof setJd==='function'){ setJd(el('#slfReq'), today); }
+
+  // Load accounts when fund changes
+  async function loadAccounts(){
+    const fid = el('#slfFund').value;
+    const accSel = el('#slfAcc');
+    if(!fid){ accSel.innerHTML='<option value="">— ابتدا صندوق انتخاب کنید —</option>'; return; }
+    try {
+      const aData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/accounts');
+      const accs = (aData.accounts||[]).filter(a=>String(a.fund_id)===String(fid));
+      accSel.innerHTML = accs.length ? accs.map(a=>'<option value="'+a.id+'">'+esc(a.name)+' — موجودی '+fmtN(a.initial_balance)+'</option>').join('') : '<option value="">حساب فعالی نیست — از منوی صندوق‌ها بسازید</option>';
+    } catch(e){ accSel.innerHTML='<option value="">خطا: '+esc(e.message)+'</option>'; }
+  }
+  el('#slfFund').addEventListener('change', loadAccounts);
+  loadAccounts();
+
+  function updateSum(){
+    const amt = parseInt((el('#slfAmt').value||'').replace(/[^0-9]/g,''))||0;
+    const months = parseInt(el('#slfCnt').value)||12;
+    const rate = parseFloat(faToEn(el('#slfFee').value))||0;
+    const perEl = el('#slfPer');
+    if(amt>0 && months>0){
+      const per = Math.ceil(amt*(1+rate/100)/months/10000)*10000;
+      if(typeof setMoney==='function') setMoney(perEl, per);
+      else perEl.value = per;
     }
-  });
+    const per = parseInt((el('#slfPer').value||'').replace(/[^0-9]/g,''))||0;
+    el('#slfSum').innerHTML =
+      '<div class="sum-line"><span>مبلغ اصل وام</span><b>'+fmtM(amt||0)+'</b></div>' +
+      '<div class="sum-line"><span>مبلغ هر قسط × '+faDigits(months)+' قسط</span><b>'+fmtM(per*months)+'</b></div>' +
+      '<div class="sum-line"><span>مجموع کارمزد ('+faDigits(rate)+'٪)</span><b style="color:var(--amber)">'+fmtM(Math.max(0, per*months - (amt||0)))+'</b></div>';
+  }
+  el('#slfAmt').addEventListener('input', updateSum);
+  el('#slfCnt').addEventListener('change', updateSum);
+  el('#slfFee').addEventListener('input', updateSum);
+  el('#slfPer').addEventListener('input', updateSum);
+  updateSum();
+
+  el('#slfSave').onclick = async ()=>{
+    const mid = el('#slfMember').value;
+    const amt = el('#slfAmt').value.replace(/[^0-9]/g,'');
+    const cnt = el('#slfCnt').value;
+    const fee = el('#slfFee').value;
+    const desc = el('#slfDesc').value;
+    const first = el('#slfFirst').value;
+    const err = el('#slfErr');
+    if(!mid){ err.style.display=''; err.textContent='عضو را انتخاب کنید.'; return; }
+    if(!amt || Number(amt)<=0){ err.style.display=''; err.textContent='مبلغ وام را وارد کنید.'; return; }
+    if(!first){ err.style.display=''; err.textContent='تاریخ اولین سررسید الزامی است.'; return; }
+    const btn = el('#slfSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
+    try {
+      await srvFetch('POST', '/api/institutions/'+SRV.instId+'/loans', { memberId: parseInt(mid), amount: amt, installmentsCount: parseInt(cnt), feePercent: fee, description: desc });
+      toast('وام ثبت شد.','ok');
+      if(typeof stampFx==='function') stampFx({ text:'ثبت شد', sub:'وام '+fmtM(amt)+' — '+J.fmt(J.todayIso()), color:'#1C6E31', hold:1100, onDone:()=>{ close(); if(typeof srvLoadLoans==='function') srvLoadLoans(); }});
+      else { close(); if(typeof srvLoadLoans==='function') srvLoadLoans(); }
+    } catch(e){
+      err.style.display=''; err.innerHTML = esc(e.message) + (e.details?'<br>'+e.details.join('<br>'):'');
+      btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت وام';
+    }
+  };
 }
+
 
 /* ── پرونده عضو — حالت سرور — دقیقا مثل قالب اصلی ── */
 async function renderSrvMemberProfile(memberId){
@@ -4842,6 +4947,194 @@ async function renderSrvMemberProfile(memberId){
 }
 
 
+
+/* ── صندوق‌ها و حساب‌ها — حالت سرور — موجودی صندوق کجا وارد می‌شود ── */
+let srvFundsTab = 'funds';
+async function renderSrvFundsPage(tab){
+  srvFundsTab = tab || srvFundsTab;
+  const main = $('#main');
+  main.innerHTML =
+    '<div class="page-head"><div><h1>صندوق‌ها و حساب‌ها</h1><div class="ph-sub">حالت سرور — مدیریت صندوق‌ها و موجودی — داده از PostgreSQL</div></div>' +
+    '<div class="ph-actions"><button class="btn btn-solid btn-sm" id="srvAddFA" style="padding:11px 17px">'+icon('plus',15)+' '+(srvFundsTab==='funds'?'افزودن صندوق':'افزودن حساب')+'</button></div></div>' +
+    '<div class="card tight"><div class="card-b" style="padding:8px 18px 0"><div class="tabs">' +
+      '<button class="tab'+(srvFundsTab==='funds'?' on':'')+'" data-ft="funds">صندوق‌ها<span class="tc" id="srvFundsCnt">—</span></button>' +
+      '<button class="tab'+(srvFundsTab==='accounts'?' on':'')+'" data-ft="accounts">حساب‌ها<span class="tc" id="srvAccCnt">—</span></button>' +
+    '</div></div><div id="srvFundsBody" style="padding:16px 18px"><p class="hint-t">در حال دریافت…</p></div></div>';
+
+  main.querySelectorAll('[data-ft]').forEach(b=> b.onclick=()=> renderSrvFundsPage(b.dataset.ft));
+  $('#srvAddFA').onclick = ()=>{ if(srvFundsTab==='funds') srvFundForm(); else srvAccountForm(); };
+  if(srvFundsTab==='funds') await srvLoadFunds();
+  else await srvLoadAccounts();
+}
+
+async function srvLoadFunds(){
+  const box = $('#srvFundsBody'); if(!box) return;
+  box.innerHTML = '<p class="hint-t">در حال دریافت صندوق‌ها…</p>';
+  try {
+    const data = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/funds');
+    const funds = data.funds||[];
+    const cnt = $('#srvFundsCnt'); if(cnt) cnt.textContent = faDigits(funds.length);
+    if(!funds.length){
+      box.innerHTML = '<div class="empty" style="padding:32px;text-align:center"><div class="e-ic">'+icon('bank',28)+'</div><h3>صندوقی ثبت نشده</h3><p class="hint-t">برای شروع موجودی صندوق، ابتدا صندوق بسازید سپس حساب با موجودی اولیه بسازید.</p><button class="btn btn-solid btn-sm" id="srvEmptyFund">'+icon('plus',14)+' افزودن صندوق</button></div>';
+      const b=$('#srvEmptyFund'); if(b) b.onclick=()=>srvFundForm();
+      return;
+    }
+    box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>نام صندوق</th><th>کد</th><th>تعداد حساب</th><th>موجودی کل</th><th>وضعیت</th><th></th></tr></thead><tbody>' +
+      funds.map(f=>'<tr><td><b>'+esc(f.name)+'</b><br><small class="hint-t">'+esc(f.notes||'')+'</small></td><td>'+esc(f.code||'—')+'</td><td class="c-fa-num">'+faDigits(f.accounts_count||0)+'</td><td class="c-fa-num c-strong">'+fmtM(f.total_balance||0)+'</td><td><span class="badge '+(f.status==='active'?'b-green':'b-gray')+'">'+esc(f.status)+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-editf="'+f.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-delf="'+f.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
+      '</tbody></table></div>';
+    box.querySelectorAll('[data-editf]').forEach(b=> b.onclick=()=> srvFundForm(funds.find(x=>String(x.id)===b.dataset.editf)));
+    box.querySelectorAll('[data-delf]').forEach(b=> b.onclick=async()=>{
+      const ok = await askConfirm({title:'حذف صندوق', danger:true, text:'صندوق حذف شود؟ حساب‌های آن بدون صندوق می‌مانند.'});
+      if(!ok) return;
+      try { await srvFetch('DELETE', '/api/institutions/'+SRV.instId+'/funds/'+b.dataset.delf); toast('صندوق حذف شد.','ok'); srvLoadFunds(); } catch(e){ toast(e.message,'err'); }
+    });
+  } catch(e){
+    box.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>';
+  }
+}
+
+async function srvLoadAccounts(){
+  const box = $('#srvFundsBody'); if(!box) return;
+  box.innerHTML = '<p class="hint-t">در حال دریافت حساب‌ها…</p>';
+  try {
+    const data = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/accounts');
+    const accs = data.accounts||[];
+    const cnt = $('#srvAccCnt'); if(cnt) cnt.textContent = faDigits(accs.length);
+    if(!accs.length){
+      box.innerHTML = '<div class="empty" style="padding:32px;text-align:center"><div class="e-ic">'+icon('wallet',28)+'</div><h3>حسابی ثبت نشده</h3><p class="hint-t">موجودی صندوق را اینجا وارد کنید: حساب جدید بسازید و موجودی اولیه را بزنید.</p><button class="btn btn-solid btn-sm" id="srvEmptyAcc">'+icon('plus',14)+' افزودن حساب با موجودی</button></div>';
+      const b=$('#srvEmptyAcc'); if(b) b.onclick=()=>srvAccountForm();
+      return;
+    }
+    box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>نام حساب</th><th>شماره</th><th>صندوق</th><th>نوع</th><th>موجودی اولیه</th><th>وضعیت</th><th></th></tr></thead><tbody>' +
+      accs.map(a=>'<tr><td><b>'+esc(a.name)+'</b></td><td class="c-fa-num">'+esc(a.number||'—')+'</td><td>'+esc(a.fund_name||'—')+'</td><td>'+esc(a.type||'')+'</td><td class="c-fa-num c-strong">'+fmtM(a.initial_balance||0)+'</td><td><span class="badge '+(a.status==='active'?'b-green':'b-gray')+'">'+esc(a.status)+'</span></td><td style="text-align:left"><div class="row-actions"><button class="x-btn" data-edita="'+a.id+'">'+icon('pen',15)+'</button><button class="x-btn" data-dela="'+a.id+'">'+icon('trash',15)+'</button></div></td></tr>').join('') +
+      '</tbody></table></div>';
+    box.querySelectorAll('[data-edita]').forEach(b=> b.onclick=()=> srvAccountForm(accs.find(x=>String(x.id)===b.dataset.edita)));
+    box.querySelectorAll('[data-dela]').forEach(b=> b.onclick=async()=>{
+      const ok = await askConfirm({title:'حذف حساب', danger:true, text:'حساب حذف شود؟'});
+      if(!ok) return;
+      try { await srvFetch('DELETE', '/api/institutions/'+SRV.instId+'/accounts/'+b.dataset.dela); toast('حساب حذف شد.','ok'); srvLoadAccounts(); } catch(e){ toast(e.message,'err'); }
+    });
+  } catch(e){
+    box.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>';
+  }
+}
+
+function srvFundForm(f){
+  const isEdit = !!f;
+  openModal({
+    title: isEdit ? 'ویرایش صندوق' : 'افزودن صندوق جدید',
+    sub: 'حالت سرور — موجودی صندوق از مجموع حساب‌ها محاسبه می‌شود',
+    size:'md',
+    body:'<div class="fields">'+
+      '<div class="field"><label>نام صندوق <span class="req">*</span></label><input id="sffName" value="'+esc(isEdit?f.name:'')+'" placeholder="مثلاً صندوق اصلی"><span class="err-msg"></span></div>'+
+      '<div class="field"><label>کد صندوق</label><input id="sffCode" value="'+esc(isEdit?f.code||'':'')+'" placeholder="F-1001"></div>'+
+      '<div class="field full"><label>توضیحات</label><textarea id="sffNotes" rows="2">'+esc(isEdit?f.notes||'':'')+'</textarea></div>'+
+      '<div id="sffErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px;padding:10px;background:var(--red-bg);border-radius:8px"></div>'+
+    '</div>',
+    foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="sffSave">'+icon('check',14)+' '+(isEdit?'ذخیره':'ثبت صندوق')+'</button>',
+    onOpen(h){
+      h.el.querySelector('[data-x]').onclick=()=>h.close();
+      h.el.querySelector('#sffSave').onclick=async()=>{
+        const name = h.el.querySelector('#sffName').value.trim();
+        const code = h.el.querySelector('#sffCode').value.trim();
+        const notes = h.el.querySelector('#sffNotes').value.trim();
+        const err = h.el.querySelector('#sffErr');
+        if(!name){ err.style.display=''; err.textContent='نام صندوق الزامی است.'; return; }
+        const btn = h.el.querySelector('#sffSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
+        try {
+          if(isEdit) await srvFetch('PATCH', '/api/institutions/'+SRV.instId+'/funds/'+f.id, { name, code, notes });
+          else await srvFetch('POST', '/api/institutions/'+SRV.instId+'/funds', { name, code, notes });
+          toast(isEdit?'صندوق ویرایش شد.':'صندوق ثبت شد.','ok'); h.close(); srvLoadFunds();
+        } catch(e){ err.style.display=''; err.textContent=e.message; btn.disabled=false; btn.innerHTML=icon('check',14)+' '+(isEdit?'ذخیره':'ثبت صندوق'); }
+      };
+    }
+  });
+}
+
+async function srvAccountForm(a){
+  const isEdit = !!a;
+  let funds=[];
+  try { const d=await srvFetch('GET','/api/institutions/'+SRV.instId+'/funds'); funds=d.funds||[]; } catch(e){}
+  if(!funds.length && !isEdit){ toast('ابتدا صندوق بسازید.','warn'); srvFundForm(); return; }
+  const fundOpts = funds.map(f=>'<option value="'+f.id+'"'+(isEdit&&String(a.fund_id)===String(f.id)?' selected':'')+'>'+esc(f.name)+'</option>').join('');
+
+  openModal({
+    title: isEdit ? 'ویرایش حساب' : 'افزودن حساب جدید — موجودی صندوق کجاست؟',
+    sub: isEdit ? 'ویرایش موجودی اولیه' : 'موجودی صندوق را در فیلد «موجودی اولیه» وارد کنید — اینجا محل ورود موجودی است',
+    size:'lg',
+    body:'<div class="alert a-info" style="margin-bottom:12px"><span class="al-ic">'+icon('info',16)+'</span><div><b>موجودی صندوق کجاست؟</b> موجودی هر صندوق = مجموع موجودی اولیه حساب‌های آن. پس برای شارژ صندوق، حساب جدید با موجودی اولیه بسازید یا حساب موجود را ویرایش کنید.</div></div>'+
+      '<div class="fields">'+
+      '<div class="field"><label>صندوق مرتبط <span class="req">*</span></label><select id="sfaFund">'+fundOpts+'</select></div>'+
+      '<div class="field"><label>نام حساب <span class="req">*</span></label><input id="sfaName" value="'+esc(isEdit?a.name:'')+'" placeholder="مثلاً حساب جاری بانک ملت"></div>'+
+      '<div class="field"><label>شماره حساب</label><input id="sfaNum" value="'+esc(isEdit?a.number||'':'')+'" placeholder="603799..."></div>'+
+      '<div class="field"><label>نوع حساب</label><select id="sfaType"><option value="پس‌انداز"'+(isEdit&&a.type==='پس‌انداز'?' selected':'')+'>پس‌انداز</option><option value="جاری"'+(isEdit&&a.type==='جاری'?' selected':'')+'>جاری</option><option value="قرض‌الحسنه"'+(isEdit&&a.type==='قرض‌الحسنه'?' selected':'')+'>قرض‌الحسنه</option></select></div>'+
+      '<div class="field"><label>موجودی اولیه <span class="req">*</span> <small>('+CUR()+')</small></label><input id="sfaBal" class="num-inp" value="'+esc(isEdit?String(a.initial_balance||0):'')+'" placeholder="مثلاً 1000000000"><span class="help">این فیلد همان موجودی صندوق است — هر حساب موجودی دارد و جمع آن‌ها موجودی صندوق می‌شود</span><span class="err-msg"></span></div>'+
+      '<div class="field"><label>وضعیت</label><select id="sfaStatus"><option value="active"'+(isEdit&&a.status==='active'?' selected':'')+'>فعال</option><option value="inactive">غیرفعال</option></select></div>'+
+      '<div class="field full"><label>توضیحات</label><textarea id="sfaNotes" rows="2">'+esc(isEdit?a.notes||'':'')+'</textarea></div>'+
+      '<div id="sfaErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px;padding:10px;background:var(--red-bg);border-radius:8px"></div>'+
+    '</div>',
+    foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="sfaSave">'+icon('check',14)+' '+(isEdit?'ذخیره':'ثبت حساب')+'</button>',
+    onOpen(h){
+      h.el.querySelector('[data-x]').onclick=()=>h.close();
+      if(typeof attachMoney==='function') attachMoney(h.el.querySelector('#sfaBal'));
+      h.el.querySelector('#sfaSave').onclick=async()=>{
+        const fundId = h.el.querySelector('#sfaFund').value;
+        const name = h.el.querySelector('#sfaName').value.trim();
+        const num = h.el.querySelector('#sfaNum').value.trim();
+        const type = h.el.querySelector('#sfaType').value;
+        const bal = h.el.querySelector('#sfaBal').value.replace(/[^0-9]/g,'');
+        const status = h.el.querySelector('#sfaStatus').value;
+        const notes = h.el.querySelector('#sfaNotes').value.trim();
+        const err = h.el.querySelector('#sfaErr');
+        if(!fundId){ err.style.display=''; err.textContent='صندوق را انتخاب کنید.'; return; }
+        if(!name){ err.style.display=''; err.textContent='نام حساب الزامی است.'; return; }
+        if(!bal){ err.style.display=''; err.textContent='موجودی اولیه را وارد کنید — این همان موجودی صندوق است.'; return; }
+        const btn = h.el.querySelector('#sfaSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
+        try {
+          if(isEdit) await srvFetch('PATCH','/api/institutions/'+SRV.instId+'/accounts/'+a.id, { fundId:parseInt(fundId), name, number:num, type, initialBalance:bal, status, notes });
+          else await srvFetch('POST','/api/institutions/'+SRV.instId+'/accounts', { fundId:parseInt(fundId), name, number:num, type, initialBalance:bal, status, notes });
+          toast(isEdit?'حساب ویرایش شد.':'حساب با موجودی ثبت شد.','ok'); h.close();
+          if(srvFundsTab==='accounts') srvLoadAccounts(); else srvLoadFunds();
+          if(typeof renderSrvDashboard==='function' && location.hash==='#/app/dashboard') renderSrvDashboard();
+        } catch(e){ err.style.display=''; err.textContent=e.message; btn.disabled=false; btn.innerHTML=icon('check',14)+' '+(isEdit?'ذخیره':'ثبت حساب'); }
+      };
+    }
+  });
+}
+
+/* ── پرداخت وام — دکمه کار نمی‌کرد ── */
+async function srvPaymentForm(loanId, installmentId){
+  openModal({
+    title:'ثبت پرداخت قسط',
+    sub:'حالت سرور — پرداخت به حساب واریز می‌شود و قسط تسویه می‌شود',
+    size:'md',
+    body:'<div class="fields">'+
+      '<div class="field"><label>مبلغ پرداخت <span class="req">*</span> <small>('+CUR()+')</small></label><input id="spfAmt" class="num-inp" placeholder="مثلاً 5000000"><span class="err-msg"></span></div>'+
+      '<div class="field"><label>نوع پرداخت</label><select id="spfType"><option value="installment">قسط</option><option value="fee">کارمزد</option><option value="other">سایر</option></select></div>'+
+      '<div id="spfErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px;padding:10px;background:var(--red-bg);border-radius:8px"></div>'+
+    '</div>',
+    foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="spfSave">'+icon('check',14)+' ثبت پرداخت</button>',
+    onOpen(h){
+      h.el.querySelector('[data-x]').onclick=()=>h.close();
+      if(typeof attachMoney==='function') attachMoney(h.el.querySelector('#spfAmt'));
+      h.el.querySelector('#spfSave').onclick=async()=>{
+        const amt = h.el.querySelector('#spfAmt').value.replace(/[^0-9]/g,'');
+        const type = h.el.querySelector('#spfType').value;
+        const err = h.el.querySelector('#spfErr');
+        if(!amt){ err.style.display=''; err.textContent='مبلغ را وارد کنید.'; return; }
+        const btn = h.el.querySelector('#spfSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
+        try {
+          await srvFetch('POST','/api/institutions/'+SRV.instId+'/payments', { loanId:parseInt(loanId), installmentId: installmentId?parseInt(installmentId):null, amount:amt, type });
+          toast('پرداخت ثبت شد.','ok');
+          if(typeof stampFx==='function') stampFx({ text:'پرداخت شد', sub:fmtM(amt)+' — '+J.fmt(J.todayIso()), color:'#1C6E31', hold:1100, onDone:()=>{ h.close(); if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); }});
+          else { h.close(); if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); }
+        } catch(e){ err.style.display=''; err.textContent=e.message; btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت پرداخت'; }
+      };
+    }
+  });
+}
+
+
 (function hookSrvMode(){
   const _pgMembers = PAGES.members;
   PAGES.members = function(arg){
@@ -4861,6 +5154,21 @@ async function renderSrvMemberProfile(memberId){
       return renderSrvLoansPage();
     }
     return _pgLoans(arg);
+  };
+  const _pgFunds = PAGES.funds;
+  PAGES.funds = function(arg){
+    if(SRV.on && srvReady()){
+      return renderSrvFundsPage(arg||'funds');
+    }
+    return _pgFunds(arg);
+  };
+  const _pgAccounts = PAGES.accounts;
+  PAGES.accounts = function(arg){
+    if(SRV.on && srvReady()){
+      if(arg && !isNaN(parseInt(arg,10))){ return renderSrvFundsPage('accounts'); }
+      return renderSrvFundsPage('accounts');
+    }
+    return _pgAccounts(arg);
   };
   const _renderSettings = renderSettings;
   renderSettings = function(){
