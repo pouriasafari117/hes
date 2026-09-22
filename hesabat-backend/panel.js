@@ -208,6 +208,8 @@ function icon(name, size){
     folder:'<path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.7a2 2 0 0 0-2-2h-8L9 5H5a2 2 0 0 0-2 2z"/>',
     print:'<path d="M7 8V3.5h10V8"/><rect x="4" y="8" width="16" height="8" rx="2"/><path d="M7 13h10v7H7z"/>',
     download:'<path d="M12 4v10M12 14l4-4M12 14l-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+    moon:'<path d="M20 13.8A8.4 8.4 0 0 1 10.2 3.7a.65.65 0 0 0-.8.85 6.9 6.9 0 1 0 9.9 8.5.65.65 0 0 0 .7-.75Z"/>',
+    sun:'<circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.3m0 14.2v2.3M2.6 12h2.3m14.2 0h2.3M4.9 4.9l1.6 1.6m11 11 1.6 1.6M4.9 19.1l1.6-1.6m11-11 1.6-1.6"/>',
     upload:'<path d="M12 16V6M12 6l4 4M12 6 8 10"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
     warn:'<path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.4M12 16.8v.6"/>',
     info:'<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5M12 7.6v.6"/>',
@@ -508,6 +510,31 @@ function incompleteMembers(){
 function stampColor(task){ const c=(DB.settings&&DB.settings.stampColors)||{}; return c[task] || (task==='payment' ? '#1C6E31' : '#B3261E'); }
 function resetDb(){ DB = seedDb(); saveDb(); }
 
+/* ── تم روشن/تیره ── */
+function cssVar(name, fallback){
+  try{ const v = getComputedStyle(document.body).getPropertyValue(name).trim(); return v || fallback; }
+  catch(e){ return fallback; }
+}
+function isDark(){ return document.body.classList.contains('theme-dark'); }
+function applyTheme(t, rerender){
+  const dark = (t === 'dark');
+  document.body.classList.toggle('theme-dark', dark);
+  try{ localStorage.setItem('hesabat-theme', dark ? 'dark' : 'light'); }catch(e){}
+  const b = document.getElementById('btnTheme');
+  if(b){ b.innerHTML = icon(dark ? 'sun' : 'moon', 17); b.title = dark ? 'حالت روشن' : 'حالت تیره';
+    b.setAttribute('aria-label', dark ? 'حالت روشن' : 'حالت تیره'); }
+  if(rerender && SESSION && location.hash.indexOf('#/app/') === 0){
+    const page = (location.hash.slice(6).split('/')[0]) || 'dashboard';
+    renderShell(page); route();
+  }
+}
+function initTheme(){
+  let t = null;
+  try{ t = localStorage.getItem('hesabat-theme'); }catch(e){}
+  if(!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
+  applyTheme(t || 'light', false);
+}
+
 /* ── دسترسی‌ها ── */
 const ROLE_FA = {admin:'مدیر', operator:'اپراتور', accountant:'حسابدار', viewer:'مشاهده‌گر'};
 const PERM_FA = {memberAdd:'افزودن عضو', memberEdit:'ویرایش عضو', loanAdd:'ثبت وام', paymentAdd:'ثبت پرداخت', txnAdd:'ثبت تراکنش', reportExport:'خروجی گزارش', userManage:'مدیریت کاربران', settingsEdit:'ویرایش تنظیمات'};
@@ -616,10 +643,13 @@ function openModal(o){
     '</div>';
   root.appendChild(ov);
   document.body.style.overflow = 'hidden';
+  /* Esc آخرین مودال باز را می‌بندد (مگر بسته‌شدن غیرفعال باشد) */
+  const escH = e => { if(e.key === 'Escape' && _modalStack[_modalStack.length-1] === handle && o.dismissible !== false){ e.stopPropagation(); handle.close(); } };
+  document.addEventListener('keydown', escH, true);
   const handle = {
     overlay: ov,
     el: ov.querySelector('.m-modal'),
-    close(){ const i = _modalStack.indexOf(handle); if(i>-1){ _modalStack.splice(i,1); ov.remove(); document.body.style.overflow = _modalStack.length ? 'hidden':''; } if(o.onClose) o.onClose(); }
+    close(){ document.removeEventListener('keydown', escH, true); const i = _modalStack.indexOf(handle); if(i>-1){ _modalStack.splice(i,1); ov.remove(); document.body.style.overflow = _modalStack.length ? 'hidden':''; } if(o.onClose) o.onClose(); }
   };
   ov.addEventListener('mousedown', e => { if(e.target === ov && o.dismissible !== false) handle.close(); });
   ov.querySelector('[data-close]').addEventListener('click', ()=>handle.close());
@@ -968,9 +998,12 @@ function renderNotifs(){
 /* ── جستجوی سریع ── */
 function bindQuickSearch(){
   const box = $('#qsearch'), input = $('#qInput'), panel = $('#qsPanel');
-  input.addEventListener('input', ()=>{
+  let hl = -1; /* نتیجهٔ برجسته برای پیمایش با کیبورد */
+  const close = ()=>{ box.classList.remove('open'); hl = -1; };
+  const go = (btn)=>{ close(); input.value=''; location.hash = btn.dataset.go; };
+  const refresh = ()=>{
     const q = input.value.trim();
-    if(q.length < 2){ box.classList.remove('open'); return; }
+    if(q.length < 2){ close(); return; }
     const ql = q.toLowerCase();
     const mems = DB.members.filter(m => m.name.includes(q) || m.nationalId.includes(faToEn(q)) || m.mobile.includes(faToEn(q)) || m.memberNo.toLowerCase().includes(ql)).slice(0,5);
     const loans = DB.loans.filter(l => { const m = qMember(l.memberId); return m && (m.name.includes(q) || faDigits(l.amount).includes(q)); }).slice(0,4);
@@ -984,10 +1017,42 @@ function bindQuickSearch(){
       '<button class="dp-item" data-go="#/app/accounts/'+a.id+'">'+icon('bank',16)+esc(a.name)+'<small>'+esc(a.number)+'</small></button>').join('');
     if(!html) html = '<div class="notif-empty">نتیجه‌ای برای «'+esc(q)+'» پیدا نشد.</div>';
     panel.innerHTML = html;
-    panel.querySelectorAll('[data-go]').forEach(b => b.onclick = ()=>{ box.classList.remove('open'); input.value=''; location.hash = b.dataset.go; });
-    box.classList.add('open');
+    panel.querySelectorAll('[data-go]').forEach(b => b.onclick = ()=> go(b));
+    box.classList.add('open'); hl = -1;
+  };
+  input.addEventListener('input', refresh);
+  input.addEventListener('keydown', e => {
+    const items = Array.prototype.slice.call(panel.querySelectorAll('[data-go]'));
+    if(e.key === 'Escape'){ close(); input.blur(); return; }
+    if(!box.classList.contains('open') || !items.length) return;
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      hl = e.key === 'ArrowDown' ? (hl + 1) % items.length : (hl - 1 + items.length) % items.length;
+      items.forEach((b,i)=>{ b.classList.toggle('qs-hl', i === hl); if(i === hl && b.scrollIntoView) b.scrollIntoView({block:'nearest'}); });
+    } else if(e.key === 'Enter'){
+      e.preventDefault();
+      (items[hl >= 0 ? hl : 0]).click();
+    }
   });
-  document.addEventListener('click', e => { if(!box.contains(e.target)) box.classList.remove('open'); });
+  document.addEventListener('click', e => { if(!box.contains(e.target)) close(); });
+}
+
+/* ── میان‌برهای سراسری کیبورد ── */
+function bindGlobalShortcuts(){
+  document.addEventListener('keydown', e => {
+    /* ورودی‌های متنی را مختل نکنیم مگر برای میان‌برهای ضروری */
+    const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target && e.target.tagName || '') || e.target.isContentEditable;
+    /* Ctrl/Cmd + K یا / : تمرکز جستجوی سریع */
+    if(((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !inField)){
+      const q = $('#qsearch');
+      if(q){
+        e.preventDefault();
+        const inp = $('#qInput');
+        if(inp){ inp.focus(); inp.select(); }
+      }
+      return;
+    }
+  });
 }
 
 /* ── نمودارها (کانواس، بدون کتابخانه) ── */
@@ -1064,11 +1129,11 @@ function drawDonut(cv, data, centerTitle, centerVal){
     a0 = a1;
   });
   cv.__donut = {cx, cy, R, r, segs, total};
-  c.fillStyle = '#14351F'; c.textAlign='center';
+  c.fillStyle = cssVar('--ink','#14351F'); c.textAlign='center';
   c.font = '700 22px "IBM Plex Sans Arabic", sans-serif';
   c.fillText(centerVal, cx, cy+1);
   c.font = '600 11.5px "IBM Plex Sans Arabic", sans-serif';
-  c.fillStyle = '#3E5747'; c.fillText(centerTitle, cx, cy+20);
+  c.fillStyle = cssVar('--ink-2','#3E5747'); c.fillText(centerTitle, cx, cy+20);
   bindChartHover(cv);
 }
 function drawBars(cv, labels, series, opts){
@@ -1085,11 +1150,11 @@ function drawBars(cv, labels, series, opts){
   /* محور عمودی + خطوط راهنما */
   for(let i=0;i<=4;i++){
     const y = padT + plotH*(i/4);
-    c.strokeStyle = i===4 ? 'rgba(20,53,31,.28)' : 'rgba(20,53,31,.10)';
+    c.strokeStyle = i===4 ? cssVar('--grid-strong','rgba(20,53,31,.28)') : cssVar('--grid-clr','rgba(20,53,31,.10)');
     c.lineWidth = 1;
     c.beginPath(); c.moveTo(padL,y); c.lineTo(w-padR+8,y); c.stroke();
     const val = max*(1-i/4);
-    c.fillStyle = '#3E5747'; c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif'; c.textAlign = 'left';
+    c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif'; c.textAlign = 'left';
     c.fillText(val===0 ? '۰' : axisFmt(val), w-padR+14, y+3.5);
   }
   const rects = [];
@@ -1114,12 +1179,12 @@ function drawBars(cv, labels, series, opts){
     if(gi % step !== 0) return;
     const cx0 = padL + group*gi + group/2;
     if(opts && opts.subLabels){
-      c.fillStyle = '#3E5747'; c.font = '700 10px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '700 10px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(lb, cx0, h-24);
-      c.fillStyle = '#8A9A8F'; c.font = '600 8.5px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#8A9A8F'); c.font = '600 8.5px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(opts.subLabels[gi]||'', cx0, h-10);
     } else {
-      c.fillStyle = '#3E5747'; c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(lb, cx0, h-10);
     }
   });
@@ -1140,11 +1205,11 @@ function drawLines(cv, labels, series, opts){
   const plotW = w - padL - padR, plotH = h - padT - padB;
   for(let i=0;i<=4;i++){
     const y = padT + plotH*(i/4);
-    c.strokeStyle = i===4 ? 'rgba(20,53,31,.28)' : 'rgba(20,53,31,.10)';
+    c.strokeStyle = i===4 ? cssVar('--grid-strong','rgba(20,53,31,.28)') : cssVar('--grid-clr','rgba(20,53,31,.10)');
     c.lineWidth = 1;
     c.beginPath(); c.moveTo(padL,y); c.lineTo(w-padR+8,y); c.stroke();
     const val = max*(1-i/4);
-    c.fillStyle = '#3E5747'; c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif'; c.textAlign = 'left';
+    c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '600 9.5px "IBM Plex Sans Arabic", sans-serif'; c.textAlign = 'left';
     c.fillText(val===0 ? '۰' : axisFmt(val), w-padR+14, y+3.5);
   }
   const n = labels.length;
@@ -1167,12 +1232,12 @@ function drawLines(cv, labels, series, opts){
   c.textAlign = 'center';
   for(let i=0;i<n;i+=step){
     if(opts.subLabels){
-      c.fillStyle = '#3E5747'; c.font = '700 10px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '700 10px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(labels[i], xs(i), h-24);
-      c.fillStyle = '#8A9A8F'; c.font = '600 8.5px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#8A9A8F'); c.font = '600 8.5px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(opts.subLabels[i]||'', xs(i), h-10);
     } else {
-      c.fillStyle = '#3E5747'; c.font = '600 9px "IBM Plex Sans Arabic", sans-serif';
+      c.fillStyle = cssVar('--ink-2','#3E5747'); c.font = '600 9px "IBM Plex Sans Arabic", sans-serif';
       c.fillText(labels[i], xs(i), h-10);
     }
   }
@@ -1387,11 +1452,19 @@ function renderMembersTab(){
         '<option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option></select>' +
       '<span class="t-lbl">مرتب‌سازی:</span><select class="t-select" id="mSort">' +
         '<option value="joined">تاریخ عضویت</option><option value="name">نام</option><option value="debt">بدهی جاری</option><option value="loans">تعداد وام‌ها</option></select>' +
-      '<button class="btn btn-ghost btn-sm" id="mReset" style="margin-inline-start:auto">'+icon('refresh',13)+' حذف فیلترها</button>' +
+      '<button class="btn btn-ghost btn-sm" id="mCsv" style="margin-inline-start:auto"'+(can('reportExport')?'':' disabled data-tip="مجوز خروجی ندارید"')+'>'+icon('download',13)+' خروجی CSV</button>' +
+      '<button class="btn btn-ghost btn-sm" id="mReset">'+icon('refresh',13)+' حذف فیلترها</button>' +
     '</div>' +
     '<div id="mIncSlot"></div>' +
     '<div class="card tight" id="mTblWrap"></div>';
   $('#mStatus').value = membersState.status; $('#mSort').value = membersState.sort;
+  $('#mCsv').onclick = ()=> guard('reportExport', ()=>{
+    const head = FIELDS().map(f=>f.label).concat(['شماره عضویت','وضعیت','تعداد وام‌ها','بدهی جاری ('+CUR()+')','تاریخ عضویت']);
+    const rows = filteredMembers().map(m => FIELDS().map(f=>fldVal(m,f.key)).concat([
+      m.memberNo, m.status==='active'?'فعال':'غیرفعال',
+      memberLoans(m.id).filter(l=>l.status!=='cancelled').length, memberDebt(m.id), J.fmt(m.joinedAt)]));
+    downloadCsv('hesabat-members-'+J.todayIso()+'.csv', head, rows, 'فهرست اعضا');
+  });
   $('#mQ').addEventListener('input', e => { membersState.q = e.target.value; membersState.page = 1; renderMembersTable(); });
   $('#mStatus').addEventListener('change', e => { membersState.status = e.target.value; membersState.page = 1; renderMembersTable(); });
   $('#mSort').addEventListener('change', e => { membersState.sort = e.target.value; renderMembersTable(); });
@@ -1636,6 +1709,7 @@ function memberProfile(id){
       '<div style="display:flex;gap:7px;margin-top:7px;flex-wrap:wrap">'+memberStatusBadge(m.status)+'<span class="badge b-gray">عضویت '+esc(m.memberNo)+'</span>' +
       (debt ? '<span class="badge b-red"><i class="bd"></i>بدهی '+fmtMShort(debt)+' '+CUR()+'</span>' : '<span class="badge b-green"><i class="bd"></i>بدون بدهی</span>') + '</div></div></div></div>' +
       '<div class="ph-actions">' +
+        '<button class="btn btn-ghost btn-sm" id="pmStatement" style="padding:11px 17px;font-size:.88rem">'+icon('print',14)+' صورت‌حساب</button>' +
         '<button class="btn btn-ghost btn-sm" id="pmEdit" style="padding:11px 17px;font-size:.88rem">'+icon('edit',14)+' ویرایش</button>' +
         '<button class="btn btn-danger btn-sm" id="pmDel" style="padding:11px 17px;font-size:.88rem">'+icon('trash',14)+' حذف کامل</button>' +
         '<button class="btn btn-solid btn-sm" id="pmLoan" style="padding:11px 17px;font-size:.88rem">'+icon('loan',14)+' ثبت وام برای این عضو</button>' +
@@ -1663,6 +1737,7 @@ function memberProfile(id){
   $('#pmEdit').onclick = ()=> guard('memberEdit', ()=> memberForm(m));
   const pmD = $('#pmDel'); if(pmD) pmD.onclick = ()=> guard('memberEdit', ()=> deleteMember(m.id));
   $('#pmLoan').onclick = ()=> guard('loanAdd', ()=> loanForm(null, m.id));
+  $('#pmStatement').onclick = ()=> memberStatement(m, loans, pays, insAll);
 
   const tabs = {
     loans(){ return loans.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>مبلغ وام</th><th>صندوق</th><th>اقساط</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th>تاریخ درخواست</th><th></th></tr></thead><tbody>' +
@@ -1867,10 +1942,17 @@ function renderLoans(){
         '<option value="all">همه</option><option value="active">فعال</option><option value="overdue">معوق</option><option value="pending">در انتظار تصویب</option><option value="paid">تسویه‌شده</option><option value="cancelled">لغو شده</option></select>' +
       '<span class="t-lbl">صندوق:</span><select class="t-select" id="lFund">' +
         '<option value="all">همه</option>' + DB.funds.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join('') + '</select>' +
-      '<button class="btn btn-ghost btn-sm" id="lReset" style="margin-inline-start:auto">'+icon('refresh',13)+' حذف فیلتر</button>' +
+      '<button class="btn btn-ghost btn-sm" id="lCsv" style="margin-inline-start:auto"'+(can('reportExport')?'':' disabled data-tip="مجوز خروجی ندارید"')+'>'+icon('download',13)+' خروجی CSV</button>' +
+      '<button class="btn btn-ghost btn-sm" id="lReset">'+icon('refresh',13)+' حذف فیلتر</button>' +
     '</div>' +
     '<div class="card tight" id="lTblWrap"></div>';
   $('#btnAddLoan').onclick = ()=> guard('loanAdd', ()=> loanForm());
+  $('#lCsv').onclick = ()=> guard('reportExport', ()=>{
+    const head = ['عضو','شماره عضویت','مبلغ اصل وام ('+CUR()+')','صندوق','تعداد اقساط','پرداخت‌شده ('+CUR()+')','مانده بدهی ('+CUR()+')','وضعیت','تاریخ درخواست'];
+    const rows = filteredLoans().map(l => { const m = qMember(l.memberId);
+      return [m?m.name:'—', m?m.memberNo:'', l.amount, (qFund(l.fundId)||{}).name||'—', l.months, loanPaidSum(l), loanBalance(l), faLoanStatus(loanEffStatus(l)), J.fmt(l.requestDate)]; });
+    downloadCsv('hesabat-loans-'+J.todayIso()+'.csv', head, rows, 'فهرست وام‌ها');
+  });
   $('#lStatus').value = loansState.status; $('#lFund').value = loansState.fund;
   $('#lQ').addEventListener('input', e => { loansState.q = e.target.value; loansState.page=1; renderLoansTable(); });
   $('#lStatus').addEventListener('change', e => { loansState.status = e.target.value; loansState.page=1; renderLoansTable(); });
@@ -2324,8 +2406,22 @@ function renderTxnsTab(){
       '<span class="t-lbl">تا</span><span class="t-jd jd"><input id="tTo"></span>' +
       '<span class="t-lbl">مبلغ از</span><input class="t-money" id="tMin" placeholder="0">' +
       '<span class="t-lbl">تا</span><input class="t-money" id="tMax" placeholder="∞">' +
+      '<button class="btn btn-ghost btn-sm" id="tCsv" style="margin-inline-start:auto"'+(can('reportExport')?'':' disabled data-tip="مجوز خروجی ندارید"')+'>'+icon('download',13)+' خروجی CSV</button>' +
     '</div>' +
     '<div class="card tight" id="tWrap"></div>';
+  $('#tCsv').onclick = ()=> guard('reportExport', ()=>{
+    let list = DB.txns.slice();
+    if(txState.acc!=='all') list = list.filter(x=>x.accountId===txState.acc);
+    if(txState.type!=='all') list = list.filter(x=>x.type===txState.type);
+    if(txState.from) list = list.filter(x=>x.at.slice(0,10)>=txState.from);
+    if(txState.to) list = list.filter(x=>x.at.slice(0,10)<=txState.to);
+    if(txState.min) list = list.filter(x=>x.amount>=txState.min);
+    if(txState.max) list = list.filter(x=>x.amount<=txState.max);
+    list = list.slice().sort((a,b)=>a.at.localeCompare(b.at));
+    const head = ['تاریخ و زمان','حساب','نوع','مبلغ ('+CUR()+')','مرجع','پیگیری','توضیحات','کاربر ثبت‌کننده'];
+    const rows = list.map(x => [J.fmt(x.at)+faTime(x.at), (qAccount(x.accountId)||{}).name||'—', faTxnType(x.type), x.amount, x.ref||'', x.tracking||'', x.notes||'', x.user||'']);
+    downloadCsv('hesabat-txns-'+J.todayIso()+'.csv', head, rows, 'تراکنش‌ها');
+  });
   $('#tAcc').value = txState.acc; $('#tType').value = txState.type;
   attachJDate($('#tFrom')); attachJDate($('#tTo'));
   if(txState.from) setJd($('#tFrom'), txState.from);
@@ -2766,6 +2862,53 @@ function analyticsCsvLines(){
   L.push('');
   return L;
 }
+/* صورت‌حساب عضو برای چاپ — از همان چارچوب printRoot گزارش‌ها */
+function memberStatement(m, loans, pays, insAll){
+  const inst = DB.settings.institution || {name:''};
+  const prField = (k,v)=> '<td><b>'+esc(k)+':</b> '+esc(v==null||v===''?'—':v)+'</td>';
+  const idRows = FIELDS().map(f => prField(f.label, fldVal(m,f.key))).join('') +
+    prField('شماره عضویت', m.memberNo) + prField('وضعیت', m.status==='active'?'فعال':'غیرفعال') + prField('تاریخ عضویت', J.fmtLong(m.joinedAt));
+  const lnTbl = loans.length
+    ? '<h2 class="pr-h2">وام‌ها ('+faDigits(loans.length)+')</h2><table><thead><tr><th>مبلغ اصل وام</th><th>صندوق</th><th>اقساط</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th>تاریخ درخواست</th></tr></thead><tbody>' +
+      loans.map(l=>'<tr><td>'+fmtN(l.amount)+' '+CUR()+'</td><td>'+esc((qFund(l.fundId)||{}).name||'—')+'</td><td>'+faDigits(l.months)+'</td><td>'+fmtN(loanPaidSum(l))+'</td><td>'+fmtN(loanBalance(l))+'</td><td>'+faLoanStatus(loanEffStatus(l))+'</td><td>'+J.fmt(l.requestDate)+'</td></tr>').join('') +
+      '</tbody></table>' : '<h2 class="pr-h2">وام‌ها</h2><p class="pr-filters">وامی ثبت نشده است.</p>';
+  const insUnpaid = insAll.filter(i=>i.paidAmount < i.amount).sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
+  const insTbl = insUnpaid.length
+    ? '<h2 class="pr-h2">اقساط باقی‌مانده ('+faDigits(insUnpaid.length)+')</h2><table><thead><tr><th>قسط</th><th>وام</th><th>سررسید</th><th>مبلغ</th><th>مانده</th><th>وضعیت</th></tr></thead><tbody>' +
+      insUnpaid.map(i=>'<tr><td>'+faDigits(i.no)+'</td><td>'+fmtMShort(i.loan.amount)+' '+CUR()+'</td><td>'+J.fmt(i.dueDate)+'</td><td>'+fmtN(i.amount)+'</td><td>'+fmtN(i.amount-i.paidAmount)+'</td><td>'+faInsStatus(insStatus(i))+'</td></tr>').join('') +
+      '</tbody></table>' : '';
+  const payTbl = pays.length
+    ? '<h2 class="pr-h2">پرداخت‌ها ('+faDigits(pays.length)+')</h2><table><thead><tr><th>تاریخ</th><th>مبلغ</th><th>روش</th><th>حساب</th><th>مرجع</th></tr></thead><tbody>' +
+      pays.map(p=>'<tr><td>'+J.fmt(p.date)+'</td><td>'+fmtN(p.amount)+' '+CUR()+'</td><td>'+esc(p.method||'—')+'</td><td>'+esc((qAccount(p.accountId)||{}).name||'—')+'</td><td>'+esc(p.ref||'—')+'</td></tr>').join('') +
+      '</tbody></table>' : '';
+  const totPaid = pays.reduce((s,p)=>s+(p.amount||0),0);
+  const totDebt = loans.reduce((s,l)=>s+(l.status==='cancelled'?0:loanBalance(l)),0);
+  const root = document.getElementById('printRoot');
+  root.innerHTML =
+    '<div class="pr-head"><h1>'+esc(inst.name)+' — صورت‌حساب عضو</h1>' +
+    '<p>تاریخ تهیه: '+J.fmtLong(J.todayIso())+' · تهیه‌کننده: '+esc(SESSION.name)+' ('+esc(ROLE_FA[SESSION.role])+')</p></div>' +
+    '<h2 class="pr-h2">اطلاعات عضو</h2><table class="pr-kpis"><tbody><tr>'+idRows+'</tr></tbody></table>' +
+    '<table class="pr-kpis"><tbody><tr><td><b>مجموع پرداخت‌ها:</b> '+fmtN(totPaid)+' '+CUR()+'</td><td><b>بدهی جاری:</b> '+fmtN(totDebt)+' '+CUR()+'</td><td><b>تعداد وام‌ها:</b> '+faDigits(loans.length)+'</td></tr></tbody></table>' +
+    lnTbl + insTbl + payTbl +
+    '<div class="pr-sum">امضای تأیید مؤسسه: ــــــــــــــــــــــــ &nbsp;&nbsp; امضای عضو: ــــــــــــــــــــــــ</div>';
+  document.body.classList.add('printing');
+  const done = ()=>{ document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(()=>window.print(), 60);
+  setTimeout(done, 3000);
+  audit('تهیه صورت‌حساب چاپی برای '+m.name, 'report');
+}
+
+/* خروجی CSV عمومی جدول‌ها (ساده، بدون تحلیل) — جدا از گزارش‌های بخش گزارش‌ها */
+function csvEsc(c){ const s = String(c==null?'':c); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function downloadCsv(name, head, rows, auditWhat){
+  const blob = new Blob(['﻿'+[head].concat(rows).map(r=>r.map(csvEsc).join(',')).join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  if(URL.revokeObjectURL) setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  if(auditWhat) audit('خروجی CSV '+auditWhat+' ('+faDigits(rows.length)+' رکورد)', 'report');
+  toast('فایل CSV با '+faDigits(rows.length)+' رکورد دانلود شد.','ok');
+}
 function exportCsv(def){
   const rows = reportFilteredRows(def);
   const head = def.cols.join(',');
@@ -2779,7 +2922,7 @@ function exportCsv(def){
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'hesabat-' + def.id + '-' + J.todayIso() + '.csv';
-  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  a.click(); if(URL.revokeObjectURL) setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
   audit('خروجی CSV گزارش «'+def.title+'» همراه با تحلیل‌ها ('+faDigits(rows.length)+' رکورد)', 'report');
   toast('فایل CSV شامل تحلیل‌ها و '+faDigits(rows.length)+' رکورد دانلود شد.','ok');
 }
@@ -4064,6 +4207,10 @@ function srvDropFieldsCache(){ SRV_FIELDS = null; }
     location.hash = '#/app/dashboard';
   }
 
+  initTheme();
+  const btnTheme = $('#btnTheme');
+  if(btnTheme) btnTheme.addEventListener('click', ()=> applyTheme(isDark() ? 'light' : 'dark', true));
+  bindGlobalShortcuts();
   bindLogin();
   bindQuickSearch();
   bindDrop('#btnNotif', '#notifPanel');

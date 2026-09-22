@@ -718,3 +718,107 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
 @keyframes stampPress{0%{opacity:0;transform:scale(2.5) rotate(-30deg);filter:blur(4px)}40%{opacity:.96;transform:scale(1.05) rotate(-14deg);filter:blur(0)}70%{transform:scale(.98) rotate(-12deg)}100%{opacity:.96;transform:scale(1) rotate(-12deg);filter:blur(0)}}
 @keyframes stampShake{0%,52%{transform:none}60%{transform:translate(2px,4px) rotate(.35deg)}78%{transform:translate(-2px,1px) rotate(-.2deg)}100%{transform:none}}
 @keyframes stampLift{from{opacity:.96; transform:scale(1) rotate(-12deg)} to{opacity:0; transform:scale(1.05) rotate(-12deg) translateY(-18px)}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   تم تیره — body.theme-dark
+   بازنویسی پالت پایه + مؤلفه‌هایی که رنگ‌های سفت (hardcode) دارند.
+   ═══════════════════════════════════════════════════════════════════ */
+body.theme-dark{
+  --paper:#0C130E;
+  --card:#16241B;
+  --card-2:#101B14;
+  --ink:#EAF3E5;
+  --ink-2:#9FBEA6;
+  --line:rgba(233,242,228,.15);
+  --green-deep:#3BAF5F;
+  --lime:#B7E45E;
+  --red:#E27664;  --red-bg:rgba(226,118,100,.14);  --red-line:rgba(226,118,100,.4);
+  --amber:#E5B84E; --amber-bg:rgba(229,184,78,.14); --amber-line:rgba(229,184,78,.38);
+  --teal:#54C4B6; --teal-bg:rgba(84,196,182,.14);
+  --blue:#7FB0E8; --blue-bg:rgba(127,176,232,.14);
+  --grid-clr:rgba(233,242,228,.09);
+  --grid-strong:rgba(233,242,228,.24);
+  color-scheme:dark;
+}
+body.theme-dark .app{background:var(--paper)}
+/* هدر » شیشه تیره */
+body.theme-dark .app-header{background:rgba(12,19,14,.88)}
+/* سایدبار آگاهانه با --ink ساخته شده؛ در تم تیره خودش تیره می‌ماند */
+body.theme-dark .sidebar{background:#122019; color:#E9F2E4}
+body.theme-dark .avatar.ink{background:#2A4634}
+/* دکمه‌ها و کنترل‌های دیداری */
+body.theme-dark .btn-ghost{background:rgba(234,243,229,.06); border-color:rgba(233,242,228,.3); color:var(--ink)}
+body.theme-dark .btn-ghost:hover{border-color:var(--ink-2)}
+body.theme-dark .btn-solid{box-shadow:0 12px 24px -12px rgba(0,0,0,.7)}
+body.theme-dark .icon-btn:hover,body.theme-dark .profile-chip:hover{background:var(--card-2)}
+body.theme-dark .hamb{background:var(--card); color:var(--ink)}
+/* فیلدها */
+body.theme-dark .inp, body.theme-dark .field input, body.theme-dark .field select, body.theme-dark .field textarea,
+body.theme-dark .m-modal select, body.theme-dark .m-modal input[type="text"], body.theme-dark .m-modal input[type="password"],
+body.theme-dark .m-modal input[type="tel"], body.theme-dark .m-modal input[type="email"], body.theme-dark .m-modal input[type="number"],
+body.theme-dark .m-modal input[type="time"], body.theme-dark .m-modal textarea{background:var(--card-2); color:var(--ink)}
+body.theme-dark .field input:focus, body.theme-dark .field select:focus, body.theme-dark .field textarea:focus, body.theme-dark .inp:focus{border-color:var(--green-deep); box-shadow:0 0 0 3px rgba(183,228,94,.28)}
+body.theme-dark .chk input{background:var(--card-2)}
+body.theme-dark .chk input:checked{background:var(--green-deep)}
+body.theme-dark .sw input{background:rgba(233,242,228,.25)}
+body.theme-dark .sw input:checked{background:var(--green-deep)}
+body.theme-dark .qsearch input{background:var(--card-2)}
+/* تقویم شمسی */
+body.theme-dark .jd-btn{background:rgba(59,175,95,.16); color:var(--green-deep)}
+body.theme-dark .jd-btn:hover{background:rgba(59,175,95,.26)}
+body.theme-dark .jd-head select, body.theme-dark .jd-nav{background:var(--card-2); color:var(--ink)}
+body.theme-dark .jd-nav:hover, body.theme-dark .jd-d:hover, body.theme-dark .jd-foot button:hover{background:rgba(59,175,95,.16)}
+body.theme-dark .jd-d.sel{color:#0C130E}
+/* جدول و نوار ابزار */
+body.theme-dark .tbl tbody td{border-bottom-color:var(--line)}
+body.theme-dark .tbl tbody tr:hover{background:rgba(59,175,95,.07)}
+body.theme-dark .toolbar{box-shadow:0 14px 30px -28px rgba(0,0,0,.65)}
+body.theme-dark .toolbar .t-search input, body.theme-dark .t-select, body.theme-dark .t-money, body.theme-dark .t-jd input{background:var(--card-2); color:var(--ink)}
+body.theme-dark .toolbar .t-search input:focus{box-shadow:0 0 0 3px rgba(183,228,94,.26)}
+body.theme-dark .pg-btn{background:var(--card-2)}
+body.theme-dark .pg-btn.on, body.theme-dark .chip.on, body.theme-dark .m-sec-h .sn, body.theme-dark .steps li.done .st-n, body.theme-dark .jd-d.sel, body.theme-dark .sb-item.on{color:#0C130E}
+body.theme-dark .tab .tc{background:rgba(233,242,228,.14)}
+body.theme-dark .tab.on .tc{background:var(--lime); color:#0C130E}
+body.theme-dark .chip:hover:not(.on){color:var(--lime); border-color:var(--lime)}
+/* مودال/دراور */
+body.theme-dark .m-overlay, body.theme-dark .drawer-wrap{background:rgba(4,8,5,.62)}
+body.theme-dark .m-sec{background:var(--card)}
+body.theme-dark .m-modal, body.theme-dark .m-drawer{box-shadow:0 44px 100px -40px rgba(0,0,0,.8)}
+/* آلرت‌ها — متن روشن برای زمینهٔ تیره */
+body.theme-dark .alert.a-err{color:#F4BBB1}
+body.theme-dark .alert.a-warn{color:#F3D9A0}
+body.theme-dark .alert.a-ok{color:#A7E3B2}
+body.theme-dark .alert.a-info{color:#BAD8F3}
+/* اسکلت/خالی/مراحل */
+body.theme-dark .skel{background:rgba(233,242,228,.09)}
+body.theme-dark .skel::after{background:linear-gradient(90deg,transparent,rgba(233,242,228,.12),transparent)}
+body.theme-dark .empty .e-ic{background:rgba(59,175,95,.14)}
+body.theme-dark .steps li .st-n{background:rgba(233,242,228,.14)}
+body.theme-dark .steps li::before{background:rgba(233,242,228,.14)}
+body.theme-dark .steps li.cur .st-n{background:var(--card); border-color:var(--lime); color:var(--lime); box-shadow:0 0 0 4px rgba(183,228,94,.14)}
+body.theme-dark .steps li.cur{color:var(--lime)}
+body.theme-dark .steps-line .st{background:var(--card-2)}
+body.theme-dark .dropzone{background:rgba(59,175,95,.07)}
+body.theme-dark .dropzone:hover, body.theme-dark .dropzone.over{background:rgba(183,228,94,.1)}
+body.theme-dark .prog{background:rgba(233,242,228,.14)}
+body.theme-dark .cell-inp:hover, body.theme-dark .cell-inp:focus{background:var(--card-2)}
+body.theme-dark .cell-inp:focus{box-shadow:0 0 0 2px rgba(183,228,94,.3)}
+body.theme-dark .role-btn.on, body.theme-dark .plan.on{background:rgba(59,175,95,.1)}
+body.theme-dark .ch-pager .chp-range{background:rgba(59,175,95,.12); border-color:rgba(59,175,95,.26)}
+body.theme-dark .ch-pager .chp-range i{border-inline-start-color:rgba(59,175,95,.3)}
+/* توست/تولتیپ/لاگ — سطح‌هایی که آگاهانه با --ink تیره بودند */
+body.theme-dark .g-toast, body.theme-dark .chart-tip{background:#0B120E; color:#F0F7EC; border:1px solid var(--line)}
+body.theme-dark .g-toast.t-ok{background:var(--green-deep); color:#0C130E; border-color:transparent}
+body.theme-dark .g-toast.t-err{background:var(--red); color:#0C130E; border-color:transparent}
+body.theme-dark .g-toast.t-warn{background:var(--amber); color:#0C130E; border-color:transparent}
+body.theme-dark [data-tip]:hover::after{background:#0B120E; color:#F0F7EC; border:1px solid var(--line)}
+body.theme-dark .batch-log{background:#0B120E}
+body.theme-dark .b-gray{background:rgba(233,242,228,.13)}
+/* بج روشن lime متن تیره می‌خواهد — بدون تغییر */
+/* سایه‌ها لطیف‌تر */
+body.theme-dark .stat, body.theme-dark .card{box-shadow:0 14px 30px -26px rgba(0,0,0,.7)}
+/* انتخاب متن */
+body.theme-dark ::selection{background:rgba(183,228,94,.3)}
+/* وضعیت برجستهٔ نتایج جستجوی سریع (کیبورد) */
+.dp-item.qs-hl{background:rgba(28,110,49,.1)}
+body.theme-dark .dp-item.qs-hl{background:rgba(59,175,95,.14)}
