@@ -7,10 +7,18 @@ const r = express.Router({ mergeParams: true });
 r.use(requireAuth, requireInstitution);
 
 function slugKey(label) {
-  const base = String(label).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
-  const k = (base || 'field').slice(0, 48);
-  return KEY_RE.test(k) ? k : 'f_' + k;
+  const raw = String(label||'').trim();
+  let base = raw.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  // اگر عنوان فارسی یا خالی بود، کلید یکتا بساز
+  if (!base || base.length < 2 || base === 'field' || /^_+$/.test(base)) {
+    const rnd = Math.random().toString(36).slice(2,6);
+    const ts = Date.now().toString(36);
+    base = 'field_' + ts + '_' + rnd;
+  }
+  const k = base.slice(0, 48);
+  return KEY_RE.test(k) ? k : 'f_' + k.replace(/^[^a-z]+/, '');
 }
+
 
 /* GET /api/institutions/:id/fields — فیلدهای فعال (بند ۶ سند) */
 r.get('/', asyncH(async (req, res) => {

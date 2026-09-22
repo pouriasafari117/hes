@@ -5,23 +5,46 @@ const { asyncH, requireAuth, requireInstitution } = require('../mw');
 const r = express.Router({ mergeParams: true });
 r.use(requireAuth, requireInstitution);
 
-// GET loans
+// GET loans ?memberId=&page=&pageSize=
 r.get('/', asyncH(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page,10)||1);
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize,10)||50));
+  const memberId = req.query.memberId ? parseInt(req.query.memberId,10) : null;
   const out = await withTenant(req.user, req.institutionId, async c => {
-    const total = (await c.query('select count(*)::int as n from loans where institution_id=$1', [req.institutionId])).rows[0].n;
+    const where = ['l.institution_id=$1'];
+    const args = [req.institutionId];
+    if (memberId) { args.push(memberId); where.push(`l.member_id=$${args.length}`); }
+    const total = (await c.query(`select count(*)::int as n from loans l where ${where.join(' and ')}`, args)).rows[0].n;
+    args.push(pageSize, (page-1)*pageSize);
     const rows = (await c.query(
       `select l.*, 
-        (select value from member_field_values v join field_definitions f on f.id=v.field_id where v.member_id=l.member_id and f.key='name' limit 1) as member_name,
+        (select value from member_field_values v join field_definitions f on f.id=v.field_id where v.member_id=l.member_id limit 1) as member_name,
         m.member_no as member_no
        from loans l join members m on m.id=l.member_id
-       where l.institution_id=$1 order by l.id desc limit $2 offset $3`,
-      [req.institutionId, pageSize, (page-1)*pageSize]
+       where ${where.join(' and ')} order by l.id desc limit $${args.length-1} offset $${args.length}`,
+      args
     )).rows;
     return { rows, total, page, pageSize };
   });
   res.json(out);
+}));
+
+// GET loan detail + installments + payments
+r.get('/:loanId', asyncH(async (req, res) => {
+  const loanId = parseInt(req.params.loanId,10);
+  const data = await withTenant(req.user, req.institutionId, async c => {
+    const loan = (await c.query(
+      `select l.*, m.member_no,
+        (select value from member_field_values v join field_definitions f on f.id=v.field_id where v.member_id=l.member_id limit 1) as member_name
+       from loans l join members m on m.id=l.member_id where l.id=$1 and l.institution_id=$2`, [loanId, req.institutionId]
+    )).rows[0];
+    if (!loan) return null;
+    const installments = (await c.query('select * from installments where loan_id=$1 order by due_date', [loanId])).rows;
+    const payments = (await c.query('select * from payments where loan_id=$1 order by created_at desc', [loanId])).rows;
+    return { loan, installments, payments };
+  });
+  if (!data) return res.status(404).json({ error: 'وام پیدا نشد.' });
+  res.json(data);
 }));
 
 // POST loan
@@ -29,15 +52,13 @@ r.post('/', asyncH(async (req, res) => {
   const { memberId, amount, installmentsCount, feePercent, fundId, description } = req.body || {};
   if (!memberId || !amount) return res.status(400).json({ error: 'عضو و مبلغ الزامی است.' });
   const result = await withTenant(req.user, req.institutionId, async c => {
-    // check member
     const mem = (await c.query('select id from members where id=$1 and institution_id=$2 and deleted_at is null', [memberId, req.institutionId])).rows[0];
     if (!mem) return { nf: true };
     const loan = (await c.query(
       `insert into loans (institution_id, member_id, fund_id, amount, fee_percent, installments_count, description)
        values ($1,$2,$3,$4,$5,$6,$7) returning *`,
-      [req.institutionId, memberId, fundId||null, parseInt(amount), parseFloat(feePercent)||4, parseInt(installmentsCount)||12, description||'']
+      [req.institutionId, memberId, fundId||null, parseInt(String(amount).replace(/[^0-9]/g,''))||0, parseFloat(feePercent)||4, parseInt(installmentsCount)||12, description||'']
     )).rows[0];
-    // create installments
     const cnt = loan.installments_count;
     const each = Math.floor(loan.amount / cnt);
     const remainder = loan.amount - each*cnt;
@@ -49,7 +70,6 @@ r.post('/', asyncH(async (req, res) => {
         [req.institutionId, loan.id, memberId, due.toISOString().slice(0,10), amt]
       );
     }
-    // txn loan_out
     try {
       await c.query(`insert into txns (institution_id, member_id, loan_id, type, amount, description) values ($1,$2,$3,'loan_out',$4,$5)`,
         [req.institutionId, memberId, loan.id, loan.amount, 'پرداخت وام #' + loan.id]);
