@@ -101,7 +101,36 @@ const J = {
   diffDays(aIso,bIso){ const A = aIso.slice(0,10).split('-').map(Number), B = bIso.slice(0,10).split('-').map(Number);
     return Math.round((new Date(B[0],B[1]-1,B[2]) - new Date(A[0],A[1]-1,A[2]))/86400000); },
   monthKey(iso){ return iso.slice(0,7); }
+}
+
+const LOAN_STATUS_FA = {
+  active: 'فعال',
+  paid: 'تسویه‌شده',
+  overdue: 'معوق',
+  cancelled: 'لغو شده',
+  pending: 'در انتظار',
+  inactive: 'غیرفعال',
+  draft: 'پیش‌نویس'
 };
+const INS_STATUS_FA = {
+  pending: 'در انتظار',
+  paid: 'پرداخت‌شده',
+  overdue: 'معوق',
+  partial: 'جزئی پرداخت'
+};
+const TXN_TYPE_FA = {
+  deposit: 'واریز',
+  withdraw: 'برداشت',
+  loan_out: 'پرداخت وام',
+  repayment: 'بازپرداخت',
+  fee: 'کارمزد',
+  transfer: 'انتقال'
+};
+function faLoanStatus(st){ return LOAN_STATUS_FA[st] || st; }
+function faInsStatus(st){ return INS_STATUS_FA[st] || st; }
+function faTxnType(st){ return TXN_TYPE_FA[st] || st; }
+
+;
 function isoOf(y,m,d){ return y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0'); }
 
 /* ── فرمت اعداد و پول ── */
@@ -524,7 +553,6 @@ function memberDebt(mid){
 function memberPaid(mid){
   return DB.payments.filter(p=>{ const l=qLoan(p.loanId); return l && l.memberId===mid; }).reduce((s,p)=>s+p.amount,0);
 }
-const LOAN_STATUS_FA = {pending:'در انتظار تصویب', active:'فعال', paid:'تسویه‌شده', cancelled:'لغوشده'};
 function loanBadge(st){
   const map = {pending:'b-blue', active:'b-green', paid:'b-lime', cancelled:'b-gray'};
   return '<span class="badge '+map[st]+'"><i class="bd"></i>'+LOAN_STATUS_FA[st]+'</span>';
@@ -4268,6 +4296,8 @@ function srvFieldForm(f){
 /* ── صفحهٔ اعضا از سرور ── */
 let srvQ = '', srvPage = 1;
 async function renderSrvMembersPage(){
+  srvFieldsCache = null; // پاک کردن کش تا فیلدهای جدید ظاهر بشن
+
   const main = $('#main');
   const instName = esc(SRV.instName || ('مؤسسهٔ #' + SRV.instId));
   main.innerHTML =
@@ -4410,7 +4440,7 @@ async function srvLoadInstallments(){
     const lb = $('#srvInsLoans');
     if(lb){
       if(!loans.rows.length) lb.innerHTML = '<p class="hint-t">وامی ثبت نشده.</p>';
-      else lb.innerHTML = '<div class="mini-list">'+loans.rows.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+faDigits(l.installments_count)+' قسط</span></span><span class="mi-v">'+esc(l.status)+'</span></div>').join('')+'</div>';
+      else lb.innerHTML = '<div class="mini-list">'+loans.rows.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+faDigits(l.installments_count)+' قسط</span></span><span class="mi-v">'+faLoanStatus(l.status)+'</span></div>').join('')+'</div>';
     }
   } catch(e){
     const lb=$('#srvInsLoans'); if(lb) lb.innerHTML='<p class="hint-t">'+esc(e.message)+'</p>';
@@ -4442,56 +4472,69 @@ async function srvViewMember(id, cachedRows){
 }
 
 
+
 function srvMemberForm(m){
-  srvLoadFieldsCached().then(fields => {
+  // همیشه کش را پاک کن تا فیلدهای جدید ظاهر بشن
+  srvFieldsCache = null;
+  srvLoadFields().then(fields => {
     const isEdit = !!m;
     const vals = (m && m.values) ? m.values : {};
-    // Separate core fields
-    const coreMap = {};
-    fields.forEach(f=>{ coreMap[f.key]=f; });
-    // Build inputs with calendar for date
+    // ذخیره کش جدید
+    srvFieldsCache = fields;
+
     const makeInput = (f, v) => {
       const req = f.is_required ? ' <span class="req">*</span>' : '';
       const type = f.type;
       let input = '';
       if(type==='bool'){
-        input = '<label class="check"><input type="checkbox" id="sf_'+f.key+'" '+(v==='true'?'checked':'')+'><span>'+esc(f.label)+'</span></label>';
+        input = '<label class="check" style="padding:12px;background:var(--card-2);border-radius:12px;display:flex;align-items:center;gap:8px"><input type="checkbox" id="sf_'+f.key+'" '+(v==='true'?'checked':'')+'><span style="font-weight:600">'+esc(f.label)+'</span></label>';
         return '<div class="field full">'+input+'</div>';
       } else if(type==='select' && Array.isArray(f.options) && f.options.length){
         const opts = f.options.map(o=>'<option value="'+esc(o)+'" '+(o===v?'selected':'')+'>'+esc(o)+'</option>').join('');
-        input = '<select id="sf_'+f.key+'"><option value="">— انتخاب —</option>'+opts+'</select>';
+        input = '<select id="sf_'+f.key+'" style="border-radius:12px;padding:12px"><option value="">— انتخاب —</option>'+opts+'</select>';
       } else if(type==='date'){
-        input = '<input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'"><small>از تقویم انتخاب کنید</small>';
-      } else if(type==='number' || type==='mobile' || type==='nid'){
-        input = '<input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" type="text" placeholder="1403/02/15" value="'+esc(v)+'" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">📅</span></div><small style="color:var(--ink-2)">از تقویم شمسی انتخاب کنید — تماما شمسی</small>';
+      } else if(type==='number'){
+        input = '<input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="'+esc(f.label)+'" style="border-radius:12px;padding:12px">';
+      } else if(type==='mobile'){
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="09123456789" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">📱</span></div>';
+      } else if(type==='nid'){
+        input = '<div style="position:relative"><input id="sf_'+f.key+'" class="num-inp" value="'+esc(v)+'" placeholder="1234567890" maxlength="10" style="border-radius:12px;padding:12px 40px 12px 12px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%)">🪪</span></div>';
       } else {
-        input = '<input id="sf_'+f.key+'" value="'+esc(v)+'" placeholder="'+esc(f.label)+'">';
+        input = '<input id="sf_'+f.key+'" value="'+esc(v)+'" placeholder="'+esc(f.label)+'" style="border-radius:12px;padding:12px">';
       }
-      return '<div class="field"><label>'+esc(f.label)+req+'</label>'+input+'<span class="err-msg"></span></div>';
+      return '<div class="field"><label style="font-weight:700;display:flex;align-items:center;gap:6px">'+esc(f.label)+req+'</label>'+input+'<span class="err-msg"></span></div>';
     };
 
-    // Group fields: first 3, next 3, rest
-    const coreKeys = ['name','father','birthDate','mobile','nationalId'];
-    const ordered = [];
-    coreKeys.forEach(k=>{ const f=fields.find(x=>x.key===k); if(f) ordered.push(f); });
-    fields.forEach(f=>{ if(!coreKeys.includes(f.key)) ordered.push(f); });
+    // مرتب‌سازی: فیلدهای اصلی اول
+    const coreOrder = ['name','firstName','lastName','father','fatherName','birthDate','mobile','phone','nationalId','nid'];
+    const sorted = [];
+    coreOrder.forEach(k=>{
+      const f = fields.find(x=> x.key===k || x.label.includes(k));
+      if(f && !sorted.includes(f)) sorted.push(f);
+    });
+    fields.forEach(f=>{ if(!sorted.includes(f)) sorted.push(f); });
 
-    const sec1 = ordered.slice(0,3).map(f=>makeInput(f, vals[f.key]||'')).join('');
-    const sec2 = ordered.slice(3,6).map(f=>makeInput(f, vals[f.key]||'')).join('');
-    const sec3 = ordered.slice(6).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    // تقسیم به 3 بخش زیبا
+    const chunk = Math.ceil(sorted.length/3) || 1;
+    const sec1 = sorted.slice(0,chunk).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    const sec2 = sorted.slice(chunk, chunk*2).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    const sec3 = sorted.slice(chunk*2).map(f=>makeInput(f, vals[f.key]||'')).join('');
+
+    const totalFields = fields.length;
 
     const h = openModal({
-      title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید',
-      sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'') : 'اطلاعات هویتی پایه عضو — حالت سرور (PostgreSQL) — فیلدها از تنظیمات',
+      title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید — فیلدهای جدید همینجا',
+      sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'')+' · '+faDigits(totalFields)+' فیلد' : 'حالت سرور — '+faDigits(totalFields)+' فیلد از تنظیمات — فیلد جدید اضافه کردی؟ همینجا ظاهر میشه (کش پاک شد)',
       size:'lg',
-      body: '<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> مشخصات فردی</div><div class="m-sec-b"><div class="fields">'+sec1+'</div></div></div>' +
-            (sec2 ? '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> اطلاعات تماس</div><div class="m-sec-b"><div class="fields">'+sec2+'</div></div></div>' : '') +
-            (sec3 ? '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> سایر اطلاعات</div><div class="m-sec-b"><div class="fields">'+sec3+'</div></div></div>' : '') +
-            '<div id="srvFormErr" style="display:none;color:var(--red);font-size:12px;margin-top:10px;padding:10px;background:var(--red-bg);border-radius:8px"></div>',
-      foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
+      body: '<div class="alert a-info" style="border-radius:12px;margin-bottom:16px"><span class="al-ic">'+icon('info',16)+'</span><div><b>فیلد جدید اضافه کردی؟</b> کش پاک شد — الان <b>'+faDigits(totalFields)+' فیلد</b> از DB لود شد. اگر فیلد جدید نمی‌بینی، صفحه را رفرش کن.</div></div>' +
+            '<div class="m-sec" style="border-radius:16px;border:1px solid #e8f5e9;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#e8f5e9,#f1f8e9);padding:14px 18px"><span class="sn" style="background:#1C6E31;color:white">۱</span> مشخصات فردی — با تقویم شمسی کامل</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec1+'</div></div></div>' +
+            (sec2 ? '<div class="m-sec" style="border-radius:16px;border:1px solid #fff3e0;margin-top:14px;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#fff3e0,#ffe0b2);padding:14px 18px"><span class="sn" style="background:#ef6c00;color:white">۲</span> اطلاعات تماس</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec2+'</div></div></div>' : '') +
+            (sec3 ? '<div class="m-sec" style="border-radius:16px;border:1px solid #e3f2fd;margin-top:14px;overflow:hidden"><div class="m-sec-h" style="background:linear-gradient(90deg,#e3f2fd,#bbdefb);padding:14px 18px"><span class="sn" style="background:#1565c0;color:white">۳</span> سایر اطلاعات سفارشی</div><div class="m-sec-b" style="padding:18px"><div class="fields" style="gap:16px">'+sec3+'</div></div></div>' : '') +
+            '<div id="srvFormErr" style="display:none;color:var(--red);font-size:13px;margin-top:14px;padding:12px;background:#ffebee;border:1px solid #ffcdd2;border-radius:12px"></div>',
+      foot: '<button class="btn btn-ghost btn-sm" data-x style="border-radius:12px">انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave" style="border-radius:12px;padding:11px 20px;box-shadow:0 4px 12px rgba(28,110,49,.3)">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
       onOpen(h){
         h.el.querySelector('[data-x]').onclick = ()=> h.close();
-        // Attach calendar for date fields
         fields.forEach(f=>{
           if(f.type==='date'){
             const el = document.getElementById('sf_'+f.key);
@@ -4510,7 +4553,7 @@ function srvMemberForm(m){
           for(const f of fields){
             if(f.is_required && !values[f.key]){
               errBox.style.display='';
-              errBox.textContent = '«'+f.label+'» الزامی است.';
+              errBox.innerHTML = '«'+esc(f.label)+'» الزامی است — لطفا پر کنید.';
               const el = document.getElementById('sf_'+f.key);
               if(el) el.focus();
               return;
@@ -4522,13 +4565,18 @@ function srvMemberForm(m){
             else await srvFetch('POST', '/api/institutions/' + SRV.instId + '/members', { values });
             const nm = Object.values(values)[0] || 'عضو';
             const mno = m ? m.member_no : ('M-'+Date.now().toString().slice(-6));
-            stampFx({ text:'ثبت شد', sub:'عضویت '+esc(mno)+' — '+J.fmt(J.todayIso()), color: (typeof stampColor==='function'?stampColor('member'):'#B3261E'), hold:1100, onDone:()=>{
-              toast(isEdit ? 'عضو به‌روزرسانی شد.' : 'عضو «'+esc(nm)+'» ثبت شد.', 'ok');
+            if(typeof stampFx==='function') stampFx({ text:'ثبت شد', sub:'عضویت '+esc(mno)+' — '+J.fmtLong(J.todayIso()), color: (typeof stampColor==='function'?stampColor('member'):'#B3261E'), hold:1100, onDone:()=>{
+              toast(isEdit ? 'عضو به‌روزرسانی شد.' : 'عضو «'+esc(nm)+'» با '+faDigits(totalFields)+' فیلد ثبت شد.', 'ok');
               h.close();
               srvFieldsCache=null;
               if(typeof srvLoadMembersData==='function') srvLoadMembersData();
-              else if(typeof srvLoadMembers==='function') srvLoadMembers();
             }});
+            else {
+              toast(isEdit ? 'عضو به‌روزرسانی شد.' : 'عضو ثبت شد.', 'ok');
+              h.close();
+              srvFieldsCache=null;
+              if(typeof srvLoadMembersData==='function') srvLoadMembersData();
+            }
           } catch(e){
             errBox.style.display='';
             errBox.innerHTML = esc(e.message) + (Array.isArray(e.details) ? '<br>'+e.details.map(esc).join('<br>') : '');
@@ -4540,6 +4588,7 @@ function srvMemberForm(m){
     });
   }).catch(e => toast(e.message, 'err'));
 }
+
 
 
 
@@ -4615,7 +4664,7 @@ async function renderSrvDashboard(){
     const rlBox = $('#srvDashLoans');
     if(rlBox){
       if(!stats.recent.loans.length) rlBox.innerHTML='<p class="hint-t">وامی ثبت نشده. از منوی وام‌ها ثبت کنید.</p>';
-      else rlBox.innerHTML='<div class="mini-list">'+stats.recent.loans.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+J.fmt(l.created_at||'')+'</span></span><span class="mi-v">'+esc(l.status)+'</span></div>').join('')+'</div>';
+      else rlBox.innerHTML='<div class="mini-list">'+stats.recent.loans.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+J.fmt(l.created_at||'')+'</span></span><span class="mi-v">'+faLoanStatus(l.status)+'</span></div>').join('')+'</div>';
     }
     // installments
     const insBox = $('#srvDashIns');
@@ -4638,6 +4687,8 @@ async function renderSrvDashboard(){
 /* ── وام‌ها — حالت سرور — دقیقا مثل قالب اصلی ── */
 let srvLoansState = { q:'', page:1, per:10 };
 async function renderSrvLoansPage(){
+  srvFieldsCache = null; // پاک کردن کش تا فیلدهای جدید ظاهر بشن
+
   const main = $('#main');
   main.innerHTML =
     '<div class="page-head"><div><h1>وام‌ها</h1><div class="ph-sub">حالت سرور — داده از PostgreSQL</div></div>' +
@@ -4672,7 +4723,7 @@ async function srvLoadLoans(){
       return '<tr><td><div class="cell-main"><span class="avatar sz-34 teal">'+av+'</span><span class="cm-t"><b>'+nm+'</b><span>'+esc(l.member_no||'')+'</span></span></div></td>' +
         '<td class="c-fa-num c-strong">'+fmtM(l.amount)+'</td>' +
         '<td class="c-fa-num">'+faDigits(l.installments_count)+'</td>' +
-        '<td><span class="badge '+(l.status==='active'?'b-green':(l.status==='paid'?'b-gray':'b-amber'))+'">'+esc(l.status)+'</span></td>' +
+        '<td><span class="badge '+(l.status==='active'?'b-green':(l.status==='paid'?'b-gray':'b-amber'))+'">'+faLoanStatus(l.status)+'</span></td>' +
         '<td class="c-fa-num">'+J.fmt(l.created_at||'')+'</td>' +
         '<td style="text-align:left"><a class="btn btn-soft btn-sm" href="javascript:void(0)" data-loan="'+l.id+'">جزئیات '+icon('chevS',11)+'</a></td></tr>';
     }).join('');
@@ -4708,7 +4759,7 @@ async function srvLoanDetail(loanId){
     // Convert all dates to Shamsi full
     main.innerHTML =
       '<div class="page-head"><div><a href="#/app/loans" class="login-back" style="margin-bottom:8px">'+icon('arrowL',14)+' فهرست وام‌ها</a>' +
-        '<h1>وام '+esc(mName)+' — '+fmtM(l.amount)+'</h1><div class="ph-sub"><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+esc(l.status)+'</span> &nbsp; ثبت در <b>'+J.fmtLong(l.created_at||'')+'</b> — '+J.fmt(l.created_at||'')+'</div></div>' +
+        '<h1>وام '+esc(mName)+' — '+fmtM(l.amount)+'</h1><div class="ph-sub"><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+faLoanStatus(l.status)+'</span> &nbsp; ثبت در <b>'+J.fmtLong(l.created_at||'')+'</b> — '+J.fmt(l.created_at||'')+'</div></div>' +
         '<div class="ph-actions"><button class="btn btn-solid btn-sm" id="srvLoanPay" style="padding:11px 18px">'+icon('coins',15)+' ثبت پرداخت قسط</button><button class="btn btn-ghost btn-sm" id="srvLoanBack" style="padding:11px 18px">بازگشت</button></div></div>' +
 
       '<div class="grid g-4" style="margin-top:12px">' +
@@ -4734,7 +4785,7 @@ async function srvLoanDetail(loanId){
           '<div class="kv"><span class="k">مبلغ وام</span><span class="v">'+fmtM(l.amount)+'</span></div>' +
           '<div class="kv"><span class="k">تعداد اقساط</span><span class="v">'+faDigits(l.installments_count)+' قسط</span></div>' +
           '<div class="kv"><span class="k">کارمزد از تنظیمات</span><span class="v">'+faDigits(l.fee_percent||0)+'%</span></div>' +
-          '<div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+esc(l.status)+'</span></span></div>' +
+          '<div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+faLoanStatus(l.status)+'</span></span></div>' +
           '<div class="kv"><span class="k">تاریخ ثبت شمسی کامل</span><span class="v">'+J.fmtLong(l.created_at||'')+'</span></div>' +
           '<div class="kv"><span class="k">تاریخ میلادی</span><span class="v" style="font-family:monospace;font-size:.8rem">'+esc(l.created_at||'')+'</span></div>' +
           (l.description ? '<div class="kv"><span class="k">توضیحات</span><span class="v">'+esc(l.description)+'</span></div>' : '') +
@@ -4901,125 +4952,139 @@ async function srvLoanForm(presetMemberId){
 
 /* ── پرونده عضو — حالت سرور — دقیقا مثل قالب اصلی ── */
 
+
 async function renderSrvMemberProfile(memberId){
   const main = $('#main');
-  main.innerHTML = '<div class="page-head"><div><a href="#/app/members" class="login-back" style="margin-bottom:8px">'+icon('arrowL',14)+' بازگشت به اعضا</a><h1>در حال بارگذاری پرونده...</h1></div></div><div class="card"><div class="card-b"><div class="skeleton" style="height:200px"></div></div></div>';
+  main.innerHTML = '<div class="page-head"><div><a href="#/app/members" class="login-back" style="margin-bottom:8px">'+icon('arrowL',14)+' بازگشت</a><div class="skeleton" style="height:24px;width:200px"></div></div></div><div class="card"><div class="card-b"><p class="hint-t">در حال بارگذاری پرونده زیبا...</p></div></div>';
   try {
-    const mRes = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/members/'+memberId);
+    // Always fresh fields
+    srvFieldsCache = null;
+    const [mRes, fieldsData] = await Promise.all([
+      srvFetch('GET', '/api/institutions/'+SRV.instId+'/members/'+memberId),
+      srvLoadFields().catch(()=>[])
+    ]);
     const m = mRes.member;
     const vals = m.values||{};
-    // Get all field definitions to show labels
-    let fields = [];
-    try { fields = await srvLoadFieldsCached(); } catch(e){ fields = []; }
+    const fields = Array.isArray(fieldsData) ? fieldsData : (fieldsData.fields||fieldsData||[]);
     const fieldMap = {};
     fields.forEach(f=> fieldMap[f.key]=f.label);
 
     const name = Object.values(vals)[0] || m.member_no || '#'+m.id;
     const av = (name.charAt(0)||'؟').toUpperCase();
 
-    // Fetch loans for member
     let loans = [];
     try {
       const lData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/loans?memberId='+memberId+'&page=1&pageSize=100');
       loans = lData.rows||[];
     } catch(e){}
 
-    const totalLoans = loans.length;
-    const activeLoans = loans.filter(l=>l.status==='active').length;
-    const totalAmount = loans.reduce((sum,l)=>sum+Number(l.amount||0),0);
-    const paidLoans = loans.filter(l=>l.status==='paid').length;
+    // Fetch transactions for member
+    let txns = [];
+    try {
+      const tData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page=1&pageSize=50').catch(()=>({rows:[]}));
+      txns = (tData.rows||[]).filter(t=> String(t.member_id)===String(memberId)).slice(0,10);
+    } catch(e){}
 
-    // Build beautiful profile
     main.innerHTML =
-      '<div class="page-head"><div><a href="#/app/members" class="login-back" style="margin-bottom:8px">'+icon('arrowL',14)+' فهرست اعضا</a>' +
-        '<div class="prof-head" style="background:linear-gradient(135deg, var(--green-deep) 0%, #2a7a3a 100%); padding:20px; border-radius:16px; color:white; margin-top:8px">' +
-          '<span class="avatar sz-64" style="background:white; color:var(--green-deep); font-size:1.8rem; font-weight:800; width:72px; height:72px">'+esc(av)+'</span>' +
-          '<div class="ph-info" style="color:white"><h2 style="font-size:1.5rem;margin:0;color:white">'+esc(name)+'</h2>' +
-          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
-            '<span class="badge" style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.3)">'+(m.status==='active'?'● فعال':'○ غیرفعال')+'</span>' +
-            '<span class="badge" style="background:rgba(255,255,255,.15);color:white">عضویت '+esc(m.member_no||'')+'</span>' +
-            '<span class="badge" style="background:rgba(255,255,255,.15);color:white">عضو از '+J.fmtLong(m.created_at||'')+'</span>' +
-          '</div></div></div></div>' +
-        '<div class="ph-actions" style="margin-top:12px"><button class="btn btn-ghost btn-sm" id="srvPmEdit" style="padding:11px 18px">'+icon('edit',14)+' ویرایش اطلاعات</button>' +
-        '<button class="btn btn-ghost btn-sm" id="srvPmDel" style="padding:11px 18px;color:var(--red)">'+icon('trash',14)+' حذف</button>' +
-        '<button class="btn btn-solid btn-sm" id="srvPmLoan" style="padding:11px 20px">'+icon('loan',15)+' ثبت وام جدید</button></div></div>' +
+      '<div class="page-head"><div><a href="#/app/members" class="login-back" style="margin-bottom:10px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--card-2);border-radius:20px;font-size:.82rem">'+icon('arrowL',14)+' بازگشت به اعضا</a>' +
+        '<div style="background:linear-gradient(135deg,#1C6E31 0%,#2e7d32 50%,#43a047 100%);padding:24px;border-radius:20px;color:white;position:relative;overflow:hidden;margin-top:12px;box-shadow:0 8px 24px rgba(28,110,49,.25)">' +
+          '<div style="position:absolute;top:-40px;right:-40px;width:120px;height:120px;background:rgba(255,255,255,.08);border-radius:50%"></div>' +
+          '<div style="position:absolute;bottom:-30px;left:-30px;width:80px;height:80px;background:rgba(255,255,255,.05);border-radius:50%"></div>' +
+          '<div style="display:flex;gap:20px;align-items:center;position:relative;z-index:1">' +
+            '<div style="width:84px;height:84px;border-radius:20px;background:linear-gradient(135deg,white 0%,#f1f8e9 100%);color:var(--green-deep);display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:900;box-shadow:0 4px 16px rgba(0,0,0,.15)">'+esc(av)+'</div>' +
+            '<div style="flex:1"><h1 style="font-size:1.7rem;margin:0;color:white;font-weight:800">'+esc(name)+'</h1>' +
+            '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
+              '<span style="background:rgba(255,255,255,.2);backdrop-filter:blur(8px);padding:6px 14px;border-radius:20px;font-size:.82rem;border:1px solid rgba(255,255,255,.25)">'+(m.status==='active'?'✓ فعال':'○ غیرفعال')+'</span>' +
+              '<span style="background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.82rem">🆔 '+esc(m.member_no||'')+'</span>' +
+              '<span style="background:rgba(255,255,255,.15);padding:6px 14px;border-radius:20px;font-size:.82rem">📅 '+J.fmtLong(m.created_at||'')+'</span>' +
+            '</div></div>' +
+          '</div>' +
+        '</div></div>' +
+        '<div class="ph-actions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" id="srvPmEdit" style="padding:11px 18px;border-radius:12px">'+icon('edit',14)+' ویرایش</button>' +
+        '<button class="btn btn-ghost btn-sm" id="srvPmDel" style="padding:11px 18px;border-radius:12px;color:var(--red);border-color:var(--red-bg)">'+icon('trash',14)+' حذف</button>' +
+        '<button class="btn btn-solid btn-sm" id="srvPmLoan" style="padding:12px 22px;border-radius:12px;box-shadow:0 4px 12px rgba(28,110,49,.3)">'+icon('loan',15)+' ثبت وام جدید</button></div></div>' +
 
-      '<div class="grid g-4" style="margin-top:16px">' +
-        '<div class="stat" style="background:linear-gradient(135deg,#f0f9f0 0%,#e8f5e9 100%);border:1px solid #c8e6c9"><div class="stat-top"><span class="s-ic" style="background:#1C6E31;color:white">'+icon('loan',16)+'</span>کل وام‌ها</div><div class="stat-val">'+faDigits(totalLoans)+'</div><div class="stat-sub">'+faDigits(activeLoans)+' فعال · '+faDigits(paidLoans)+' تسویه</div></div>' +
-        '<div class="stat" style="background:linear-gradient(135deg,#fff8e1 0%,#ffecb3 100%);border:1px solid #ffe082"><div class="stat-top"><span class="s-ic" style="background:#f57f17;color:white">'+icon('coins',16)+'</span>مجموع وام‌ها</div><div class="stat-val">'+fmtMShort(totalAmount)+'</div><div class="stat-sub">به '+CUR()+'</div></div>' +
-        '<div class="stat" style="background:linear-gradient(135deg,#fce4ec 0%,#f8bbd0 100%);border:1px solid #f48fb1"><div class="stat-top"><span class="s-ic" style="background:#c2185b;color:white">'+icon('warn',16)+'</span>وضعیت</div><div class="stat-val" style="color:#c2185b">'+(m.status==='active'?'فعال':'غیرفعال')+'</div><div class="stat-sub">عضویت '+esc(m.member_no||'')+'</div></div>' +
-        '<div class="stat" style="background:linear-gradient(135deg,#e3f2fd 0%,#bbdefb 100%);border:1px solid #90caf9"><div class="stat-top"><span class="s-ic" style="background:#1565c0;color:white">'+icon('calendar',16)+'</span>تاریخ عضویت</div><div class="stat-val" style="font-size:1.1rem">'+J.fmtLong(m.created_at||'')+'</div><div class="stat-sub">'+J.fmt(m.created_at||'')+'</div></div>' +
+      '<div class="grid g-4" style="margin-top:18px">' +
+        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#2e7d32;font-weight:600">کل وام‌ها</span><span style="width:36px;height:36px;background:#1C6E31;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('loan',18)+'</span></div><div style="font-size:1.8rem;font-weight:800;margin-top:8px;color:#1b5e20">'+faDigits(loans.length)+'</div><div style="font-size:.78rem;color:#388e3c;margin-top:4px">'+faDigits(loans.filter(l=>l.status==='active').length)+' فعال</div></div></div>' +
+        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#fff3e0 0%,#ffe0b2 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#e65100;font-weight:600">مجموع وام‌ها</span><span style="width:36px;height:36px;background:#ef6c00;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('coins',18)+'</span></div><div style="font-size:1.4rem;font-weight:800;margin-top:8px;color:#bf360c">'+fmtMShort(loans.reduce((s,l)=>s+Number(l.amount||0),0))+'</div><div style="font-size:.78rem;color:#ef6c00">'+CUR()+'</div></div></div>' +
+        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#fce4ec 0%,#f8bbd0 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#ad1457;font-weight:600">وضعیت عضویت</span><span style="width:36px;height:36px;background:#c2185b;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('users',18)+'</span></div><div style="font-size:1.3rem;font-weight:800;margin-top:8px;color:#880e4f">'+(m.status==='active'?'فعال':'غیرفعال')+'</div><div style="font-size:.78rem;color:#ad1457">'+esc(m.member_no||'')+'</div></div></div>' +
+        '<div class="card" style="border-radius:16px;background:linear-gradient(135deg,#e3f2fd 0%,#90caf9 100%);border:none;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-b" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.82rem;color:#0d47a1;font-weight:600">عضویت شمسی</span><span style="width:36px;height:36px;background:#1565c0;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white">'+icon('calendar',18)+'</span></div><div style="font-size:1rem;font-weight:800;margin-top:8px;color:#0d47a1">'+J.fmtLong(m.created_at||'')+'</div><div style="font-size:.78rem;color:#1565c0">'+J.fmt(m.created_at||'')+'</div></div></div>' +
       '</div>' +
 
-      '<div class="grid g-2" style="margin-top:16px">' +
-        '<div class="card" style="border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-h" style="background:linear-gradient(90deg,var(--card-2),#f8f9fa);padding:14px 18px"><h3 style="display:flex;align-items:center;gap:8px">'+icon('users',18)+' اطلاعات هویتی کامل</h3><span class="hint-t">تمام فیلدهای عضو — حتی فیلدهایی که بعداً اضافه کردید</span></div><div class="card-b" style="padding:0"><div class="kv-list" style="padding:8px 18px">' +
+      '<div class="grid g-2" style="margin-top:18px">' +
+        '<div class="card" style="border-radius:18px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.06);border:1px solid #e8f5e9"><div class="card-h" style="background:linear-gradient(90deg,#f1f8e9,#e8f5e9);padding:16px 20px;border-bottom:1px solid #c8e6c9"><h3 style="display:flex;align-items:center;gap:10px;font-size:1rem">'+icon('card',18)+' اطلاعات هویتی کامل — دقیق و مرتبط</h3><span class="badge b-green">زنده از DB</span></div><div class="card-b" style="padding:0"><div style="padding:8px 20px">' +
           Object.entries(vals).map(([k,v])=>{
             const label = fieldMap[k] || k;
             const isDate = /date|تاریخ|birth/i.test(k+label);
-            const displayVal = isDate && v ? J.fmtLong(v) || v : esc(v||'—');
-            return '<div class="kv" style="padding:12px 0"><span class="k" style="display:flex;align-items:center;gap:6px">'+icon(k==='name'?'user':(k.includes('mobile')?'phone':(k.includes('national')?'card':'info')),14)+esc(label)+'</span><span class="v" style="font-weight:600">'+displayVal+'</span></div>';
+            const isMobile = /mobile|phone|تماس/i.test(k+label);
+            const isNid = /national|کدملی|کد ملی/i.test(k+label);
+            const ic = isMobile ? 'phone' : (isNid ? 'card' : (isDate ? 'calendar' : 'user'));
+            const displayVal = isDate && v ? J.fmtLong(v) + ' <br><small class="hint-t">'+J.fmt(v)+'</small>' : esc(v||'—');
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px dashed #e0e0e0"><span style="display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:.88rem"><span style="width:32px;height:32px;background:var(--card-2);border-radius:10px;display:flex;align-items:center;justify-content:center">'+icon(ic,16)+'</span>'+esc(label)+'</span><span style="font-weight:700;font-size:.92rem;text-align:left;max-width:60%">'+displayVal+'</span></div>';
           }).join('') +
-          '<div class="kv" style="padding:12px 0;background:var(--card-2);margin:8px -18px -8px;padding:12px 18px;border-radius:0 0 12px 12px"><span class="k">شماره عضویت</span><span class="v" style="font-family:monospace;background:var(--green-deep);color:white;padding:4px 10px;border-radius:8px">'+esc(m.member_no||'')+'</span></div>' +
-          '<div class="kv" style="padding:12px 0"><span class="k">تاریخ ثبت دقیق</span><span class="v">'+J.fmtLong(m.created_at||'')+' — '+esc(m.created_at||'')+'</span></div>' +
-          '<div class="kv" style="padding:12px 0"><span class="k">آخرین به‌روزرسانی</span><span class="v">'+J.fmtLong(m.updated_at||m.created_at||'')+'</span></div>' +
-        '</div></div></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;background:linear-gradient(90deg,#f1f8e9,#e8f5e9);margin:12px -20px -8px;padding:16px 20px;border-radius:0 0 12px 12px"><span style="font-weight:700;color:#2e7d32">شماره عضویت</span><span style="font-family:monospace;background:#1C6E31;color:white;padding:6px 14px;border-radius:10px;font-weight:800;letter-spacing:1px">'+esc(m.member_no||'')+'</span></div>' +
+        '</div></div></div></div>' +
 
-        '<div class="card" style="border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div class="card-h" style="background:linear-gradient(90deg,#e8f5e9,#f1f8e9);padding:14px 18px"><h3 style="display:flex;align-items:center;gap:8px">'+icon('loan',18)+' وام‌های این عضو</h3><button class="btn btn-soft btn-xs" id="srvMpAddLoan2">'+icon('plus',12)+' وام جدید</button></div><div class="card-b" id="srvMpLoansBox" style="padding:0"></div></div>' +
+        '<div style="display:flex;flex-direction:column;gap:16px">' +
+          '<div class="card" style="border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,.06);border:1px solid #e3f2fd"><div class="card-h" style="background:linear-gradient(90deg,#e3f2fd,#bbdefb);padding:14px 20px"><h3 style="display:flex;align-items:center;gap:8px">'+icon('loan',18)+' وام‌های این عضو — مرتبط</h3><button class="btn btn-soft btn-xs" id="srvMpAddLoan2" style="border-radius:20px">'+icon('plus',12)+' وام جدید</button></div><div id="srvMpLoansBox" style="padding:0;max-height:320px;overflow:auto"></div></div>' +
+          '<div class="card" style="border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,.06)"><div class="card-h" style="padding:14px 20px"><h3>تراکنش‌های اخیر</h3></div><div id="srvMpTxnsBox" style="padding:12px"></div></div>' +
+        '</div>' +
       '</div>' +
 
-      '<div class="card tight" style="margin-top:16px;border-radius:16px"><div class="card-b" style="padding:8px 18px 0"><div class="tabs" id="srvMpTabs">' +
-        '<button class="tab on" data-t="loans">وام‌ها<span class="tc">'+faDigits(loans.length)+'</span></button>' +
-        '<button class="tab" data-t="timeline">تاریخچه شمسی</button>' +
-        '<button class="tab" data-t="fields">فیلدهای سفارشی</button>' +
-      '</div></div><div class="card-b" id="srvMpBody" style="padding:16px"></div></div>';
+      '<div class="card tight" style="margin-top:18px;border-radius:18px;box-shadow:0 4px 20px rgba(0,0,0,.05)"><div class="card-b" style="padding:8px 20px 0"><div class="tabs" id="srvMpTabs" style="gap:4px">' +
+        '<button class="tab on" data-t="loans" style="border-radius:12px 12px 0 0">وام‌ها<span class="tc">'+faDigits(loans.length)+'</span></button>' +
+        '<button class="tab" data-t="timeline" style="border-radius:12px 12px 0 0">تاریخچه شمسی کامل</button>' +
+        '<button class="tab" data-t="fields" style="border-radius:12px 12px 0 0">فیلدهای سفارشی — جدید</button>' +
+      '</div></div><div class="card-b" id="srvMpBody" style="padding:20px"></div></div>';
 
-    // Bind actions
+    // Bind
     $('#srvPmEdit').onclick = ()=> srvMemberForm(m);
     $('#srvPmDel').onclick = async ()=>{
-      const ok = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود', text:'عضو «'+esc(name)+'» حذف می‌شود (حذف سخت).' });
+      const ok = await askConfirm({ title:'حذف عضو', danger:true, ok:'حذف شود', text:'عضو «'+esc(name)+'» حذف می‌شود.' });
       if(!ok) return;
       try { await srvFetch('DELETE', '/api/institutions/'+SRV.instId+'/members/'+memberId); toast('عضو حذف شد.','ok'); location.hash='#/app/members'; } catch(e){ toast(e.message,'err'); }
     };
     $('#srvPmLoan').onclick = ()=> srvLoanForm(m.id);
     const addLoan2 = $('#srvMpAddLoan2'); if(addLoan2) addLoan2.onclick = ()=> srvLoanForm(m.id);
 
-    // Loans box
     const loansBox = $('#srvMpLoansBox');
     if(!loans.length){
-      loansBox.innerHTML = '<div class="empty" style="padding:32px;text-align:center"><div class="e-ic" style="background:var(--card-2);width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">'+icon('loan',28)+'</div><h3>وامی ثبت نشده</h3><p class="hint-t">برای این عضو هنوز وامی ثبت نشده — وام‌ها اینجا با تمام اطلاعات عضو نمایش داده می‌شوند.</p><button class="btn btn-solid btn-sm" id="srvMpAddLoan" style="margin-top:12px">'+icon('plus',14)+' ثبت اولین وام</button></div>';
+      loansBox.innerHTML = '<div style="padding:36px 20px;text-align:center"><div style="width:64px;height:64px;background:linear-gradient(135deg,#e8f5e9,#c8e6c9);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:#1C6E31">'+icon('loan',32)+'</div><h3 style="margin:0">وامی ثبت نشده</h3><p class="hint-t" style="margin:8px 0 0">این عضو هنوز وامی ندارد — وام‌ها اینجا با اطلاعات کامل عضو نمایش داده می‌شوند</p><button class="btn btn-solid btn-sm" id="srvMpAddLoan" style="margin-top:16px;border-radius:12px">'+icon('plus',14)+' ثبت اولین وام</button></div>';
       const b=$('#srvMpAddLoan'); if(b) b.onclick=()=>srvLoanForm(m.id);
     } else {
-      loansBox.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>مبلغ وام</th><th>اقساط</th><th>کارمزد</th><th>وضعیت</th><th>تاریخ ثبت شمسی</th><th></th></tr></thead><tbody>' +
-        loans.map(l=>{
-          const fee = l.fee_percent!=null ? faDigits(l.fee_percent)+'٪' : '—';
-          return '<tr><td class="c-strong c-fa-num" style="font-size:1rem">'+fmtM(l.amount)+'</td><td class="c-fa-num"><span class="badge b-gray">'+faDigits(l.installments_count)+' قسط</span></td><td class="c-fa-num">'+fee+'</td><td><span class="badge '+(l.status==='active'?'b-green':(l.status==='paid'?'b-gray':'b-amber'))+'">'+esc(l.status)+'</span></td><td class="c-fa-num">'+J.fmtLong(l.created_at||'')+'<br><small class="hint-t">'+J.fmt(l.created_at||'')+'</small></td><td style="text-align:left"><button class="btn btn-soft btn-sm" data-ld="'+l.id+'">جزئیات '+icon('chevS',11)+'</button></td></tr>';
-        }).join('') +
-      '</tbody></table></div>';
+      loansBox.innerHTML = '<div style="padding:8px"><div class="mini-list">'+loans.map(l=>{
+        const fee = l.fee_percent!=null ? faDigits(l.fee_percent)+'٪' : '—';
+        return '<div class="mini-item" style="padding:14px;border-radius:12px;margin-bottom:6px;background:linear-gradient(90deg,#fafafa,#f5f5f5);border:1px solid #eee"><span class="avatar sz-40 teal" style="border-radius:12px;width:44px;height:44px">'+icon('loan',20)+'</span><span class="mi-t"><b style="font-size:.95rem">'+fmtM(l.amount)+' '+CUR()+'</b><span style="display:flex;gap:6px;margin-top:4px"><span class="badge b-gray" style="font-size:.7rem">'+faDigits(l.installments_count)+' قسط</span><span class="badge b-amber" style="font-size:.7rem">'+fee+'</span><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'" style="font-size:.7rem">'+faLoanStatus(l.status)+'</span></span><span style="font-size:.75rem;color:var(--ink-2);margin-top:4px">📅 '+J.fmtLong(l.created_at||'')+'</span></span><button class="btn btn-soft btn-xs" data-ld="'+l.id+'" style="border-radius:20px">جزئیات</button></div>';
+      }).join('')+'</div></div>';
       loansBox.querySelectorAll('[data-ld]').forEach(b=> b.onclick=()=> srvLoanDetail(b.dataset.ld));
     }
 
-    // Tabs
+    const txnsBox = $('#srvMpTxnsBox');
+    if(!txns.length) txnsBox.innerHTML = '<p class="hint-t" style="padding:12px">تراکنشی نیست.</p>';
+    else txnsBox.innerHTML = '<div class="mini-list">'+txns.map(t=>'<div class="mini-item" style="padding:10px"><span class="avatar sz-32" style="border-radius:10px;background:'+(t.type==='deposit'?'#e8f5e9':'#ffebee')+'">'+icon(t.type==='deposit'?'download':'upload',14)+'</span><span class="mi-t"><b>'+faTxnType(t.type)+' '+fmtM(t.amount)+'</b><span>'+J.fmtLong(t.created_at||'')+'</span></span></div>').join('')+'</div>';
+
     const tabs = {
       loans(){
         if(!loans.length) return '<p class="hint-t">وامی نیست.</p>';
-        return '<div class="alert a-info"><span class="al-ic">'+icon('info',16)+'</span><div>این عضو <b>'+faDigits(loans.length)+'</b> وام دارد. هر وام با اطلاعات کامل عضو (حتی فیلدهایی که بعداً اضافه کردید) مرتبط است — چون اطلاعات عضو زنده از DB می‌آید.</div></div>' +
-          '<div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>مبلغ</th><th>اقساط</th><th>کارمزد</th><th>وضعیت</th><th>تاریخ شمسی</th><th></th></tr></thead><tbody>' +
-          loans.map(l=>'<tr><td class="c-strong">'+fmtM(l.amount)+'</td><td>'+faDigits(l.installments_count)+'</td><td>'+faDigits(l.fee_percent||0)+'%</td><td>'+esc(l.status)+'</td><td>'+J.fmtLong(l.created_at||'')+'</td><td><button class="btn btn-soft btn-xs" data-ld2="'+l.id+'">مشاهده</button></td></tr>').join('')+
+        return '<div class="alert a-info" style="border-radius:12px"><span class="al-ic">'+icon('info',16)+'</span><div>این عضو <b>'+faDigits(loans.length)+'</b> وام دارد. هر وام با اطلاعات کامل عضو (حتی فیلدهایی که بعداً اضافه کردید) مرتبط است — چون اطلاعات عضو زنده از DB می‌آید و در منوی وام هم نمایش داده می‌شود.</div></div>' +
+          '<div class="tbl-wrap" style="margin-top:16px;border-radius:12px;overflow:hidden"><table class="tbl"><thead><tr><th>مبلغ</th><th>اقساط</th><th>کارمزد</th><th>وضعیت فارسی</th><th>تاریخ شمسی کامل</th><th></th></tr></thead><tbody>' +
+          loans.map(l=>'<tr><td class="c-strong">'+fmtM(l.amount)+'</td><td>'+faDigits(l.installments_count)+'</td><td>'+faDigits(l.fee_percent||0)+'%</td><td><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+faLoanStatus(l.status)+'</span></td><td><b>'+J.fmtLong(l.created_at||'')+'</b><br><small class="hint-t">'+J.fmt(l.created_at||'')+'</small></td><td><button class="btn btn-soft btn-xs" data-ld2="'+l.id+'" style="border-radius:20px">مشاهده</button></td></tr>').join('')+
           '</tbody></table></div>';
       },
       timeline(){
-        return '<div class="timeline">' +
-          '<div class="tl-item"><div class="tl-dot" style="background:var(--green-deep)"></div><div class="tl-t">عضو ثبت شد</div><div class="tl-d">'+J.fmtLong(m.created_at||'')+' — '+esc(m.created_at||'')+'</div></div>' +
-          '<div class="tl-item"><div class="tl-dot" style="background:var(--amber)"></div><div class="tl-t">آخرین ویرایش</div><div class="tl-d">'+J.fmtLong(m.updated_at||m.created_at||'')+'</div></div>' +
-          loans.map(l=>'<div class="tl-item"><div class="tl-dot" style="background:#1565c0"></div><div class="tl-t">وام '+fmtM(l.amount)+' ثبت شد</div><div class="tl-d">'+J.fmtLong(l.created_at||'')+' — '+faDigits(l.installments_count)+' قسط، کارمزد '+faDigits(l.fee_percent||0)+'%</div></div>').join('') +
+        return '<div class="timeline" style="position:relative;padding-right:20px">' +
+          '<div style="position:absolute;right:7px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,#1C6E31,#c8e6c9)"></div>' +
+          '<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1C6E31;border-radius:50%;border:3px solid white;box-shadow:0 0 0 3px #e8f5e9"></div><div class="tl-t" style="font-weight:700">عضو ثبت شد</div><div class="tl-d" style="color:var(--ink-2);font-size:.85rem;margin-top:4px">📅 '+J.fmtLong(m.created_at||'')+' — '+esc(m.created_at||'')+'</div></div>' +
+          '<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#f57f17;border-radius:50%;border:3px solid white"></div><div class="tl-t">آخرین ویرایش</div><div class="tl-d">'+J.fmtLong(m.updated_at||m.created_at||'')+'</div></div>' +
+          loans.map(l=>'<div class="tl-item" style="position:relative;padding-right:28px;margin-bottom:18px"><div style="position:absolute;right:-4px;top:4px;width:16px;height:16px;background:#1565c0;border-radius:50%;border:3px solid white"></div><div class="tl-t">وام '+fmtM(l.amount)+' ثبت شد</div><div class="tl-d">📅 '+J.fmtLong(l.created_at||'')+' — '+faDigits(l.installments_count)+' قسط، کارمزد '+faDigits(l.fee_percent||0)+'% — وضعیت: '+faLoanStatus(l.status)+'</div></div>').join('') +
         '</div>';
       },
       fields(){
-        return '<div class="alert a-ok"><span class="al-ic">'+icon('check',16)+'</span><div>تمام فیلدهای این عضو — حتی فیلدهایی که بعد از ثبت وام اضافه کردید — اینجا نمایش داده می‌شوند و در منوی وام هم قابل مشاهده هستند چون هر بار زنده از DB می‌خوانیم.</div></div>' +
-          '<div class="grid g-2" style="margin-top:12px">' +
+        return '<div class="alert a-ok" style="border-radius:12px;background:linear-gradient(90deg,#e8f5e9,#f1f8e9)"><span class="al-ic">'+icon('check',16)+'</span><div><b>فیلدهای جدید همینجا ظاهر می‌شن!</b> تمام فیلدهای این عضو — حتی فیلدهایی که بعد از ثبت وام اضافه کردید — اینجا نمایش داده می‌شوند و در منوی وام هم قابل مشاهده هستند چون هر بار زنده از DB می‌خوانیم. کش پاک می‌شود.</div></div>' +
+          '<div class="grid g-2" style="margin-top:16px">' +
           Object.entries(vals).map(([k,v])=>{
             const label = fieldMap[k]||k;
-            return '<div class="card tight" style="border:1px solid var(--line);border-radius:12px"><div class="card-b"><div class="k" style="font-size:.8rem;color:var(--ink-2)">'+esc(label)+' <small style="font-family:monospace">('+esc(k)+')</small></div><div class="v" style="font-size:1rem;font-weight:700;margin-top:6px">'+esc(v||'—')+'</div></div></div>';
+            return '<div class="card" style="border-radius:14px;border:1px solid #e0e0e0;box-shadow:0 2px 8px rgba(0,0,0,.04)"><div class="card-b" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:.8rem;color:var(--ink-2)">'+esc(label)+'</span><span style="font-family:monospace;font-size:.7rem;background:var(--card-2);padding:2px 8px;border-radius:12px">'+esc(k)+'</span></div><div style="font-size:1.05rem;font-weight:800;margin-top:8px;color:var(--ink)">'+esc(v||'—')+'</div></div></div>';
           }).join('') +
           '</div>';
       }
@@ -5040,6 +5105,7 @@ async function renderSrvMemberProfile(memberId){
     main.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>خطا: '+esc(e.message)+'</div></div><a class="btn btn-soft btn-sm" href="#/app/members" style="margin-top:12px">بازگشت</a>';
   }
 }
+
 
 
 
@@ -5278,6 +5344,146 @@ async function srvPaymentForm(loanId, installmentId){
 
 
 
+
+/* ── گزارش‌ها و تراکنش‌ها — حالت سرور — وصل به DB ── */
+let srvTxnsState = { page:1, type:'all', accountId:'all' };
+async function renderSrvReportsPage(){
+  const main = $('#main');
+  main.innerHTML =
+    '<div class="page-head"><div><h1>گزارش‌ها</h1><div class="ph-sub">حالت سرور — گزارش‌های مالی از PostgreSQL — تماما شمسی</div></div><div class="ph-actions"><button class="btn btn-soft btn-sm" id="srvRepRefresh">'+icon('refresh',14)+' به‌روزرسانی</button></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>خلاصه مالی</h3></div><div class="card-b" id="srvRepSummary"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="card"><div class="card-h"><h3>نمودار تراکنش‌ها — ماه شمسی کامل</h3></div><div class="card-b"><div class="chart-box"><canvas id="chSrvRep"></canvas></div></div></div></div>' +
+    '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>تراکنش‌های اخیر — تاریخ شمسی کامل</h3><a class="btn btn-soft btn-sm" href="#/app/txns">همه تراکنش‌ها</a></div><div class="card-b" id="srvRepTxns"><p class="hint-t">در حال دریافت…</p></div></div>';
+
+  $('#srvRepRefresh').onclick = ()=> renderSrvReportsPage();
+  try {
+    const stats = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/stats');
+    $('#srvRepSummary').innerHTML = '<div class="kv-list">'+
+      '<div class="kv"><span class="k">موجودی کل صندوق‌ها</span><span class="v">'+fmtMShort(stats.funds.totalBalance)+' '+CUR()+'</span></div>'+
+      '<div class="kv"><span class="k">کل واریزی</span><span class="v pos">+'+fmtMShort(stats.txns.deposit)+' '+CUR()+'</span></div>'+
+      '<div class="kv"><span class="k">کل برداشت</span><span class="v neg">−'+fmtMShort(stats.txns.withdraw)+' '+CUR()+'</span></div>'+
+      '<div class="kv"><span class="k">کل وام‌ها</span><span class="v">'+faDigits(stats.loans.total)+' وام — '+fmtMShort(stats.loans.totalAmount)+' '+CUR()+'</span></div>'+
+      '<div class="kv"><span class="k">کل پرداخت‌ها</span><span class="v">'+fmtMShort(stats.payments.totalAmount)+' '+CUR()+'</span></div>'+
+      '<div class="kv"><span class="k">تاریخ امروز شمسی</span><span class="v">'+J.fmtLong(J.todayIso())+'</span></div>'+
+    '</div>';
+
+    // Chart with Shamsi full month names
+    function gregToShamsi(gym){
+      try { const p=String(gym).split('-'); const j=J.g2j(parseInt(p[0]),parseInt(p[1]),15); return J.MONTHS[j.jm-1]+' '+faDigits(j.jy); } catch(e){ return gym; }
+    }
+    const mLoans = stats.charts.monthlyLoans||[];
+    const labels = mLoans.map(x=>gregToShamsi(x.m)).slice(-6);
+    const vals = mLoans.map(x=>Number(x.s||0)).slice(-6);
+    const finalLabels = labels.length ? labels : (function(){ const t=J.today(); return Array.from({length:6},(_,i)=>{ const a=J.addMonths(t.jy,t.jm,1,i-5); return J.MONTHS[a.jm-1]+' '+faDigits(a.jy); }); })();
+    if(typeof drawBars==='function' && $('#chSrvRep')){
+      drawBars($('#chSrvRep'), finalLabels, [{name:'وام‌ها', color:'#1C6E31', values: vals.length?vals:[0,0,0,0,0,0]}]);
+    }
+
+    // Recent txns
+    try {
+      const txData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page=1&pageSize=10');
+      const rows = txData.rows||[];
+      const box = $('#srvRepTxns');
+      if(!rows.length) box.innerHTML='<p class="hint-t">تراکنشی ثبت نشده.</p>';
+      else box.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>تاریخ شمسی کامل</th><th>نوع فارسی</th><th>مبلغ</th><th>حساب</th><th>توضیحات</th></tr></thead><tbody>'+
+        rows.map(t=>{
+          const fullDate = J.fmtLong(t.created_at||'');
+          return '<tr><td><b>'+fullDate+'</b><br><small class="hint-t">'+J.fmt(t.created_at||'')+'</small></td><td><span class="badge '+(t.type==='deposit'?'b-green':'b-red')+'">'+faTxnType(t.type)+'</span></td><td class="c-fa-num c-strong">'+fmtN(t.amount)+'</td><td>'+esc(t.account_name||'—')+'</td><td>'+esc(t.description||'—')+'</td></tr>';
+        }).join('')+'</tbody></table></div>';
+    } catch(e){
+      $('#srvRepTxns').innerHTML='<p class="hint-t">'+esc(e.message)+'</p>';
+    }
+
+  } catch(e){
+    $('#srvRepSummary').innerHTML='<div class="alert a-err">'+esc(e.message)+'</div>';
+  }
+}
+
+async function renderSrvTxnsPage(){
+  const main = $('#main');
+  main.innerHTML =
+    '<div class="page-head"><div><h1>تراکنش‌ها</h1><div class="ph-sub">حالت سرور — تمام تراکنش‌ها از PostgreSQL — تاریخ شمسی کامل با نام ماه</div></div><div class="ph-actions"><button class="btn btn-solid btn-sm" id="srvAddTxn">'+icon('plus',15)+' ثبت تراکنش</button></div></div>' +
+    '<div class="toolbar"><div class="t-search">'+icon('search',15)+'<input id="srvTxnQ" placeholder="جستجو توضیحات..."></div>' +
+    '<select class="t-select" id="srvTxnType"><option value="all">همه انواع</option><option value="deposit">واریز</option><option value="withdraw">برداشت</option><option value="loan_out">پرداخت وام</option><option value="repayment">بازپرداخت</option></select>' +
+    '<button class="btn btn-ghost btn-sm" id="srvTxnReset">'+icon('refresh',13)+' حذف فیلتر</button></div>' +
+    '<div class="card tight" id="srvTxnsBox"><p class="hint-t" style="padding:18px">در حال دریافت تراکنش‌ها…</p></div>';
+
+  $('#srvAddTxn').onclick = ()=> srvTxnForm();
+  $('#srvTxnType').onchange = ()=>{ srvTxnsState.type=$('#srvTxnType').value; srvTxnsState.page=1; srvLoadTxns(); };
+  $('#srvTxnReset').onclick = ()=>{ srvTxnsState.type='all'; srvTxnsState.page=1; $('#srvTxnType').value='all'; $('#srvTxnQ').value=''; srvLoadTxns(); };
+  $('#srvTxnQ').oninput = ()=>{ srvTxnsState.page=1; srvLoadTxns(); };
+
+  await srvLoadTxns();
+}
+
+async function srvLoadTxns(){
+  const box = $('#srvTxnsBox'); if(!box) return;
+  box.innerHTML='<p class="hint-t" style="padding:18px">در حال دریافت…</p>';
+  try {
+    const type = srvTxnsState.type!=='all' ? '&type='+srvTxnsState.type : '';
+    const data = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page='+srvTxnsState.page+'&pageSize=30'+type);
+    const rows = data.rows||[];
+    if(!rows.length){
+      box.innerHTML='<div class="empty" style="padding:32px;text-align:center"><div class="e-ic">'+icon('swap',28)+'</div><h3>تراکنشی نیست</h3><p class="hint-t">تراکنش‌ها از وام‌ها، پرداخت‌ها و حساب‌ها خودکار ساخته می‌شوند.</p></div>';
+      return;
+    }
+    const q = ($('#srvTxnQ')?.value||'').trim();
+    let filtered = rows;
+    if(q) filtered = rows.filter(t=> (t.description||'').includes(q) || (t.account_name||'').includes(q));
+
+    box.innerHTML = '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>تاریخ شمسی کامل با نام ماه</th><th>نوع فارسی</th><th>مبلغ</th><th>حساب / صندوق</th><th>عضو</th><th>توضیحات</th></tr></thead><tbody>' +
+      filtered.map(t=>{
+        const jDate = J.iso2j((t.created_at||'').slice(0,10));
+        const fullMonth = jDate ? J.MONTHS[jDate.jm-1] : '';
+        const fullDate = J.fmtLong(t.created_at||'');
+        return '<tr><td><b>'+fullDate+'</b><br><small class="hint-t">'+fullMonth+' '+ (jDate?faDigits(jDate.jy):'') +' — '+J.fmt(t.created_at||'')+'</small><br><small style="font-family:monospace;font-size:.7rem;color:var(--ink-2)">'+esc((t.created_at||'').slice(0,19))+'</small></td>' +
+          '<td><span class="badge '+(t.type==='deposit'?'b-green':(t.type==='withdraw'?'b-red':'b-gray'))+'">'+faTxnType(t.type)+'</span></td>' +
+          '<td class="c-fa-num c-strong" style="color:'+(t.type==='deposit'?'var(--green-deep)':'var(--red)')+'">'+(t.type==='deposit'?'+':'−')+' '+fmtN(t.amount)+'</td>' +
+          '<td>'+esc(t.account_name||'—')+'<br><small class="hint-t">'+esc(t.fund_name||'')+'</small></td>' +
+          '<td>'+esc(t.member_values ? Object.values(t.member_values)[0]?.value || t.member_no || '' : t.member_no||'')+'</td>' +
+          '<td>'+esc(t.description||'—')+'</td></tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      '<div class="tbl-foot"><span class="tf-info">'+faDigits(data.total)+' تراکنش · صفحه '+faDigits(srvTxnsState.page)+'</span><div class="pager"><button class="btn btn-soft btn-xs" id="srvTxnPrev"'+(srvTxnsState.page<=1?' disabled':'')+'>قبلی</button><button class="btn btn-soft btn-xs" id="srvTxnNext"'+(srvTxnsState.page>=Math.ceil(data.total/data.pageSize)?' disabled':'')+'>بعدی</button></div></div>';
+
+    const pv=$('#srvTxnPrev'); if(pv) pv.onclick=()=>{ srvTxnsState.page--; srvLoadTxns(); };
+    const nx=$('#srvTxnNext'); if(nx) nx.onclick=()=>{ srvTxnsState.page++; srvLoadTxns(); };
+
+  } catch(e){
+    box.innerHTML='<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>';
+  }
+}
+
+function srvTxnForm(){
+  openModal({
+    title:'ثبت تراکنش جدید',
+    sub:'حالت سرور — واریز/برداشت دستی',
+    size:'md',
+    body:'<div class="fields">'+
+      '<div class="field"><label>نوع تراکنش فارسی <span class="req">*</span></label><select id="stfType"><option value="deposit">واریز</option><option value="withdraw">برداشت</option><option value="transfer">انتقال</option></select></div>'+
+      '<div class="field"><label>مبلغ <span class="req">*</span></label><input id="stfAmt" class="num-inp" placeholder="10000000"></div>'+
+      '<div class="field full"><label>توضیحات</label><textarea id="stfDesc" rows="2" placeholder="مثلاً واریز اولیه"></textarea></div>'+
+      '<div id="stfErr" style="display:none;color:var(--red);padding:10px;background:var(--red-bg);border-radius:8px;margin-top:8px"></div>'+
+    '</div>',
+    foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="stfSave">ثبت تراکنش</button>',
+    onOpen(h){
+      h.el.querySelector('[data-x]').onclick=()=>h.close();
+      if(typeof attachMoney==='function') attachMoney(h.el.querySelector('#stfAmt'));
+      h.el.querySelector('#stfSave').onclick=async()=>{
+        const type=h.el.querySelector('#stfType').value;
+        const amt=h.el.querySelector('#stfAmt').value.replace(/[^0-9]/g,'');
+        const desc=h.el.querySelector('#stfDesc').value;
+        const err=h.el.querySelector('#stfErr');
+        if(!amt){ err.style.display=''; err.textContent='مبلغ را وارد کنید.'; return; }
+        try {
+          await srvFetch('POST','/api/institutions/'+SRV.instId+'/txns',{ type, amount:amt, description:desc });
+          toast('تراکنش ثبت شد.','ok'); h.close(); srvLoadTxns();
+        } catch(e){ err.style.display=''; err.textContent=e.message; }
+      };
+    }
+  });
+}
+
 (function hookSrvMode(){
   const _pgMembers = PAGES.members;
   PAGES.members = function(arg){
@@ -5312,6 +5518,20 @@ async function srvPaymentForm(loanId, installmentId){
       return renderSrvFundsPage('accounts');
     }
     return _pgAccounts(arg);
+  };
+  const _pgReports = PAGES.reports;
+  PAGES.reports = function(arg){
+    if(SRV.on && srvReady()){
+      return renderSrvReportsPage();
+    }
+    return _pgReports ? _pgReports(arg) : null;
+  };
+  const _pgTxns = PAGES.txns;
+  PAGES.txns = function(){
+    if(SRV.on && srvReady()){
+      return renderSrvTxnsPage();
+    }
+    return _pgTxns ? _pgTxns() : null;
   };
   const _renderSettings = renderSettings;
   renderSettings = function(){
