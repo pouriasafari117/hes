@@ -5806,56 +5806,216 @@ async function srvPaymentForm(loanId, installmentId){
 
 /* ── گزارش‌ها و تراکنش‌ها — حالت سرور — وصل به DB ── */
 let srvTxnsState = { page:1, type:'all', accountId:'all' };
+/* ════════════════════════════════════════════════════════
+   گزارش‌ها — حالت سرور، عین قالب تب گزارش‌های دمو:
+   چیپ گزارش‌ها + فیلترها + جدول + جمع ستون‌ها + چاپ + CSV — داده زنده از PostgreSQL
+   ════════════════════════════════════════════════════════ */
+const srvRepState = { rep:'members', f:{} };
+let srvRepData = null; /* کش دادهٔ یک بازهٔ نمایش */
+
+async function srvFetchReportData(){
+  const [mData, lData, iData, pData, tData, fData, aData] = await Promise.all([
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/members?page=1&pageSize=200'),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/loans?page=1&pageSize=200'),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/installments?page=1&pageSize=1000').catch(()=>({rows:[]})),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/payments?page=1&pageSize=1000').catch(()=>({payments:[]})),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page=1&pageSize=200'),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/funds').catch(()=>({funds:[]})),
+    srvFetch('GET', '/api/institutions/'+SRV.instId+'/accounts').catch(()=>({accounts:[]})),
+  ]);
+  let fields = []; try { fields = await srvLoadFieldsCached(); } catch(e){}
+  const members = (mData.rows||[]).map(m=>{
+    const vals = m.values||{}; const first = Object.values(vals)[0];
+    const name = first || m.member_no || ('عضو #'+m.id);
+    const fld = k => { const f = (fields||[]).find(x => x.label===k || (x.key||'')===k); return f&&vals[f.key] ? vals[f.key] : ''; };
+    const nid = fld('کد ملی') || fld('کدملی') || fld('nid');
+    const mobile = fld('موبایل') || fld('موبایل/تماس') || fld('شماره تماس') || fld('نام تماس') || '';
+    return { id:m.id, member_no:m.member_no, status:m.status, created_at:m.created_at, name, nid:nid||'', mobile:mobile||'', vals };
+  });
+  const loans = lData.rows||[];
+  const installments = iData.rows||[];
+  const payments = (pData.payments||[]).map(p=>({...p}));
+  const txns = tData.rows||[];
+  const funds = fData.funds||[];
+  const accounts = aData.accounts||[];
+  const fundName = id => { const f2 = funds.find(x=>String(x.id)===String(id)); return f2?f2.name:'—'; };
+  const accName = id => { const a = accounts.find(x=>String(x.id)===String(id)); return a?a.name:'—'; };
+  /* ماندهٔ هر وام = مبلغ وام − مجموع پرداخت‌های آن (plan≈amount برای اقساط استاندارد) */
+  const paySumByLoan = {}; payments.forEach(p=>{ paySumByLoan[p.loan_id] = (paySumByLoan[p.loan_id]||0) + Number(p.amount||0); });
+  const odInsByMember = {};
+  installments.forEach(i=>{ if(i.eff_status==='overdue'){ odInsByMember[i.member_id]=(odInsByMember[i.member_id]||0)+1; } });
+  return { members, loans, installments, payments, txns, funds, accounts, fundName, accName, paySumByLoan, odInsByMember };
+}
+
+function srvReportDefs(D){
+  return [
+    { id:'members', title:'گزارش اعضا', ic:'users',
+      filters:[{k:'status',t:'select',l:'وضعیت',o:[['all','همه'],['active','فعال'],['inactive','غیرفعال']]},{k:'from',t:'date',l:'عضویت از'},{k:'to',t:'date',l:'تا'}],
+      cols:['نام','کد ملی','موبایل','شماره عضویت','وضعیت','تاریخ عضویت'],
+      rows(f){ return D.members
+        .filter(m=>f.status==='all'||m.status===f.status)
+        .filter(m=>!f.from||(m.created_at||'').slice(0,10)>=f.from)
+        .filter(m=>!f.to||(m.created_at||'').slice(0,10)<=f.to)
+        .map(m=>[m.name, m.nid||'—', m.mobile||'—', m.member_no||'', m.status==='active'?'فعال':'غیرفعال', J.fmt(m.created_at||'')]); } },
+    { id:'loans', title:'گزارش وام‌ها', ic:'loan',
+      filters:[{k:'fund',t:'select',l:'صندوق',o:[['all','همه']].concat(D.funds.map(x=>[String(x.id),x.name]))},{k:'status',t:'select',l:'وضعیت',o:[['all','همه'],['active','فعال'],['paid','تسویه‌شده'],['cancelled','لغوشده']]}],
+      cols:['عضو','صندوق','مبلغ وام','اقساط','پرداخت‌شده','مانده','وضعیت','تاریخ ثبت'],
+      rows(f){ return D.loans
+        .filter(l=>f.fund==='all'||String(l.fund_id)===String(f.fund))
+        .filter(l=>f.status==='all'||l.status===f.status)
+        .map(l=>{ const paid = D.paySumByLoan[l.id]||0;
+          return [l.member_name||'', D.fundName(l.fund_id), String(l.amount), String(l.installments_count), String(paid), String(Math.max(0, Number(l.amount)-paid)), faLoanStatus(l.status), J.fmt(l.created_at||'')]; }); } },
+    { id:'installments', title:'گزارش اقساط', ic:'calendar',
+      filters:[{k:'status',t:'select',l:'وضعیت',o:[['all','همه'],['overdue','سررسید گذشته'],['dueSoon','نزدیک سررسید'],['pending','در انتظار'],['paid','پرداخت‌شده']]},{k:'from',t:'date',l:'سررسید از'},{k:'to',t:'date',l:'تا'}],
+      cols:['عضو','وام','قسط','سررسید','مبلغ','پرداخت‌شده','مانده','وضعیت'],
+      rows(f){ return D.installments
+        .filter(i=>f.status==='all'||i.eff_status===f.status)
+        .filter(i=>!f.from||i.due_date>=f.from)
+        .filter(i=>!f.to||i.due_date<=f.to)
+        .map(i=>{ const paid = i.status==='paid' ? Number(i.amount) : 0;
+          return [i.member_name||'', String(i.loan_amount), String(i.no), J.fmt(i.due_date), String(i.amount), String(paid), String(Number(i.amount)-paid), INS_FA[i.eff_status]||'' ]; }); } },
+    { id:'payments', title:'گزارش پرداخت‌ها', ic:'coins',
+      filters:[{k:'from',t:'date',l:'از تاریخ'},{k:'to',t:'date',l:'تا'},{k:'type',t:'select',l:'نوع',o:[['all','همه'],['installment','اقساط'],['fee','کارمزد'],['other','سایر']]}],
+      cols:['تاریخ','عضو','قسط','مبلغ','وام'],
+      rows(f){ return D.payments
+        .filter(p=>!f.from||(p.created_at||'').slice(0,10)>=f.from)
+        .filter(p=>!f.to||(p.created_at||'').slice(0,10)<=f.to)
+        .filter(p=>f.type==='all'||p.type===f.type)
+        .map(p=>[J.fmt(p.created_at||''), p.member_name||'', p.ins_no ? 'قسط '+faDigits(p.ins_no) : '—', String(p.amount), String(p.loan_amount||0)]); } },
+    { id:'txns', title:'گزارش تراکنش‌ها', ic:'swap',
+      filters:[{k:'acc',t:'select',l:'حساب',o:[['all','همه']].concat(D.accounts.map(a=>[String(a.id),a.name]))},{k:'type',t:'select',l:'نوع',o:[['all','همه'],['deposit','واریز'],['withdraw','برداشت'],['loan_out','پرداخت وام'],['repayment','بازپرداخت']]},{k:'from',t:'date',l:'از'},{k:'to',t:'date',l:'تا'}],
+      cols:['تاریخ','حساب','نوع','مبلغ','توضیحات'],
+      rows(f){ return D.txns
+        .filter(x=>f.acc==='all'||String(x.account_id)===String(f.acc))
+        .filter(x=>f.type==='all'||x.type===f.type)
+        .filter(x=>!f.from||(x.created_at||'').slice(0,10)>=f.from)
+        .filter(x=>!f.to||(x.created_at||'').slice(0,10)<=f.to)
+        .map(x=>[J.fmt(x.created_at||'')+' '+faTime(x.created_at||''), x.account_name||D.accName(x.account_id), faTxnType(x.type), String(x.amount), x.description||'—']); } },
+    { id:'balances', title:'مانده صندوق‌ها و حساب‌ها', ic:'bank', filters:[],
+      cols:['صندوق','حساب','شماره','نوع','موجودی','وضعیت'],
+      rows(){ return D.accounts.map(a=>[a.fund_name||D.fundName(a.fund_id), a.name, a.number||'—', a.type||'', String(a.initial_balance||0), a.status==='active'?'فعال':'غیرفعال']); } },
+    { id:'debtors', title:'گزارش بدهکاران', ic:'warn',
+      filters:[{k:'min',t:'money',l:'حداقل بدهی ('+CUR()+')'}],
+      cols:['عضو','شماره عضویت','وام‌های فعال','اقساط معوق','بدهی جاری'],
+      rows(f){ return D.members.map(m=>{
+          const lns = D.loans.filter(l=>String(l.member_id)===String(m.id) && l.status==='active');
+          const debt = lns.reduce((s3,l)=> s3 + Math.max(0, Number(l.amount)-(D.paySumByLoan[l.id]||0)), 0);
+          return { name:m.name, no:m.member_no, loans:lns.length, od:D.odInsByMember[m.id]||0, debt }; })
+        .filter(r=>r.debt>0 && (!f.min || r.debt>=f.min))
+        .sort((a,b)=>b.debt-a.debt)
+        .map(r=>[r.name, r.no||'', String(r.loans), String(r.od), String(r.debt)]); } }
+  ];
+}
+
+function srvRepFilterSummary(def){
+  return def.filters.map(fl => { const v = srvRepState.f[fl.k]; if(v==null||v===''||v==='all') return '';
+    const val = fl.t==='date' ? J.fmt(v) : fl.t==='money' ? fmtM(v) : ((fl.o||[]).find(o=>String(o[0])===String(v))||['',v])[1];
+    return fl.l+': '+val; }).filter(Boolean).join(' · ');
+}
+
+function srvRenderReportBody(def, D){
+  const box = $('#srvRepFilters');
+  const f = srvRepState.f;
+  box.innerHTML = def.filters.map(fl => {
+    if(fl.t==='select') return '<span class="t-lbl">'+fl.l+':</span><select class="t-select" data-fk="'+fl.k+'">'+fl.o.map(o=>'<option value="'+o[0]+'"'+((f[fl.k]!==undefined?f[fl.k]:fl.o[0][0])==o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+    if(fl.t==='date') return '<span class="t-lbl">'+fl.l+':</span><span class="t-jd"><input data-fk="'+fl.k+'"></span>';
+    if(fl.t==='money') return '<span class="t-lbl">'+fl.l+':</span><input class="t-money" data-fk="'+fl.k+'" placeholder="0">';
+    return '';
+  }).join('') + (def.filters.length ? '' : '<span class="t-lbl">این گزارش فیلتری ندارد.</span>');
+  box.querySelectorAll('[data-fk]').forEach(el => {
+    if(el.tagName === 'SELECT') el.addEventListener('change', ()=>{ f[el.dataset.fk] = String(el.value); srvRenderReportBody(def, D); });
+    else if(el.classList.contains('t-money')){ attachMoney(el); el.addEventListener('input', ()=>{ f[el.dataset.fk] = moneyVal(el); srvRenderReportBody(def, D); }); }
+    else { attachJDate(el); el.addEventListener('change', ()=>{ f[el.dataset.fk] = jdVal(el); srvRenderReportBody(def, D); }); }
+  });
+  def.filters.forEach(fl => {
+    const inp = box.querySelector('[data-fk="'+fl.k+'"]');
+    if(!inp) return;
+    if(fl.t==='date' && f[fl.k] && typeof setJd==='function') setJd(inp, f[fl.k]);
+    if(fl.t==='money' && f[fl.k] && typeof setMoney==='function') setMoney(inp, f[fl.k]);
+  });
+  def.filters.forEach(fl => { if(f[fl.k]===undefined) f[fl.k] = (fl.o && fl.o[0]) ? fl.o[0][0] : ''; });
+
+  const rows = def.rows(f);
+  const title = $('#srvRepTitle'); if(title) title.innerHTML = def.title + ' <span class="hint-t">('+faDigits(rows.length)+' رکورد)</span>';
+  const moneyCols = def.cols.map(c=>/مبلغ|مانده|بدهی|موجودی|پرداخت/.test(c));
+  const body = $('#srvRepBody');
+  if(!rows.length){ body.innerHTML = emptyState({icon:'chart', title:'نتیجه‌ای پیدا نشد', desc:'فیلترها را تغییر دهید.'}); return; }
+  const shown = rows.slice(0,150);
+  body.innerHTML = '<div class="tbl-wrap"><table class="tbl" id="srvRepTbl"><thead><tr>'+def.cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>' +
+    shown.map(r => '<tr>'+r.map((cell,ci)=>{
+      const isMoney = moneyCols[ci] && /^\d+$/.test(String(cell));
+      return '<td class="'+(isMoney?'c-fa-num':'')+'">'+(isMoney?fmtN(+cell):esc(String(cell==null?'':cell)))+(isMoney?' <small style="color:var(--ink-2)">'+CUR()+'</small>':'')+'</td>';
+    }).join('')+'</tr>').join('') + '</tbody></table></div>' +
+    (rows.length>150 ? '<div class="tbl-foot"><span class="tf-info">'+faDigits(150)+' ردیف از '+faDigits(rows.length)+' نمایش داده شد؛ برای همه موارد خروجی CSV بگیرید.</span></div>' : '');
+  const sums = def.cols.map((c,ci)=> moneyCols[ci] ? rows.reduce((s2,r)=> s2 + (/^\d+$/.test(String(r[ci])) ? +r[ci] : 0), 0) : null);
+  const anySum = sums.some(x=>x!=null&&x>0);
+  if(anySum){
+    body.querySelector('#srvRepTbl').insertAdjacentHTML('beforeend','<tfoot><tr>'+def.cols.map((c,ci)=>'<th>'+(sums[ci]?fmtN(sums[ci])+' '+CUR():'')+'</th>').join('')+'</tr></tfoot>');
+  }
+}
+
+/* CSV — ساختار دقیقاً مثل خروجی دمو: ستون‌ها + سطرها (با BOM فارسی) */
+function srvExportCsv(def, D){
+  const rows = def.rows(srvRepState.f);
+  const fs = srvRepFilterSummary(def);
+  const lines = [];
+  lines.push('== '+esc(SRV.instName||'مؤسسه')+' — '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ==');
+  lines.push(def.cols.join(','));
+  lines.push(rows.map(r => r.map(c => { const s2 = String(c==null?'':c).replace(/"/g,'""'); return /["\,\n]/.test(s2) ? '"'+s2+'"' : s2; }).join(',')).join('\r\n'));
+  const blob = new Blob(['\uFEFF'+lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hesabat-' + def.id + '-' + J.todayIso() + '.csv';
+  a.click(); if(URL.revokeObjectURL) setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  if(typeof toast==='function') toast('فایل CSV با '+faDigits(rows.length)+' رکورد دانلود شد.','ok');
+}
+
+/* چاپ — قالب printRoot ای دمو با سرستون مؤسسه و جدول */
+function srvPrintReport(def, D){
+  const rows = def.rows(srvRepState.f);
+  const fs = srvRepFilterSummary(def);
+  const root = $('#printRoot'); if(!root) return;
+  root.innerHTML =
+    '<div class="pr-head"><h1>'+esc(SRV.instName||'مؤسسه')+' — '+esc(def.title)+'</h1>' +
+    '<p>تاریخ تهیه: '+J.fmtLong(J.todayIso())+' · تهیه‌کننده: '+esc((SESSION&&SESSION.name)||'مدیر')+'</p></div>' +
+    (fs ? '<div class="pr-filters">فیلترها: '+esc(fs)+'</div>' : '') +
+    '<h2 class="pr-h2">'+esc(def.title)+' ('+faDigits(rows.length)+' رکورد)</h2>' +
+    '<table><thead><tr>'+def.cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>' +
+    rows.map(r=>'<tr>'+r.map(c=>'<td>'+esc(String(c==null?'':c))+'</td>').join('')+'</tr>').join('') + '</tbody></table>' +
+    '<div class="pr-sum">تعداد رکوردها: '+faDigits(rows.length)+'</div>';
+  document.body.classList.add('printing');
+  const done = ()=>{ document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(()=>window.print(), 60);
+  setTimeout(done, 3000);
+}
+
 async function renderSrvReportsPage(){
   const main = $('#main');
+  const defs0 = srvReportDefs({members:[],loans:[],installments:[],payments:[],txns:[],funds:[],accounts:[],fundName:()=>'—',accName:()=>'—',paySumByLoan:{},odInsByMember:{}});
+  const cur0 = defs0.find(d=>d.id===srvRepState.rep) || defs0[0];
   main.innerHTML =
-    '<div class="page-head"><div><h1>گزارش‌ها</h1><div class="ph-sub">حالت سرور — گزارش‌های مالی از PostgreSQL — تماما شمسی</div></div><div class="ph-actions"><button class="btn btn-soft btn-sm" id="srvRepRefresh">'+icon('refresh',14)+' به‌روزرسانی</button></div></div>' +
-    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>خلاصه مالی</h3></div><div class="card-b" id="srvRepSummary"><p class="hint-t">در حال دریافت…</p></div></div>' +
-    '<div class="card"><div class="card-h"><h3>نمودار تراکنش‌ها — ماه شمسی کامل</h3></div><div class="card-b"><div class="chart-box"><canvas id="chSrvRep"></canvas></div></div></div></div>' +
-    '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>تراکنش‌های اخیر — تاریخ شمسی کامل</h3><a class="btn btn-soft btn-sm" href="#/app/txns">همه تراکنش‌ها</a></div><div class="card-b" id="srvRepTxns"><p class="hint-t">در حال دریافت…</p></div></div>';
-
-  $('#srvRepRefresh').onclick = ()=> renderSrvReportsPage();
-  try {
-    const stats = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/stats');
-    $('#srvRepSummary').innerHTML = '<div class="kv-list">'+
-      '<div class="kv"><span class="k">موجودی کل صندوق‌ها</span><span class="v">'+fmtMShort(stats.funds.totalBalance)+' '+CUR()+'</span></div>'+
-      '<div class="kv"><span class="k">کل واریزی</span><span class="v pos">+'+fmtMShort(stats.txns.deposit)+' '+CUR()+'</span></div>'+
-      '<div class="kv"><span class="k">کل برداشت</span><span class="v neg">−'+fmtMShort(stats.txns.withdraw)+' '+CUR()+'</span></div>'+
-      '<div class="kv"><span class="k">کل وام‌ها</span><span class="v">'+faDigits(stats.loans.total)+' وام — '+fmtMShort(stats.loans.totalAmount)+' '+CUR()+'</span></div>'+
-      '<div class="kv"><span class="k">کل پرداخت‌ها</span><span class="v">'+fmtMShort(stats.payments.totalAmount)+' '+CUR()+'</span></div>'+
-      '<div class="kv"><span class="k">تاریخ امروز شمسی</span><span class="v">'+J.fmtLong(J.todayIso())+'</span></div>'+
-    '</div>';
-
-    // Chart with Shamsi full month names
-    function gregToShamsi(gym){
-      try { const p=String(gym).split('-'); const j=J.g2j(parseInt(p[0]),parseInt(p[1]),15); return J.MONTHS[j.jm-1]+' '+faDigits(j.jy); } catch(e){ return gym; }
-    }
-    const mLoans = stats.charts.monthlyLoans||[];
-    const labels = mLoans.map(x=>gregToShamsi(x.m)).slice(-6);
-    const vals = mLoans.map(x=>Number(x.s||0)).slice(-6);
-    const finalLabels = labels.length ? labels : (function(){ const t=J.today(); return Array.from({length:6},(_,i)=>{ const a=J.addMonths(t.jy,t.jm,1,i-5); return J.MONTHS[a.jm-1]+' '+faDigits(a.jy); }); })();
-    if(typeof drawBars==='function' && $('#chSrvRep')){
-      drawBars($('#chSrvRep'), finalLabels, [{name:'وام‌ها', color:'#1C6E31', values: vals.length?vals:[0,0,0,0,0,0]}]);
-    }
-
-    // Recent txns
-    try {
-      const txData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page=1&pageSize=10');
-      const rows = txData.rows||[];
-      const box = $('#srvRepTxns');
-      if(!rows.length) box.innerHTML='<p class="hint-t">تراکنشی ثبت نشده.</p>';
-      else box.innerHTML='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>تاریخ شمسی کامل</th><th>نوع فارسی</th><th>مبلغ</th><th>حساب</th><th>توضیحات</th></tr></thead><tbody>'+
-        rows.map(t=>{
-          const fullDate = J.fmtLong(t.created_at||'');
-          return '<tr><td><b>'+fullDate+'</b><br><small class="hint-t">'+J.fmt(t.created_at||'')+'</small></td><td><span class="badge '+(t.type==='deposit'?'b-green':'b-red')+'">'+faTxnType(t.type)+'</span></td><td class="c-fa-num c-strong">'+fmtN(t.amount)+'</td><td>'+esc(t.account_name||'—')+'</td><td>'+esc(t.description||'—')+'</td></tr>';
-        }).join('')+'</tbody></table></div>';
-    } catch(e){
-      $('#srvRepTxns').innerHTML='<p class="hint-t">'+esc(e.message)+'</p>';
-    }
-
-  } catch(e){
-    $('#srvRepSummary').innerHTML='<div class="alert a-err">'+esc(e.message)+'</div>';
+    '<div class="page-head"><div><h1>گزارش‌ها</h1><div class="ph-sub">گزارش‌های تفصیلی با فیلتر، چاپ و خروجی CSV — داده زنده از PostgreSQL</div></div><div class="ph-actions" id="srvRepActions">' +
+      '<button class="btn btn-ghost btn-sm" id="srvRepPrint" style="padding:11px 17px;font-size:.88rem" disabled>'+icon('print',14)+' چاپ</button>' +
+      '<button class="btn btn-soft btn-sm" id="srvRepCsv" style="padding:11px 17px;font-size:.88rem" disabled>'+icon('download',14)+' خروجی CSV</button></div></div>' +
+    '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>'+icon('chart',16)+' گزارش‌های تفصیلی</h3><span class="hint-t">انتخاب گزارش، اعمال فیلتر، چاپ و خروجی CSV</span></div><div class="card-b">' +
+      '<div class="chips" style="margin-bottom:14px">' + defs0.map(d=>'<button class="chip'+(d.id===cur0.id?' on':'')+'" data-srep="'+d.id+'">'+icon(d.ic,15)+' '+d.title+'</button>').join('') + '</div>' +
+      '<div class="toolbar" id="srvRepFilters"><span class="hint-t">در حال بارگذاری داده‌ها…</span></div>' +
+      '<div class="card tight"><div class="card-h"><h3 id="srvRepTitle"></h3></div><div class="card-b" id="srvRepBody"><p class="hint-t">در حال خارج از دیتابیس…</p></div></div>' +
+    '</div></div>';
+  main.querySelectorAll('[data-srep]').forEach(b => b.onclick = ()=>{ srvRepState.rep = b.dataset.srep; srvRepState.f = {}; renderSrvReportsPage(); });
+  let D;
+  try { D = await srvFetchReportData(); srvRepData = D; }
+  catch(e){
+    $('#srvRepBody').innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>';
+    return;
   }
+  const defs = srvReportDefs(D);
+  const cur = defs.find(d=>d.id===srvRepState.rep) || defs[0];
+  const pb = $('#srvRepPrint'), cb = $('#srvRepCsv');
+  if(pb){ pb.disabled = false; pb.onclick = ()=> srvPrintReport(cur, D); }
+  if(cb){ cb.disabled = false; cb.onclick = ()=> srvExportCsv(cur, D); }
+  srvRenderReportBody(cur, D);
 }
 
 async function renderSrvTxnsPage(){

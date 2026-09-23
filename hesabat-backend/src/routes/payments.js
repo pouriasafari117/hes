@@ -5,16 +5,36 @@ const { asyncH, requireAuth, requireInstitution } = require('../mw');
 const r = express.Router({ mergeParams: true });
 r.use(requireAuth, requireInstitution);
 
-// GET payments ?loanId=
+// GET payments ?loanId=&page=&pageSize=&from=&to= — غنی‌شده با نام عضو/وام/قسط برای گزارش‌ها
 r.get('/', asyncH(async (req, res) => {
   const loanId = req.query.loanId ? parseInt(req.query.loanId,10) : null;
-  const rows = await withTenant(req.user, req.institutionId, async c => {
-    if (loanId) {
-      return (await c.query('select * from payments where institution_id=$1 and loan_id=$2 order by created_at desc', [req.institutionId, loanId])).rows;
-    }
-    return (await c.query('select * from payments where institution_id=$1 order by created_at desc limit 100', [req.institutionId])).rows;
+  const page = Math.max(1, parseInt(req.query.page,10)||1);
+  const pageSize = Math.min(1000, Math.max(1, parseInt(req.query.pageSize,10)||100));
+  const from = (req.query.from||'').trim() || null;
+  const to = (req.query.to||'').trim() || null;
+  const out = await withTenant(req.user, req.institutionId, async c => {
+    const args = [req.institutionId];
+    const where = ['p.institution_id=$1'];
+    if (loanId) { args.push(loanId); where.push(`p.loan_id=$${args.length}`); }
+    if (from)   { args.push(from);   where.push(`p.created_at::date >= $${args.length}::date`); }
+    if (to)     { args.push(to);     where.push(`p.created_at::date <= $${args.length}::date`); }
+    const total = (await c.query(`select count(*)::int as n from payments p where ${where.join(' and ')}`, args)).rows[0].n;
+    args.push(pageSize, (page-1)*pageSize);
+    const rows = (await c.query(
+      `select p.*, l.amount as loan_amount, i.due_date::text as ins_due, m.member_no,
+              (select v.value from member_field_values v join field_definitions d on d.id=v.field_definition_id
+               where v.member_id=p.member_id order by d.sort_order, d.id limit 1) as member_name,
+              ((select count(*) from installments x where x.loan_id=p.loan_id and x.due_date <= i.due_date)) as ins_no
+       from payments p
+       join loans l on l.id=p.loan_id
+       join members m on m.id=p.member_id
+       left join installments i on i.id=p.installment_id
+       where ${where.join(' and ')}
+       order by p.created_at desc, p.id desc
+       limit $${args.length-1} offset $${args.length}`, args)).rows;
+    return { total, page, pageSize, rows };
   });
-  res.json({ payments: rows });
+  res.json({ ...out, payments: out.rows });
 }));
 
 // POST payment — تخصیص خودکار و صفی: مبلغ به‌ترتیب روی قدیمی‌ترین قسط باز می‌نشیند
