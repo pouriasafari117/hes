@@ -4747,6 +4747,7 @@ async function srvLoadMembersData(){
       '<td><span class="badge b-gray">'+esc(m.member_no||'')+'</span></td>' +
       '<td>'+st+'</td>' +
       '<td><div class="row-actions"><button class="x-btn" data-tip="مشاهده" data-view="'+m.id+'">'+icon('eye',15)+'</button>' +
+        '<button class="x-btn" data-tip="ثبت وام برای این عضو" data-loan="'+m.id+'">'+icon('loan',15)+'</button>' +
         '<button class="x-btn" data-tip="ویرایش" data-edit="'+m.id+'">'+icon('pen',15)+'</button>' +
         '<button class="x-btn" data-tip="حذف" data-del="'+m.id+'">'+icon('trash',15)+'</button></div></td>' +
     '</tr>';
@@ -4762,6 +4763,7 @@ async function srvLoadMembersData(){
     '</div>';
 
   box.querySelectorAll('[data-view]').forEach(b=> b.onclick = ()=> srvViewMember(b.dataset.view, data.rows));
+  box.querySelectorAll('[data-loan]').forEach(b=> b.onclick = ()=> srvLoanForm(parseInt(b.dataset.loan,10)));
   box.querySelectorAll('[data-edit]').forEach(b=> b.onclick = ()=> { const m=data.rows.find(x=>String(x.id)===String(b.dataset.edit)); if(m) srvMemberForm(m); });
   box.querySelectorAll('[data-del]').forEach(b=> b.onclick = async ()=> {
     const m=data.rows.find(x=>String(x.id)===String(b.dataset.del));
@@ -4957,15 +4959,26 @@ function srvMemberForm(m){
 async function renderSrvDashboard(){
   const main = $('#main');
   main.innerHTML =
-    '<div class="page-head"><div><h1>داشبورد</h1></div></div>' +
+    '<div class="page-head"><div><h1>داشبورد</h1>' +
+    '<div class="ph-sub" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:6px">' +
+      '<b style="font-size:.92rem;color:var(--ink)">' + esc(SRV.instName||'مؤسسه') + '</b><span style="color:var(--ink-2)">·</span><b style="font-weight:700">'+J.fmtLong(J.todayIso())+'</b>' +
+      '<span style="display:inline-flex;gap:6px;margin-inline-start:auto">' +
+        '<button class="btn btn-soft btn-xs" id="srvDashAddMember" style="border-radius:16px">'+icon('plus',13)+' افزودن عضو</button>' +
+        '<button class="btn btn-soft btn-xs" id="srvDashAddLoan" style="border-radius:16px">'+icon('loan',13)+' ثبت وام</button>' +
+        '<button class="btn btn-soft btn-xs" id="srvDashAddPay" style="border-radius:16px">'+icon('coins',13)+' ثبت پرداخت</button>' +
+      '</span></div></div></div>' +
     '<div class="grid g-stats" id="srvStats"><div class="stat"><div class="stat-top">در حال دریافت آمار…</div><div class="stat-val">—</div></div></div>' +
     '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت اقساط</h3><span class="hint-t">توزیع اقساط بر اساس وضعیت</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvIns"></canvas></div><div class="legend" id="chSrvInsLg"></div></div></div>' +
     '<div class="card"><div class="card-h"><h3>گردش مالی ۱۲ ماه اخیر</h3><span class="hint-t">وام‌ها و پرداخت‌ها</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvFlow"></canvas></div><div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>وام‌ها</span><span class="lg-i"><i style="background:#9CCB3C"></i>پرداخت‌ها</span></div></div></div></div>' +
-    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>آخرین اعضا</h3><a class="btn btn-soft btn-sm" href="#/app/members">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashMembers"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>آخرین تراکنش‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/txns">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashTxns"><p class="hint-t">در حال دریافت…</p></div></div>' +
     '<div class="card tight"><div class="card-h"><h3>آخرین وام‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/loans">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashLoans"><p class="hint-t">در حال دریافت…</p></div></div></div>' +
-    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>اقساط</h3></div><div class="card-b" id="srvDashIns"><p class="hint-t">در حال دریافت…</p></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>اقساط نزدیک به سررسید</h3><a class="btn btn-soft btn-sm" href="#/app/installments">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashIns"><p class="hint-t">در حال دریافت…</p></div></div>' +
     '<div class="card"><div class="card-h"><h3>خلاصه مالی</h3></div><div class="card-b" id="srvDashFinance"></div></div></div>';
 
+  { const b1=$('#srvDashAddMember'); if(b1) b1.onclick = ()=>{ if(typeof srvMemberForm==='function') srvMemberForm(); };
+    const b2=$('#srvDashAddLoan'); if(b2) b2.onclick = ()=>{ if(typeof srvLoanForm==='function') srvLoanForm(); };
+    const b3=$('#srvDashAddPay'); if(b3) b3.onclick = ()=>{ if(typeof srvPaymentForm==='function') srvPaymentForm(); };
+  }
   try {
     const stats = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/stats');
     const stat = (cls, ic, label, val, sub) =>
@@ -5010,23 +5023,42 @@ async function renderSrvDashboard(){
       {name:'پرداخت‌ها', color:'#9CCB3C', values: payVals.length?payVals:[0,0,0,0,0,0]}
     ]);
 
-    // recent members
-    const rmBox = $('#srvDashMembers');
-    if(rmBox){
-      if(!stats.recent.members.length) rmBox.innerHTML='<p class="hint-t">عضوی ثبت نشده.</p>';
-      else rmBox.innerHTML='<div class="mini-list">'+stats.recent.members.map(m=>'<div class="mini-item"><span class="avatar sz-34">'+esc((m.name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(m.name||'—')+'</b><span>'+esc(m.member_no||'')+' · '+J.fmt(m.created_at||'')+'</span></span><span class="mi-v">'+(m.status==='active'?'فعال':'غیرفعال')+'</span></div>').join('')+'</div>';
-    }
+    // آخرین تراکنش‌ها — زنده از DB
+    (async()=>{
+      const txBox = $('#srvDashTxns');
+      if(!txBox) return;
+      try {
+        const tData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/txns?page=1&pageSize=5');
+        const rows = tData.rows||[];
+        if(!rows.length){ txBox.innerHTML='<p class="hint-t">تراکنشی ثبت نشده.</p>'; return; }
+        txBox.innerHTML = '<div class="mini-list">'+rows.map(t=>{
+          const dep = t.type==='deposit' || t.type==='repayment';
+          return '<div class="mini-item"><span class="avatar sz-34" style="background:'+(dep?'var(--green-bg)':'var(--red-bg)')+'" title="'+esc(faTxnType(t.type))+'">'+icon(dep?'download':'upload',14)+'</span><span class="mi-t"><b>'+esc(t.description||faTxnType(t.type))+'</b><span>'+(t.account_name?esc(t.account_name)+' · ':'')+J.fmt(t.created_at||'')+'</span></span><span class="mi-v '+(dep?'pos':'neg')+'">'+(dep?'+':'−')+' '+fmtN(t.amount)+'</span></div>';
+        }).join('')+'</div>';
+      } catch(e){ txBox.innerHTML = '<p class="hint-t">'+esc(e.message)+'</p>'; }
+    })();
     // recent loans
     const rlBox = $('#srvDashLoans');
     if(rlBox){
       if(!stats.recent.loans.length) rlBox.innerHTML='<p class="hint-t">وامی ثبت نشده. از منوی وام‌ها ثبت کنید.</p>';
       else rlBox.innerHTML='<div class="mini-list">'+stats.recent.loans.map(l=>'<div class="mini-item"><span class="avatar sz-34 teal">'+esc((l.member_name||'؟').charAt(0))+'</span><span class="mi-t"><b>'+esc(l.member_name||'عضو #'+l.member_id)+'</b><span>'+fmtMShort(l.amount)+' · '+J.fmt(l.created_at||'')+'</span></span><span class="mi-v">'+faLoanStatus(l.status)+'</span></div>').join('')+'</div>';
     }
-    // installments
-    const insBox = $('#srvDashIns');
-    if(insBox){
-      insBox.innerHTML = '<div class="mini-list"><div class="mini-item"><span class="avatar sz-34 amber">'+icon('clock',15)+'</span><span class="mi-t"><b>اقساط در انتظار</b><span>'+faDigits(stats.installments.pending)+' قسط</span></span><span class="mi-v">'+fmtMShort(stats.installments.totalPendingAmount)+'</span></div><div class="mini-item"><span class="avatar sz-34" style="background:var(--red-bg)">'+icon('warn',15)+'</span><span class="mi-t"><b>اقساط معوق</b><span>'+faDigits(stats.installments.overdue)+' قسط</span></span><span class="mi-v neg">'+faDigits(stats.installments.overdue)+'</span></div><div class="mini-item"><span class="avatar sz-34" style="background:var(--green-bg)">'+icon('check',15)+'</span><span class="mi-t"><b>پرداخت‌شده</b><span>'+faDigits(stats.installments.paid)+' قسط</span></span><span class="mi-v pos">'+faDigits(stats.installments.paid)+'</span></div></div>';
-    }
+    // اقساط نزدیک به سررسید — سررسید تا ۳۰ روز آینده، زنده از DB
+    (async()=>{
+      const insBox = $('#srvDashIns');
+      if(!insBox) return;
+      try {
+        const iData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/installments?status=dueSoon&page=1&pageSize=6');
+        const rows = iData.rows||[];
+        const head = '<div style="display:flex;gap:12px;font-size:.78rem;color:var(--ink-2);padding:2px 4px 8px"><span>'+faDigits(stats.installments.pending)+' در انتظار کلی</span><span style="color:var(--red)">'+faDigits(stats.installments.overdue)+' معوق</span></div>';
+        if(!rows.length){ insBox.innerHTML = head + '<p class="hint-t" style="padding:4px">قسطِ سررسیدنزدیکی نیست — همه مرتب‌اند. 🌿</p>'; return; }
+        insBox.innerHTML = head + '<div class="mini-list">'+rows.map(i=>
+          '<div class="mini-item"><span class="avatar sz-34 amber">'+icon('clock',14)+'</span><span class="mi-t"><b>'+esc(i.member_name||('عضو #'+i.member_id))+'</b><span>قسط '+faDigits(i.no)+' · '+faDigits(Math.max(0, J.diffDays(J.todayIso(), i.due_date)))+' روز مانده · '+J.fmtLong(i.due_date)+'</span></span><span class="mi-v">'+fmtN(i.amount)+'</span></div>'
+        ).join('')+'</div>';
+      } catch(e){
+        insBox.innerHTML = '<p class="hint-t">'+esc(e.message)+'</p>';
+      }
+    })();
     // finance summary
     const finBox = $('#srvDashFinance');
     if(finBox){
