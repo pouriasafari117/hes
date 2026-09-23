@@ -1619,28 +1619,18 @@ async function toggleMember(id){
 /* فرم افزودن/ویرایش عضو — فقط ۵ فیلد طبق PSD */
 function memberForm(member){
   const isEdit = !!member;
-  const secH = (n, ic, title) => '<div class="m-sec-h"><span class="sn">'+n+'</span>'+icon(ic,15)+' '+title+'</div>';
   const m = openModal({
     title: isEdit ? 'ویرایش عضو' : 'افزودن عضو جدید',
     sub: isEdit ? esc(member.name) + ' · ' + esc(member.memberNo) : 'اطلاعات هویتی عضو جدید',
     size:'lg',
     body:
-      '<div class="m-sec t-green">' + secH('۱','user','مشخصات هویتی') +
-        '<div class="m-sec-b"><div class="fields">' +
+      '<div class="fields" id="mfGrid">' +
           '<div class="field"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="mfName" value="'+esc(isEdit?member.name:'')+'"><span class="err-msg"></span></div>' +
           '<div class="field"><label>نام پدر</label><input id="mfFather" value="'+esc(isEdit?member.father:'')+'"></div>' +
           '<div class="field"><label>تاریخ تولد'+(fieldReq('birthDate')?' <span class="req">*</span>':'')+'</label><input id="mfBirth" value="'+(isEdit?faDigits(member.birthDate):'')+'" data-iso="'+(isEdit&&/^\\d{4}-\\d{2}-\\d{2}$/.test(member.birthDate)?member.birthDate:'')+'" placeholder="۱۳۷۵/۰۴/۰۲"><span class="err-msg"></span><span class="help">از تقویم شمسی انتخاب کنید یا تایپ نمایید.</span></div>' +
-        '</div></div>' +
-      '</div>' +
-      '<div class="m-sec t-amber">' + secH('۲','send','اطلاعات تماس و شناسنامه‌ای') +
-        '<div class="m-sec-b"><div class="fields">' +
           '<div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="mfMobile" class="num-inp" value="'+esc(isEdit?member.mobile:'')+'" placeholder="0912xxxxxxx" maxlength="11"><span class="err-msg"></span><span class="help">هر فرمتی (۰۹۱۲…، +98 912…، ۹۱۲…) قبول است — خودکار مرتب می‌شود.</span></div>' +
           '<div class="field"><label>کد ملی <span class="req">*</span></label><input id="mfNid" class="num-inp" value="'+esc(isEdit?member.nationalId:'')+'" maxlength="10" placeholder="۱۰ رقم"><span class="err-msg"></span></div>' +
           (!isEdit ? '<div class="field"><label>شماره عضویت</label><input id="mfNo" value="'+esc(DB.settings.memberNoTemplate.replace(/\\{seq(?::(\\d+))?\\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'" disabled style="background:var(--card-2)"><span class="help">خودکار، از قالب شماره‌گذاری تنظیمات.</span></div>' : '') +
-        '</div></div>' +
-      '</div>' +
-      '<div class="m-sec t-blue" id="mfSecCustom" style="display:none">' + secH('۳','filter','اطلاعات تکمیلی (فیلدهای سفارشی مؤسسه)') +
-        '<div class="m-sec-b"><div class="fields" id="mfSec3"></div></div>' +
       '</div>' +
     (isEdit ? '<div class="alert a-info" style="margin-top:14px"><span class="al-ic">'+icon('info',16)+'</span><div>تاریخ عضویت: <b>'+J.fmtLong(member.joinedAt)+'</b> — شماره عضویت <b>'+esc(member.memberNo)+'</b> قابل تغییر نیست.</div></div>' : ''),
     foot: '<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="mfSave">'+icon('check',14)+' ذخیره '+(isEdit?'تغییرات':'عضو')+'</button>',
@@ -1651,11 +1641,10 @@ function memberForm(member){
       });
       const _cf = FIELDS().filter(f=>!f.core);
       if(_cf.length){
-        const holder=h.el.querySelector('#mfSec3');
+        const holder=h.el.querySelector('#mfGrid');
         const mk=document.createElement('div');
         mk.innerHTML=_cf.map(f=>'<div class="field"><label>'+esc(f.label)+(f.req?' <span class="req">*</span>':'')+'</label><input id="mf_x_'+f.key+'"'+(f.type==='num'?' class="num-inp"':'')+' value="'+esc(isEdit?String((member.x||{})[f.key]||''):'')+'"><span class="err-msg"></span></div>').join('');
         while(mk.firstChild) holder.appendChild(mk.firstChild);
-        h.el.querySelector('#mfSecCustom').style.display = '';
       }
       attachJDate(h.el.querySelector('#mfBirth'));
       if(isEdit && member.birthDate){ const j = J.parse(member.birthDate); if(j) setJd(h.el.querySelector('#mfBirth'), J.j2iso(j.jy,j.jm,j.jd)); }
@@ -3430,7 +3419,8 @@ function renderDataSec(box){
       if(!ok) return;
       DB.members = []; DB.loans = []; DB.installments = []; DB.payments = [];
       DB.txns = []; DB.funds = []; DB.accounts = [];
-      DB.audit = []; DB.importTemplates = []; DB.counters.member = 0;
+      DB.audit = []; DB.importTemplates = [];
+      DB.counters.member = 0; DB.counters.loan = 0; /* ری‌است کامل شمارنده‌ها؛ وام/عضو بعدی دوباره از یک شروع می‌شود */
       saveDb();
       audit('شروع از صفر — پاک‌سازی کامل داده‌ها توسط '+SESSION.name, 'settings');
       saveDb(); toast('سامانه از صفر شروع شد؛ همه داده‌ها پاک شد.','ok'); route(); renderShell('settings');
@@ -4816,11 +4806,8 @@ function srvMemberForm(m){
     });
     fields.forEach(f=>{ if(!sorted.includes(f)) sorted.push(f); });
 
-    // تقسیم به 3 بخش زیبا
-    const chunk = Math.ceil(sorted.length/3) || 1;
-    const sec1 = sorted.slice(0,chunk).map(f=>makeInput(f, vals[f.key]||'')).join('');
-    const sec2 = sorted.slice(chunk, chunk*2).map(f=>makeInput(f, vals[f.key]||'')).join('');
-    const sec3 = sorted.slice(chunk*2).map(f=>makeInput(f, vals[f.key]||'')).join('');
+    // همهٔ فیلدها پشت سر هم در یک گرید — بدون سکشن و فاصله
+    const allFields = sorted.map(f=>makeInput(f, vals[f.key]||'')).join('');
 
     const totalFields = fields.length;
 
@@ -4829,9 +4816,7 @@ function srvMemberForm(m){
       sub: isEdit ? esc(Object.values(vals)[0]||'')+' · '+esc(m.member_no||'')+' · '+faDigits(totalFields)+' فیلد' : 'حالت سرور — '+faDigits(totalFields)+' فیلد از تنظیمات — فیلد جدید اضافه کردی؟ همینجا ظاهر میشه (کش پاک شد)',
       size:'lg',
       body: '<div class="alert a-info" style="border-radius:12px;margin-bottom:16px"><span class="al-ic">'+icon('info',16)+'</span><div><b>فیلد جدید اضافه کردی؟</b> کش پاک شد — الان <b>'+faDigits(totalFields)+' فیلد</b> از DB لود شد. اگر فیلد جدید نمی‌بینی، صفحه را رفرش کن.</div></div>' +
-            '<div class="m-sec t-green"><div class="m-sec-h"><span class="sn">۱</span> مشخصات فردی</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec1+'</div></div></div>' +
-            (sec2 ? '<div class="m-sec t-amber" style="margin-top:14px"><div class="m-sec-h"><span class="sn">۲</span> اطلاعات تماس</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec2+'</div></div></div>' : '') +
-            (sec3 ? '<div class="m-sec t-blue" style="margin-top:14px"><div class="m-sec-h"><span class="sn">۳</span> سایر اطلاعات سفارشی</div><div class="m-sec-b"><div class="fields" style="gap:16px">'+sec3+'</div></div></div>' : '') +
+            '<div class="fields" style="gap:16px">'+allFields+'</div>' +
             '<div id="srvFormErr" style="display:none;color:var(--red);font-size:13px;margin-top:14px;padding:12px;background:#ffebee;border:1px solid #ffcdd2;border-radius:12px"></div>',
       foot: '<button class="btn btn-ghost btn-sm" data-x style="border-radius:12px">انصراف</button><button class="btn btn-solid btn-sm" id="srvMemSave" style="border-radius:12px;padding:11px 20px;box-shadow:0 4px 12px rgba(28,110,49,.3)">'+icon('check',14)+' '+(isEdit?'ذخیره تغییرات':'ثبت عضو')+'</button>',
       onOpen(h){
