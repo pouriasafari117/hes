@@ -2333,158 +2333,141 @@ function renderInsTable(){
 SHORTCUTS.paymentAdd = ()=> paymentForm();
 
 /* فرم ثبت پرداخت — با تشخیص ناقص/اضافه/تکراری */
+/* رسید پرداخت صفی — فهرست اقساط پوشش‌داده‌شده و ماندهٔ پس از پرداخت (دمو و سرور) */
+function payReceipt(o){
+  const lbl = a => (typeof a.no === 'number' ? 'قسط '+faDigits(a.no) : String(a.no));
+  const rows = (o.alloc||[]).map(a =>
+    '<div class="pq-row done"><span class="pq-n">'+icon('calendar',13)+' '+esc(lbl(a))+'</span>' +
+    '<span class="pq-m">'+fmtN(a.take)+'</span>' +
+    '<span class="pq-tick">'+(a.full ? icon('check',13)+' کامل شد' : 'جزئی شد')+'</span></div>').join('');
+  openModal({ size:'sm', title:o.title||'رسید پرداخت', sub:o.sub||'',
+    body:'<div class="pq-box">'+(rows||'<div class="pq-empty">تخصیصی ثبت نشد.</div>') +
+      '<div class="pq-row pq-total"><span class="pq-n">'+icon('wallet',13)+' ماندهٔ بدهی پس از این پرداخت</span><b class="pq-m">'+(o.remainAfter>0?fmtN(o.remainAfter)+' '+CUR():'صفر — تسویه کامل ✅')+'</b></div></div>',
+    foot:'<button class="btn btn-solid btn-sm" data-x style="min-width:130px">'+icon('check',14)+' متوجه شدم</button>',
+    onOpen(h){ h.el.querySelector('[data-x]').onclick=()=>h.close(); }
+  });
+}
 function paymentForm(presetLoanId, presetInsId){
-  /* فقط وام‌های تسویه‌نشده — با رسیدن مجموع پرداخت‌ها به مبلغ وام، وام از لیست بیرون می‌رود */
+  /* پرداخت صفی: فیلد انتخاب قسط برداشته شد — مبلغ به‌ترتیب از «اولین قسط باز» تخصیص می‌یابد
+     و بزرگ‌تر از «ماندهٔ قابل‌پرداخت» پذیرفته نمی‌شود تا بدهی هرگز منفی نشود */
   const activeLoans = DB.loans.filter(l => { const st = loanEffStatus(l); return st === 'active' || st === 'overdue'; });
   const accs = DB.accounts.filter(a => a.status === 'active');
   const m = openModal({
-    title:'ثبت پرداخت قسط', sub:'موفق، ناقص، اضافه‌پرداخت و تکراری به‌صورت خودکار تشخیص داده می‌شود', size:'lg',
+    title:'ثبت پرداخت قسط', sub:'تخصیص خودکار و صفی — از اولین قسط باز به ترتیب جلو می‌رود', size:'lg',
     body: '<div class="fields">' +
-      '<div class="field"><label>وام <span class="req">*</span></label><select id="pfLoan"'+(presetInsId?' disabled':'')+'>' +
+      '<div class="field"><label>وام <span class="req">*</span></label><select id="pfLoan">' +
         '<option value="">— انتخاب وام —</option>' + activeLoans.map(l => { const mm = qMember(l.memberId); return '<option value="'+l.id+'"'+(presetLoanId===l.id?' selected':'')+'>'+esc(mm?mm.name:'—')+' — '+fmtMShort(l.amount)+' '+CUR()+'</option>'; }).join('') + '</select><span class="err-msg"></span></div>' +
-      (presetInsId
-        ? '<div class="field"><label>قسط انتخاب‌شده</label><div class="alert a-info" style="padding:10px 14px"><span class="al-ic">'+icon('calendar',17)+'</span><div id="pfInsInfo" style="line-height:2.1"></div></div></div>'
-        : '<div class="field"><label>قسط <span class="req">*</span></label><select id="pfIns"><option value="">ابتدا وام را انتخاب کنید</option></select><span class="err-msg"></span></div>') +
       '<div class="field"><label>مبلغ پرداخت <small>('+CUR()+')</small> <span class="req">*</span></label><input id="pfAmt" class="num-inp"><span class="err-msg"></span><span class="help" id="pfRemain"></span></div>' +
       '<div class="field"><label>تاریخ پرداخت <span class="req">*</span></label><input id="pfDate"></div>' +
       '<div class="field"><label>حساب دریافت‌کننده <span class="req">*</span></label><select id="pfAcc">'+accs.map(a=>'<option value="'+a.id+'">'+esc(a.name)+' — '+esc((qFund(a.fundId)||{}).name||'')+'</option>').join('')+'</select></div>' +
       '<div class="field"><label>روش پرداخت</label><select id="pfMethod">'+['نقدی','کارت به کارت','حواله','چک','برداشت از سپرده'].map(x=>'<option>'+x+'</option>').join('')+'</select></div>' +
       '<div class="field"><label>شماره پیگیری / مرجع</label><input id="pfRef" class="num-inp" placeholder="مثلاً FIS-6120"></div>' +
       '<div class="field full"><label>توضیحات</label><textarea id="pfNotes" rows="2"></textarea></div>' +
-      '<div class="full" id="pfWarn"></div>' +
+      '<div class="full"><div id="pfQueue" class="pq-box"><div class="pq-empty">وام را انتخاب کنید تا صف اقساط و نحوهٔ تخصیص مبلغ نمایش داده شود.</div></div></div>' +
     '</div>',
     foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="pfSave">'+icon('check',14)+' ثبت پرداخت</button>',
     onOpen(hh){
       const elx = id => hh.el.querySelector(id);
       attachMoney(elx('#pfAmt')); attachJDate(elx('#pfDate')); setJd(elx('#pfDate'), J.todayIso());
-      function fillIns(){
-        if(presetInsId){ updateRemain(); return; }
-        const lid = elx('#pfLoan').value;
-        const sel = elx('#pfIns');
-        if(!lid){ sel.innerHTML = '<option value="">ابتدا وام را انتخاب کنید</option>'; return; }
-        const open = loanInstallments(lid).filter(i => i.paidAmount < i.amount);
-        sel.innerHTML = '<option value="">— انتخاب قسط —</option>' + open.map(i => {
-          const st = insStatus(i);
-          return '<option value="'+i.id+'"'+(presetLoanId && !presetInsId && insStatus(i)!=='paid' && i===open[0] ?' selected':'')+'>قسط '+faDigits(i.no)+' — سررسید '+J.fmt(i.dueDate)+' — مانده '+fmtN(i.amount-i.paidAmount)+' ('+INS_FA[st]+')</option>'; }).join('');
-        if(!open.length) sel.innerHTML = '<option value="">این وام قسط بازی ندارد</option>';
-        updateRemain();
+      const loanOf = ()=> qLoan(elx('#pfLoan').value);
+      const openIns = lid => loanInstallments(lid).filter(i => i.paidAmount < i.amount);
+      const remainOf = l => l ? loanBalance(l) : 0;
+      /* پیش‌نمایش زندهٔ صف: این مبلغ دقیقاً روی کدام اقساط می‌نشیند */
+      function renderQueue(){
+        const box = elx('#pfQueue'), l = loanOf();
+        if(elx('#pfRemain')) elx('#pfRemain').textContent = l ? 'ماندهٔ قابل‌پرداخت: '+fmtN(remainOf(l))+' '+CUR() : '';
+        if(!l){ box.innerHTML = '<div class="pq-empty">وام را انتخاب کنید تا صف اقساط و نحوهٔ تخصیص مبلغ نمایش داده شود.</div>'; return; }
+        const amt = moneyVal(elx('#pfAmt')), rem = remainOf(l), open = openIns(l.id);
+        if(!open.length){ box.innerHTML = '<div class="pq-empty">این وام قسط بازی ندارد.</div>'; return; }
+        let left = Math.min(amt, rem), rows = '';
+        open.forEach(i => {
+          const need = i.amount - i.paidAmount;
+          const take = Math.max(0, Math.min(need, left)); if(take > 0) left -= take;
+          const st = take<=0 ? 'wait' : (take >= need ? 'full' : 'part');
+          rows += '<div class="pq-row '+st+'"><span class="pq-n">'+icon('calendar',13)+' قسط '+faDigits(i.no)+'</span>' +
+                  '<span class="pq-m">'+fmtN(need)+'</span>' +
+                  '<span class="pq-tick">'+(st==='full' ? icon('check',13)+' کامل می‌شود' : st==='part' ? 'جزئی — '+fmtN(take) : 'در انتظار')+'</span></div>';
+        });
+        box.innerHTML = '<div class="pq-head"><b>تخصیص خودکار مبلغ — صف اقساط</b><span class="pq-rem">مانده پس از این پرداخت: <b>'+fmtN(Math.max(0, rem - Math.min(amt, rem)))+'</b> '+CUR()+'</span></div>' + rows +
+          (amt > rem ? '<div class="pq-over">'+icon('warn',15)+' مبلغ بیشتر از مانده است؛ سقف واریز <b>'+fmtN(rem)+' '+CUR()+'</b></div>' : '');
       }
-      function curIns(){ return DB.installments.find(i => i.id === (presetInsId || (elx('#pfIns') ? elx('#pfIns').value : ''))); }
-      function updateRemain(){
-        const i = curIns();
-        const box = elx('#pfWarn'); box.innerHTML = '';
-        elx('#pfRemain').textContent = i ? 'مانده این قسط: '+fmtN(i.amount-i.paidAmount)+' '+CUR() : '';
-        if(i && moneyVal(elx('#pfAmt')) === 0) setMoney(elx('#pfAmt'), i.amount - i.paidAmount);
-        const amt = moneyVal(elx('#pfAmt'));
-        if(i && amt > 0){
-          const remain = i.amount - i.paidAmount;
-          if(amt > remain){
-            box.innerHTML = '<div class="alert a-warn"><span class="al-ic">'+icon('warn',17)+'</span><div><b>اضافه‌پرداخت:</b> مبلغ واردشده '+fmtN(amt-remain)+' '+CUR()+' بیشتر از مانده قسط است. مقدار اضافه به قسط بعدی منظور می‌شود.</div></div>';
-          }
-        }
+      function defaultFill(){
+        const l = loanOf(); if(!l){ renderQueue(); return; }
+        const open = openIns(l.id);
+        let pre = open[0] ? (open[0].amount - open[0].paidAmount) : 0;
+        if(presetInsId){ const pi = open.find(x=>x.id===presetInsId); if(pi) pre = pi.amount - pi.paidAmount; }
+        setMoney(elx('#pfAmt'), pre);
+        renderQueue();
       }
-      elx('#pfLoan').addEventListener('change', fillIns);
-      if(!presetInsId) elx('#pfIns').addEventListener('change', ()=>{ const i = curIns(); if(i) setMoney(elx('#pfAmt'), i.amount - i.paidAmount); updateRemain(); });
-      elx('#pfAmt').addEventListener('input', updateRemain);
-      fillIns();
-      if(presetInsId){
-        /* قسط از قبل انتخاب شده — فقط خلاصه‌اش نشان داده می‌شود */
-        const insP = curIns();
-        if(insP){
-          const loanP = qLoan(insP.loanId), memP = qMember(loanP.memberId);
-          hh.el.querySelector('#pfInsInfo').innerHTML =
-            '<b>قسط '+faDigits(insP.no)+'</b> از '+faDigits(loanP.months)+' — '+esc(memP?memP.name:'—')+'<br>' +
-            'سررسید: '+J.fmt(insP.dueDate)+' · مانده: <b>'+fmtN(insP.amount-insP.paidAmount)+' '+CUR()+'</b>';
-          setMoney(elx('#pfAmt'), insP.amount - insP.paidAmount);
-        }
-        updateRemain();
-      } else if(presetLoanId && moneyVal(elx('#pfAmt'))===0){
-        const i = curIns(); if(i) setMoney(elx('#pfAmt'), i.amount - i.paidAmount);
-        updateRemain();
-      }
+      elx('#pfLoan').addEventListener('change', defaultFill);
+      elx('#pfAmt').addEventListener('input', renderQueue);
+      defaultFill();
 
       hh.el.querySelector('[data-x]').onclick = ()=> hh.close();
       hh.el.querySelector('#pfSave').onclick = ()=> commitPay();
 
       async function commitPay(){
-        const lid = elx('#pfLoan').value;
-        const insId = presetInsId || (elx('#pfIns') ? elx('#pfIns').value : '');
+        const l = loanOf();
         const amt = moneyVal(elx('#pfAmt')), dateIso = jdVal(elx('#pfDate'));
         let okf = true;
         const need = (cond, inp, msg)=>{ if(cond) clearErr(inp); else { markErr(inp,msg); okf=false; } };
-        need(lid, elx('#pfLoan'), 'وام را انتخاب کنید.');
-        need(insId, elx('#pfIns')||elx('#pfLoan'), 'قسط را انتخاب کنید.');
+        need(l, elx('#pfLoan'), 'وام را انتخاب کنید.');
         need(amt > 0, elx('#pfAmt'), 'مبلغ پرداخت را وارد کنید.');
         need(!!dateIso, elx('#pfDate'), 'تاریخ پرداخت معتبر نیست.');
         if(!okf){ toast('برخی فیلدها ناقص است.','err'); return; }
-        const ins = curIns(), loan = qLoan(lid), member = qMember(loan.memberId);
-        /* وام تسویه‌نشده باید بماند: اگر با رسیدن به مبلغ وام تسویه شده، پرداخت جدید قابل قبول نیست */
-        if(loanEffStatus(loan) === 'paid'){
-          toast('این وام پیش‌تر به‌طور کامل تسویه شده و قابل واریز نیست.','warn');
-          return;
-        }
+        const member = qMember(l.memberId);
+        if(loanEffStatus(l) === 'paid'){ toast('این وام پیش‌تر به‌طور کامل تسویه شده و قابل واریز نیست.','warn'); return; }
+        const rem = remainOf(l);
+        if(rem <= 0){ toast('این وام ماندهٔ قابل‌پرداختی ندارد.','warn'); return; }
+        if(amt > rem){ markErr(elx('#pfAmt'), 'بیشتر از مانده نمی‌توانی واریز کنی — سقف '+fmtN(rem)+' '+CUR()+' است.'); toast('بیشتر از ماندهٔ وام قابل واریز نیست.','err'); renderQueue(); return; }
         const ref = fieldVal(elx('#pfRef'));
-        /* تشخیص پرداخت تکراری */
         if(ref){
-          const dup = DB.payments.find(p => p.loanId === lid && p.ref.trim() === ref.trim());
+          const dup = DB.payments.find(p => p.loanId === l.id && p.ref.trim() === ref.trim());
           if(dup){
             const ok = await askConfirm({title:'پرداخت تکراری', danger:true, ok:'به هر حال ثبت شود',
               text:'پرداختی با مرجع <b>'+esc(ref)+'</b> قبلاً برای همین وام ثبت شده است ('+J.fmt(dup.date)+'، '+fmtM(dup.amount)+'). ادامه می‌دهید؟'});
             if(!ok) return;
           }
         }
-        const remain = ins.amount - ins.paidAmount;
-        let extra = 0, applied = amt;
-        if(amt > remain){ extra = amt - remain; applied = remain; }
-        /* ثبت روی قسط انتخابی */
-        ins.paidAmount += applied;
-        if(ins.paidAmount >= ins.amount){ ins.paidAmount = ins.amount; ins.paidDate = dateIso; }
-        /* اضافه‌پرداخت → به‌طور آبشاری روی «همهٔ» اقساط بعدی پخش می‌شود
-           تا با یک پرداخت بزرگ، وام کاملاً تسویه شود و واریز ادامه پیدا نکند */
-        let extraNote = '';
-        if(extra > 0){
-          const nexts = loanInstallments(lid).filter(i => i.paidAmount < i.amount);
-          let covered = 0;
-          for(const nx of nexts){
-            if(extra <= 0) break;
-            const take = Math.min(nx.amount - nx.paidAmount, extra);
-            nx.paidAmount += take; extra -= take; covered++;
-            if(nx.paidAmount >= nx.amount){ nx.paidAmount = nx.amount; nx.paidDate = dateIso; }
-          }
-          extraNote = covered > 0
-            ? ' اضافه‌پرداخت به '+faDigits(covered)+' قسط بعدی منظور شد.'
-            : ' اضافه‌پرداخت به‌عنوان بستانکاری عضو نزد صندوق ماند.';
-        }
+        /* تخصیص صفی: از اولین قسط باز، هر قسط فقط تا سقف ماندهٔ خودش — نه ریال اضافه */
+        let left = amt; const alloc = [];
+        openIns(l.id).forEach(i => {
+          if(left <= 0) return;
+          const nd = i.amount - i.paidAmount;
+          const take = Math.min(nd, left);
+          i.paidAmount += take; left -= take;
+          if(i.paidAmount >= i.amount){ i.paidAmount = i.amount; i.paidDate = dateIso; }
+          alloc.push({ id:i.id, no:i.no, take, full:(i.paidAmount >= i.amount) });
+        });
+        const firstNo = alloc.length ? alloc[0].no : '';
         const accId = elx('#pfAcc').value;
         const acc = qAccount(accId);
-        DB.payments.push({ id:uid('p'), loanId:lid, installmentId:insId, amount:amt, date:dateIso, accountId:accId,
-          method:elx('#pfMethod').value, ref:ref||('FIS-'+(5000+DB.payments.length+1)), notes:fieldVal(elx('#pfNotes')), user:SESSION.name, createdAt:J.nowIso() });
+        DB.payments.push({ id:uid('p'), loanId:l.id, installmentId:(alloc[0]||{}).id||'', amount:amt, date:dateIso, accountId:accId,
+          method:elx('#pfMethod').value, ref:ref||('FIS-'+(5000+DB.payments.length+1)), notes:fieldVal(elx('#pfNotes')), user:SESSION.name, createdAt:J.nowIso(),
+          alloc: alloc.map(a => ({insId:a.id, no:a.no, take:a.take, full:a.full})) });
         DB.txns.push({ id:uid('tx'), accountId:accId, type:'deposit', amount:amt, at:dateIso+' 12:00',
-          ref:'FIS-'+(5000+DB.payments.length), tracking:'', notes:'بازپرداخت قسط '+faDigits(ins.no)+' — '+(member?member.name:''), user:SESSION.name });
+          ref:'FIS-'+(5000+DB.payments.length), tracking:'', notes:'بازپرداخت '+(alloc.length>1 ? faDigits(alloc.length)+' قسط' : 'قسط '+faDigits(firstNo))+' — '+(member?member.name:''), user:SESSION.name });
         acc.balance += amt;
-        audit('ثبت پرداخت '+fmtM(amt)+' قسط '+faDigits(ins.no)+' وام '+(member?member.name:''), 'loan:'+lid);
-        /* اگر همهٔ اقساط تسویه شد یا مجموع پرداخت‌ها به مبلغ وام رسید، وضعیت وام خودکار «تسویه‌شده» می‌شود و اقساط باز هم رسماً بسته می‌شوند */
+        audit('ثبت پرداخت '+fmtM(amt)+' ('+faDigits(alloc.length)+' قسط) وام '+(member?member.name:''), 'loan:'+l.id);
         let settled = false;
-        if(loan.status === 'active' && loanEffStatus(loan) === 'paid'){
-          loan.status = 'paid'; settled = true;
-          loanInstallments(lid).forEach(i=>{ if(i.paidAmount < i.amount){ i.paidAmount = i.amount; if(!i.paidDate) i.paidDate = dateIso; } });
-          audit('تسویهٔ کامل وام '+(member?member.name:''), 'loan:'+lid);
+        if(l.status === 'active' && loanEffStatus(l) === 'paid'){
+          l.status = 'paid'; settled = true;
+          loanInstallments(l.id).forEach(i=>{ if(i.paidAmount < i.amount){ i.paidAmount = i.amount; if(!i.paidDate) i.paidDate = dateIso; } });
+          audit('تسویهٔ کامل وام '+(member?member.name:''), 'loan:'+l.id);
         }
         saveDb();
-        /* خلاصه وضعیت */
-        const newSt = insStatus(ins);
-        let kind = 'ok', msg = 'پرداخت کامل ثبت شد.';
-        if(settled){ kind = 'ok'; msg = 'پرداخت ثبت شد و وام «'+(member?member.name:'')+'» به‌طور کامل تسویه شد. 🎉'; }
-        if(!settled && applied < amt && extra > 0){ kind = 'warn'; msg = 'اضافه‌پرداخت ثبت شد.' + extraNote; }
-        else if(!settled && amt < remain){ kind = 'warn'; msg = 'پرداخت ناقص ثبت شد؛ مانده قسط '+fmtN(ins.amount-ins.paidAmount)+' '+CUR()+' باقی است.'; }
-        toast(msg, kind);
-        /* مُهر تأیید با رنگ انتخابی از تنظیمات */
-        stampFx({ text: settled ? 'تسویه شد' : (kind==='ok' ? 'پرداخت شد' : 'ثبت شد'),
+        const fullN = alloc.filter(a=>a.full).length, partN = alloc.length - fullN;
+        toast(settled ? 'پرداخت ثبت شد و وام «'+(member?member.name:'')+'» به‌طور کامل تسویه شد. 🎉'
+                      : 'پرداخت ثبت شد — '+faDigits(fullN)+' قسط کامل'+(partN?' + '+faDigits(partN)+' قسط ناقص':'')+'.', 'ok');
+        stampFx({ text: settled ? 'تسویه شد' : 'پرداخت شد',
           sub: fmtM(amt)+' — '+J.fmt(dateIso),
-          color: kind==='ok' ? stampColor('payment') : stampColor('member'),
+          color: stampColor('payment'),
           hold: 1050,
           onDone: ()=>{
             hh.close();
+            payReceipt({ title: settled ? 'وام به‌طور کامل تسویه شد 🎉' : 'رسید پرداخت',
+              sub: (member?member.name:'—')+' · '+fmtM(amt)+' · '+J.fmt(dateIso),
+              alloc, amt, remainAfter: Math.max(0, rem - amt), settled });
             if(location.hash.indexOf('#/app/loans/')===0) route(); else if(location.hash==='#/app/installments'){ renderMembersPage('ins'); renderShell('installments'); }
             else route();
           } });
@@ -5070,7 +5053,7 @@ async function srvLoanDetail(loanId){
     const mName = l.member_name || Object.values(mVals)[0] || ('عضو #'+l.member_id);
 
     const paidSum = pays.reduce((sum,p)=>sum+Number(p.amount||0),0);
-    const bal = Number(l.amount||0) - paidSum;
+    const bal = Math.max(0, Number(l.amount||0) - paidSum);
     const nextIns = ins.find(i=>i.status!=='paid');
 
     // Convert all dates to Shamsi full
@@ -5648,80 +5631,92 @@ async function srvPaymentForm(loanId, installmentId){
   let loanData = null;
   try { loanData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/loans/'+loanId); } catch(e){ toast(e.message,'err'); return; }
   const l = loanData.loan;
-  const insAll = loanData.installments||[];
+  const insAll = (loanData.installments||[]).slice().sort((a,b)=> String(a.due_date||'').localeCompare(String(b.due_date||'')));
+  const pays = loanData.payments||[];
   const mVals = l.member_values||{};
   const mName = l.member_name || Object.values(mVals)[0] || ('عضو #'+l.member_id);
-
-  const pendingIns = insAll.filter(i=>i.status!=='paid');
-  const insOpts = pendingIns.map(i=>{
-    const fullDate = J.fmtLong(i.due_date);
-    return '<option value="'+i.id+'"'+(String(installmentId)===String(i.id)?' selected':'')+'>قسط '+faDigits(pendingIns.indexOf(i)+1)+' — سررسید شمسی: '+fullDate+' — مبلغ '+fmtN(i.amount)+' '+CUR()+'</option>';
-  }).join('');
+  const paidSum = pays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const planTotal = insAll.reduce((s,i)=>s+Number(i.amount||0),0);
+  /* سقف واریز = ماندهٔ واقعی — هرگز بیشتر از آن پرداخت پذیرفته نمی‌شود تا بدهی منفی نشود */
+  const cap = Math.max(0, planTotal - paidSum);
+  const openIns = insAll.filter(i=>i.status!=='paid');
+  let pref = openIns.length ? Number(openIns[0].amount||0) : 0;
+  if(installmentId){ const pi = openIns.find(x=>String(x.id)===String(installmentId)); if(pi) pref = Number(pi.amount||0); }
 
   openModal({
-    title:'ثبت پرداخت قسط — تاریخ شمسی',
-    sub:'وام '+esc(mName)+' — '+fmtM(l.amount)+' — '+faDigits(l.installments_count)+' قسط',
+    title:'ثبت پرداخت قسط — تخصیص خودکار صفی',
+    sub:'وام '+esc(mName)+' — '+fmtM(l.amount)+' — مبلغ به‌ترتیب از اولین قسط باز تخصیص می‌یابد',
     size:'lg',
-    body:'<div class="m-sec"><div class="m-sec-h"><span class="sn">۱</span> اطلاعات وام و عضو — دقیق و مرتبط</div><div class="m-sec-b"><div class="kv-list">'+
+    body:'<div class="m-sec t-green"><div class="m-sec-h"><span class="sn">۱</span> اطلاعات وام و عضو</div><div class="m-sec-b"><div class="kv-list">'+
       '<div class="kv"><span class="k">عضو</span><span class="v"><b>'+esc(mName)+'</b> ('+esc(l.member_no||'')+')</span></div>'+
-      Object.entries(mVals).slice(0,4).map(([k,v])=>'<div class="kv"><span class="k">'+esc(v.label||k)+'</span><span class="v">'+esc(v.value||v||'—')+'</span></div>').join('')+
+      Object.entries(mVals).slice(0,3).map(([k,v])=>'<div class="kv"><span class="k">'+esc(v.label||k)+'</span><span class="v">'+esc(v.value||v||'—')+'</span></div>').join('')+
       '<div class="kv"><span class="k">مبلغ وام</span><span class="v">'+fmtM(l.amount)+'</span></div>'+
-      '<div class="kv"><span class="k">کارمزد</span><span class="v">'+faDigits(l.fee_percent||0)+'%</span></div>'+
-      '<div class="kv"><span class="k">تاریخ ثبت وام شمسی</span><span class="v">'+J.fmtLong(l.created_at||'')+'</span></div>'+
+      '<div class="kv"><span class="k">پرداخت‌شده تا امروز</span><span class="v">'+fmtM(paidSum)+'</span></div>'+
+      '<div class="kv"><span class="k">ماندهٔ قابل‌پرداخت</span><span class="v" style="color:var(--red)">'+fmtM(cap)+'</span></div>'+
     '</div></div></div>'+
-    '<div class="m-sec"><div class="m-sec-h"><span class="sn">۲</span> انتخاب قسط — تاریخ شمسی کامل</div><div class="m-sec-b"><div class="fields">'+
-      '<div class="field full"><label>قسط <span class="req">*</span></label><select id="spfIns">'+(insOpts||'<option value="">قسط بازی وجود ندارد — همه تسویه</option>')+'</select><span class="help">سررسیدها به شمسی کامل با نام ماه نمایش داده می‌شوند</span></div>'+
-    '</div></div></div>'+
-    '<div class="m-sec"><div class="m-sec-h"><span class="sn">۳</span> مبلغ و تاریخ پرداخت شمسی</div><div class="m-sec-b"><div class="fields">'+
-      '<div class="field"><label>مبلغ پرداخت <span class="req">*</span> <small>('+CUR()+')</small></label><input id="spfAmt" class="num-inp" placeholder="مثلاً 5000000"><span class="err-msg"></span></div>'+
+    '<div class="m-sec t-amber"><div class="m-sec-h"><span class="sn">۲</span> مبلغ و تاریخ پرداخت شمسی</div><div class="m-sec-b"><div class="fields">'+
+      '<div class="field"><label>مبلغ پرداخت <span class="req">*</span> <small>('+CUR()+')</small></label><input id="spfAmt" class="num-inp" placeholder="مثلاً ۵٬۰۰۰٬۰۰۰"><span class="err-msg"></span><span class="help" id="spfRemain">سقف واریز: '+fmtN(cap)+' '+CUR()+'</span></div>'+
       '<div class="field"><label>تاریخ پرداخت شمسی <span class="req">*</span></label><input id="spfDate" placeholder="1403/02/15"><span class="help">از تقویم شمسی انتخاب کنید</span><span class="err-msg"></span></div>'+
       '<div class="field"><label>نوع پرداخت</label><select id="spfType"><option value="installment">قسط</option><option value="fee">کارمزد</option><option value="other">سایر</option></select></div>'+
+      '<div class="field full"><div id="spfQueue" class="pq-box"></div></div>'+
       '<div id="spfErr" style="display:none;color:var(--red);font-size:12px;margin-top:8px;padding:10px;background:var(--red-bg);border-radius:8px"></div>'+
     '</div></div></div>',
     foot:'<button class="btn btn-ghost btn-sm" data-x>انصراف</button><button class="btn btn-solid btn-sm" id="spfSave">'+icon('check',14)+' ثبت پرداخت</button>',
     onOpen(h){
       h.el.querySelector('[data-x]').onclick=()=>h.close();
-      if(typeof attachMoney==='function') attachMoney(h.el.querySelector('#spfAmt'));
-      if(typeof attachJDate==='function'){
-        const dEl = h.el.querySelector('#spfDate');
-        if(dEl){ attachJDate(dEl); if(typeof setJd==='function') setJd(dEl, J.todayIso()); }
-      }
-      // Auto fill amount from selected installment
-      const insSel = h.el.querySelector('#spfIns');
       const amtEl = h.el.querySelector('#spfAmt');
-      function fillAmt(){
-        const selId = insSel.value;
-        const ins = insAll.find(x=>String(x.id)===String(selId));
-        if(ins && amtEl){
-          if(typeof setMoney==='function') setMoney(amtEl, ins.amount);
-          else amtEl.value = ins.amount;
-        }
+      if(typeof attachMoney==='function') attachMoney(amtEl);
+      if(typeof setMoney==='function') setMoney(amtEl, pref); else amtEl.value = pref;
+      const dEl = h.el.querySelector('#spfDate');
+      if(typeof attachJDate==='function' && dEl){ attachJDate(dEl); if(typeof setJd==='function') setJd(dEl, J.todayIso()); }
+      const num = v => parseInt(String(v||'').replace(/[^0-9]/g,''))||0;
+      /* پیش‌نمایش زندهٔ صف روی اقساط باز */
+      function renderQueue(){
+        const box = h.el.querySelector('#spfQueue'); if(!box) return;
+        const amt = num(amtEl.value);
+        let left = Math.min(amt, cap), rows = '';
+        openIns.forEach(i => {
+          const need = Number(i.amount||0);
+          const take = Math.max(0, Math.min(need, left)); if(take>0) left -= take;
+          const st = take<=0 ? 'wait' : (take>=need ? 'full' : 'part');
+          rows += '<div class="pq-row '+st+'"><span class="pq-n">'+icon('calendar',13)+' سررسید '+J.fmt(i.due_date)+'</span><span class="pq-m">'+fmtN(need)+'</span><span class="pq-tick">'+(st==='full'?icon('check',13)+' کامل می‌شود':st==='part'?'جزئی — '+fmtN(take):'در انتظار')+'</span></div>';
+        });
+        box.innerHTML = '<div class="pq-head"><b>تخصیص خودکار مبلغ — صف اقساط</b><span class="pq-rem">مانده پس از این پرداخت: <b>'+fmtN(Math.max(0, cap-Math.min(amt,cap)))+'</b> '+CUR()+'</span></div>'+
+          (rows||'<div class="pq-empty">قسط بازی وجود ندارد.</div>')+
+          (amt>cap ? '<div class="pq-over">'+icon('warn',15)+' مبلغ بیشتر از مانده است؛ سقف واریز <b>'+fmtN(cap)+' '+CUR()+'</b></div>':'');
       }
-      if(insSel){ insSel.addEventListener('change', fillAmt); fillAmt(); }
+      amtEl.addEventListener('input', renderQueue);
+      renderQueue();
 
       h.el.querySelector('#spfSave').onclick=async()=>{
-        const amt = h.el.querySelector('#spfAmt').value.replace(/[^0-9]/g,'');
+        const amt = num(amtEl.value);
         const type = h.el.querySelector('#spfType').value;
-        const insId = h.el.querySelector('#spfIns').value;
-        const dateEl = h.el.querySelector('#spfDate');
-        const dateIso = dateEl ? (dateEl.dataset.iso || (typeof jdVal==='function'?jdVal(dateEl):'')) : J.todayIso();
+        const dateIso = dEl ? (dEl.dataset.iso || (typeof jdVal==='function'?jdVal(dEl):'')) : J.todayIso();
         const err = h.el.querySelector('#spfErr');
-        if(!insId){ err.style.display=''; err.textContent='قسط را انتخاب کنید.'; return; }
-        if(!amt){ err.style.display=''; err.textContent='مبلغ را وارد کنید.'; return; }
+        const bad = m => { err.style.display=''; err.textContent=m; };
+        if(!amt){ bad('مبلغ را وارد کنید.'); return; }
+        if(amt > cap){ bad('بیشتر از ماندهٔ وام نمی‌توانی واریز کنی — سقف '+fmtN(cap)+' '+CUR()+' است.'); return; }
+        err.style.display='none';
         const btn = h.el.querySelector('#spfSave'); btn.disabled=true; btn.textContent='در حال ثبت…';
         try {
-          await srvFetch('POST','/api/institutions/'+SRV.instId+'/payments', { loanId:parseInt(loanId), installmentId: parseInt(insId), amount:amt, type });
-          toast('پرداخت ثبت شد — تاریخ شمسی: '+J.fmtLong(dateIso),'ok');
-          if(typeof stampFx==='function') stampFx({ text:'پرداخت شد', sub:fmtM(amt)+' — '+J.fmtLong(dateIso), color:'#1C6E31', hold:1100, onDone:()=>{ h.close(); if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); }});
-          else { h.close(); if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); }
-        } catch(e){ err.style.display=''; err.textContent=e.message; btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت پرداخت'; }
+          const resp = await srvFetch('POST','/api/institutions/'+SRV.instId+'/payments', { loanId:parseInt(loanId), amount:amt, type });
+          const covered = (resp && resp.covered) || [];
+          const settled = !!(resp && resp.settled);
+          const remainAfter = resp && (resp.remaining!==undefined) ? Number(resp.remaining) : Math.max(0, cap-amt);
+          toast(settled ? 'پرداخت ثبت شد و وام به‌طور کامل تسویه شد. 🎉' : 'پرداخت ثبت شد — '+faDigits(covered.length)+' قسط در صف پوشش داده شد.','ok');
+          const done = ()=>{ h.close();
+            payReceipt({ title: settled ? 'وام به‌طور کامل تسویه شد 🎉' : 'رسید پرداخت',
+              sub: mName+' · '+fmtM(amt)+' · '+J.fmt(dateIso||J.todayIso()),
+              alloc: covered.map(cc=>({no:('سررسید '+J.fmt(cc.due||'')), take:cc.take, full:cc.full})),
+              amt, remainAfter, settled });
+            if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); };
+          if(typeof stampFx==='function') stampFx({ text: settled?'تسویه شد':'پرداخت شد', sub:fmtM(amt)+' — '+J.fmtLong(dateIso||J.todayIso()), color:'#1C6E31', hold:1100, onDone:done });
+          else done();
+        } catch(e){ bad(e.message); btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت پرداخت'; }
       };
     }
   });
 }
-
-
-
 
 /* ── گزارش‌ها و تراکنش‌ها — حالت سرور — وصل به DB ── */
 let srvTxnsState = { page:1, type:'all', accountId:'all' };

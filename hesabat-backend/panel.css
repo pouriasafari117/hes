@@ -871,3 +871,20 @@ body.theme-dark .ds-card.on{background:rgba(183,228,94,.06);box-shadow:0 0 0 3px
 .var-it .vamt{height:32px;padding:5px 8px;font-size:.8rem;border-radius:9px}
 .var-sum{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px dashed var(--line);border-top:0;border-radius:0 0 12px 12px;background:var(--card-2);padding:8px 12px;font-size:.8rem}
 body.theme-dark .var-it .vn{background:var(--card);}
+
+/* ═══════════ صف تخصیص مبلغ پرداخت (فرم پرداخت — دمو و سرور) ═══════════ */
+.pq-box{border:1px dashed var(--line);border-radius:12px;background:var(--card);padding:10px 12px;max-height:280px;overflow:auto}
+.pq-empty{font-size:.8rem;color:var(--ink-2);padding:10px 4px;text-align:center}
+.pq-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:.82rem;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.pq-rem{font-size:.76rem;color:var(--ink-2)}
+.pq-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:7px 4px;border-bottom:1px dashed var(--line);font-size:.8rem}
+.pq-row:last-child{border-bottom:none}
+.pq-row.wait{opacity:.45}
+.pq-row.part{background:rgba(217,138,27,.07)}
+.pq-row.full, .pq-row.done{background:rgba(28,110,49,.06)}
+.pq-n{display:inline-flex;align-items:center;gap:5px;min-width:0;font-weight:600}
+.pq-m{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:embed}
+.pq-tick{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;color:var(--green-deep);font-weight:700;white-space:nowrap}
+.pq-row.wait .pq-tick{color:var(--ink-2);font-weight:400}
+.pq-over{display:flex;align-items:center;gap:6px;margin-top:8px;padding:9px 11px;border-radius:10px;background:rgba(179,54,43,.08);color:var(--red);font-size:.78rem;font-weight:600}
+.pq-total{background:var(--card-2);font-weight:700;border-radius:8px}
