@@ -106,6 +106,7 @@ app.use('/api/institutions/:id/accounts', require('./src/routes/accounts'));
 app.use('/api/institutions/:id/payments', require('./src/routes/payments'));
 app.use('/api/institutions/:id/installments', require('./src/routes/installments'));
 app.use('/api/institutions/:id/txns', require('./src/routes/txns'));
+app.use('/api/institutions/:id/reports', require('./src/routes/reports'));
 
 /* سرو کردن فایل‌های پنل + لندینگ — سازگار با Render و Railway
    Railway وقتی Root Directory = hesabat-backend باشه، /app = hesabat-backend

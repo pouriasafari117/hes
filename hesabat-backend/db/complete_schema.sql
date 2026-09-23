@@ -214,6 +214,13 @@ create index if not exists idx_pay_inst on payments(installment_id);
 create index if not exists idx_txns_inst on txns(institution_id);
 create index if not exists idx_txns_acc on txns(account_id);
 
+-- گزارش‌های تحلیلی ماهانه (بخش «گزارش‌ها» پنل): تجمیع بر اساس ماه
+create index if not exists idx_txns_inst_created    on txns(institution_id, created_at);
+create index if not exists idx_pay_inst_created     on payments(institution_id, created_at);
+create index if not exists idx_ins_inst_due         on installments(institution_id, due_date);
+create index if not exists idx_mem_inst_created     on members(institution_id, created_at);
+create index if not exists idx_loans_inst_created   on loans(institution_id, created_at);
+
 -- ── RLS ──
 create or replace function fn_is_member(iid bigint)
 returns boolean language sql stable security definer set search_path = public as $$

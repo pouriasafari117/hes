@@ -5990,7 +5990,7 @@ function srvRenderReportBody(def, D){
 function srvExportCsv(def, D){
   const rows = def.rows(srvRepState.f);
   const fs = srvRepFilterSummary(def);
-  const lines = [];
+  const lines = srvAnalyticsCsvLines();
   lines.push('== '+esc(SRV.instName||'مؤسسه')+' — '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ==');
   lines.push(def.cols.join(','));
   lines.push(rows.map(r => r.map(c => { const s2 = String(c==null?'':c).replace(/"/g,'""'); return /["\,\n]/.test(s2) ? '"'+s2+'"' : s2; }).join(',')).join('\r\n'));
@@ -6011,6 +6011,7 @@ function srvPrintReport(def, D){
     '<div class="pr-head"><h1>'+esc(SRV.instName||'مؤسسه')+' — '+esc(def.title)+'</h1>' +
     '<p>تاریخ تهیه: '+J.fmtLong(J.todayIso())+' · تهیه‌کننده: '+esc((SESSION&&SESSION.name)||'مدیر')+'</p></div>' +
     (fs ? '<div class="pr-filters">فیلترها: '+esc(fs)+'</div>' : '') +
+    srvRepAnalyticsPrintHtml() +
     '<h2 class="pr-h2">'+esc(def.title)+' ('+faDigits(rows.length)+' رکورد)</h2>' +
     '<table><thead><tr>'+def.cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>' +
     rows.map(r=>'<tr>'+r.map(c=>'<td>'+esc(String(c==null?'':c))+'</td>').join('')+'</tr>').join('') + '</tbody></table>' +
@@ -6022,14 +6023,156 @@ function srvPrintReport(def, D){
   setTimeout(done, 3000);
 }
 
+
+/* ═══ تحلیل‌های گزارش سرور — کپی دقیق تب «نمودارها و تحلیل‌ها» دمو ولی دادهٔ زنده از DB ═══ */
+let srvRepPage = 0;          /* ۰ = جدیدترین پنجرهٔ ۱۲ماهه؛ افزایش = قدیمی‌تر */
+let srvRepMonthly = null;    /* آخرین پاسخ GET /reports/summary */
+const SRV_REP_WIN = 12;
+
+function srvRepMonthFmt(m){ return { name: J.MONTHS[m.jm-1], year: faDigits(m.jy), full: J.MONTHS[m.jm-1]+' '+faDigits(m.jy) }; }
+function srvRepWinTitle(M){
+  if(!M || !M.wm.length) return '';
+  const a = srvRepMonthFmt(M.wm[0]), b = srvRepMonthFmt(M.wm[M.wm.length-1]);
+  return (M.wm.length===1) ? a.full : (a.full+' تا '+b.full);
+}
+
+async function srvLoadSrvAnalytics(){
+  const box = $('#srvRepAnalytics');
+  if(!box) return;
+  box.innerHTML = '<div class="card tight"><div class="card-b" style="padding:20px"><p class="hint-t">در حال دریافت تحلیل‌ها از دیتابیس…</p></div></div>';
+  try {
+    const M = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/reports/summary?page='+srvRepPage);
+    M.page = Math.min(M.page, M.maxPage); srvRepPage = M.page;
+    srvRepMonthly = M;
+    srvRenderSrvAnalytics(M);
+  } catch(e){
+    box.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>خطا در دریافت تحلیل‌ها: '+esc(e.message)+'</div></div>';
+  }
+}
+
+function srvRenderSrvAnalytics(M){
+  const box = $('#srvRepAnalytics');
+  const K = M.kpis;
+  const cntFmt = u => v => fmtN(v) + ' ' + u;
+  const stat = (cls, ic, label, val, sub) =>
+    '<div class="stat '+cls+'"><div class="stat-top"><span class="s-ic">'+icon(ic,16)+'</span>'+label+'</div>' +
+    '<div class="stat-val">'+val+'</div>'+(sub?'<div class="stat-sub">'+sub+'</div>':'')+'</div>';
+  const winTitle = srvRepWinTitle(M);
+
+  box.innerHTML =
+    '<div class="grid g-3" style="margin-bottom:14px">' +
+      stat('','users','اعضای مؤسسه', fmtN(K.members), 'مجموع از تأسیس') +
+      stat('s-teal','loan','وام‌های ثبت‌شده', fmtN(K.loans), 'به ارزش '+fmtMShort(K.loansAmt)+' '+CUR()) +
+      stat('s-lime','coins','مجموع دریافتی اقساط', fmtMShort(K.paySum)+' <small>'+CUR()+'</small>', faDigits(K.paysCnt)+' پرداخت در بازه') +
+      stat('','download','مجموع واریزی‌ها', fmtMShort(K.depSum)+' <small>'+CUR()+'</small>', 'به حساب‌ها در بازه') +
+      stat('s-amber','upload','مجموع برداشت‌ها', fmtMShort(K.wdSum)+' <small>'+CUR()+'</small>', 'شامل پرداخت اصل وام‌ها') +
+      stat((K.odNow?'s-red':'s-lime'),'bank','موجودی فعلی صندوق‌ها', fmtMShort(K.curBal)+' <small>'+CUR()+'</small>', (K.odNow?faDigits(K.odNow)+' قسط معوق فعال':'بدون قسط معوق')) +
+    '</div>' +
+
+    (M.hasPager ?
+      '<div class="ch-pager">' +
+        '<button type="button" class="chp-btn" data-srvchp="older"'+(M.page>=M.maxPage?' disabled':'')+'>'+icon('chevE',15)+'ماه‌های قدیمی‌تر</button>' +
+        '<span class="chp-range">'+icon('calendar',14)+winTitle+'<i>ماه '+faDigits(M.winStart+1)+' تا '+faDigits(M.winEnd)+' از '+faDigits(M.totalMonths)+'</i></span>' +
+        '<button type="button" class="chp-btn" data-srvchp="newer"'+(M.page===0?' disabled':'')+'>'+icon('chevS',15)+'ماه‌های جدیدتر</button>' +
+      '</div>' :
+      '<div class="ch-pager chp-only"><span class="chp-range">'+icon('calendar',14)+winTitle+'<i>'+faDigits(M.totalMonths)+' ماه</i></span></div>') +
+
+    '<div class="grid g-2" style="margin-bottom:14px">' +
+      '<div class="card"><div class="card-h"><h3>روند موجودی کل مؤسسه</h3><span class="hint-t">تجمیعی: موجودی اولیه + واریزی‌ها − برداشت‌ها</span></div><div class="card-b">' +
+        '<div class="chart-box" style="height:250px"><canvas id="chSrvBalance"></canvas></div></div></div>' +
+      '<div class="card"><div class="card-h"><h3>گردش مالی ماهانه</h3><span class="hint-t">واریزی و برداشت به تفکیک ماه</span></div><div class="card-b">' +
+        '<div class="chart-box" style="height:250px"><canvas id="chSrvFlowR"></canvas></div>' +
+        '<div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>واریزی</span><span class="lg-i"><i style="background:#D98A1B"></i>برداشت</span></div></div></div>' +
+      '<div class="card"><div class="card-h"><h3>رشد اعضا و وام‌ها</h3><span class="hint-t">تعداد تجمیعی از تأسیس</span></div><div class="card-b">' +
+        '<div class="chart-box" style="height:250px"><canvas id="chSrvGrowth"></canvas></div>' +
+        '<div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>اعضا</span><span class="lg-i"><i style="background:#D98A1B"></i>وام‌ها</span></div></div></div>' +
+      '<div class="card"><div class="card-h"><h3>عملکرد اقساط</h3><span class="hint-t">سررسید و پرداخت ماهانه (تعداد قسط)</span></div><div class="card-b">' +
+        '<div class="chart-box" style="height:250px"><canvas id="chSrvInsPerf"></canvas></div>' +
+        '<div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>پرداخت‌شده</span><span class="lg-i"><i style="background:#E4B54A"></i>سررسیدشده</span><span class="lg-i"><i style="background:#B3362B"></i>معوق (وضعیت فعلی)</span></div></div></div>' +
+    '</div>';
+
+  box.querySelectorAll('[data-srvchp]').forEach(b => b.onclick = ()=>{
+    srvRepPage += (b.dataset.srvchp==='older' ? 1 : -1);
+    srvLoadSrvAnalytics();
+  });
+
+  const fmts = M.wm.map(srvRepMonthFmt);
+  const nameL = fmts.map(f=>f.name), yearL = fmts.map(f=>f.year), fullL = fmts.map(f=>f.full);
+  const cOpts = { subLabels: yearL, fullLabels: fullL };
+  drawLines($('#chSrvBalance'), nameL,
+    [{name:'موجودی کل', color:'#1C6E31', values:M.balWin, fmt:v=>fmtM(v)}], Object.assign({area:true}, cOpts));
+  drawBars($('#chSrvFlowR'), nameL,
+    [{name:'واریزی', color:'#1C6E31', values:M.depWin},
+     {name:'برداشت', color:'#D98A1B', values:M.wdWin}], cOpts);
+  drawLines($('#chSrvGrowth'), nameL,
+    [{name:'اعضا', color:'#1C6E31', values:M.memWin, fmt:cntFmt('نفر')},
+     {name:'وام‌ها', color:'#D98A1B', values:M.loanWin, fmt:cntFmt('وام')}], cOpts);
+  drawBars($('#chSrvInsPerf'), nameL,
+    [{name:'پرداخت‌شده', color:'#1C6E31', values:M.paidWin, fmt:cntFmt('قسط')},
+     {name:'سررسیدشده', color:'#E4B54A', values:M.dueWin, fmt:cntFmt('قسط')},
+     {name:'معوق', color:'#B3362B', values:M.odWin, fmt:cntFmt('قسط')}], cOpts);
+}
+
+/* خطوط CSV تحلیل‌ها — شاخص‌ها + دادهٔ ماهانهٔ نمودارها (کپی analyticsCsvLines دمو) */
+function srvAnalyticsCsvLines(){
+  const M = srvRepMonthly;
+  if(!M) return [];
+  const K = M.kpis;
+  const L = [];
+  L.push('== شاخص‌های کلیدی — از تأسیس مؤسسه تاکنون ==');
+  L.push('شاخص,مقدار');
+  L.push('اعضای مؤسسه,'+K.members);
+  L.push('وام‌های ثبت‌شده,'+K.loans);
+  L.push('ارزش کل وام‌ها,'+K.loansAmt);
+  L.push('مجموع دریافتی اقساط,'+K.paySum);
+  L.push('تعداد پرداخت‌ها,'+K.paysCnt);
+  L.push('مجموع واریزی‌ها,'+K.depSum);
+  L.push('مجموع برداشت‌ها,'+K.wdSum);
+  L.push('موجودی فعلی صندوق‌ها,'+K.curBal);
+  L.push('اقساط معوق فعال,'+K.odNow);
+  L.push('');
+  L.push('== داده ماهانه نمودارها — '+srvRepWinTitle(M)+' ==');
+  L.push('ماه,واریزی,برداشت,موجودی تجمیعی,اعضای تجمیعی,وام‌های تجمیعی,اقساط پرداخت‌شده,اقساط سررسیدشده,اقساط معوق');
+  M.wm.forEach((m,i)=>{
+    L.push([srvRepMonthFmt(m).full, M.depWin[i], M.wdWin[i], M.balWin[i], M.memWin[i], M.loanWin[i], M.paidWin[i], M.dueWin[i], M.odWin[i]].join(','));
+  });
+  L.push('');
+  return L;
+}
+
+/* HTML چاپ تحلیل‌ها — شاخص‌ها + تصویر چهار نمودار + جدول ماهانه (کپی printReport دمو) */
+function srvRepAnalyticsPrintHtml(){
+  const M = srvRepMonthly;
+  if(!M) return '';
+  const K = M.kpis;
+  const kpiPairs = [
+    ['اعضای مؤسسه', fmtN(K.members)], ['وام‌های ثبت‌شده', fmtN(K.loans)+' (به ارزش '+fmtM(K.loansAmt)+' '+CUR()+')'],
+    ['مجموع دریافتی اقساط', fmtM(K.paySum)+' '+CUR()+' ('+faDigits(K.paysCnt)+' پرداخت)'], ['مجموع واریزی‌ها', fmtM(K.depSum)+' '+CUR()],
+    ['مجموع برداشت‌ها', fmtM(K.wdSum)+' '+CUR()], ['موجودی فعلی صندوق‌ها', fmtM(K.curBal)+' '+CUR()+' ('+faDigits(K.odNow)+' قسط معوق)']
+  ];
+  const chartImgs = [];
+  [['chSrvBalance','روند موجودی کل مؤسسه'],['chSrvFlowR','گردش مالی ماهانه'],['chSrvGrowth','رشد اعضا و وام‌ها'],['chSrvInsPerf','عملکرد اقساط']].forEach(c=>{
+    try{ const cv = document.getElementById(c[0]); if(cv && cv.width > 0 && cv.toDataURL) chartImgs.push([c[1], cv.toDataURL('image/png')]); }catch(e){}
+  });
+  return '<h2 class="pr-h2">شاخص‌های کلیدی — از تأسیس مؤسسه تاکنون</h2>' +
+    '<table class="pr-kpis"><tbody><tr>'+kpiPairs.map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr></tbody></table>' +
+    (chartImgs.length ? '<h2 class="pr-h2">نمودارها — '+esc(srvRepWinTitle(M))+'</h2><div class="pr-charts">' +
+      chartImgs.map(c=>'<figure><img src="'+c[1]+'" alt="'+esc(c[0])+'"><figcaption>'+esc(c[0])+'</figcaption></figure>').join('') + '</div>' : '') +
+    '<h2 class="pr-h2">داده ماهانه نمودارها</h2>' +
+    '<table><thead><tr><th>ماه</th><th>واریزی</th><th>برداشت</th><th>موجودی تجمیعی</th><th>اعضای تجمیعی</th><th>وام‌های تجمیعی</th><th>پرداخت‌شده</th><th>سررسیدشده</th><th>معوق</th></tr></thead><tbody>' +
+      M.wm.map((m,i)=>'<tr><td>'+esc(srvRepMonthFmt(m).full)+'</td><td>'+fmtN(M.depWin[i])+'</td><td>'+fmtN(M.wdWin[i])+'</td><td>'+fmtN(M.balWin[i])+'</td><td>'+faDigits(M.memWin[i])+'</td><td>'+faDigits(M.loanWin[i])+'</td><td>'+faDigits(M.paidWin[i])+'</td><td>'+faDigits(M.dueWin[i])+'</td><td>'+faDigits(M.odWin[i])+'</td></tr>').join('') +
+    '</tbody></table>';
+}
+
 async function renderSrvReportsPage(){
   const main = $('#main');
   const defs0 = srvReportDefs({members:[],loans:[],installments:[],payments:[],txns:[],funds:[],accounts:[],fundName:()=>'—',accName:()=>'—',paySumByLoan:{},odInsByMember:{}});
   const cur0 = defs0.find(d=>d.id===srvRepState.rep) || defs0[0];
   main.innerHTML =
-    '<div class="page-head"><div><h1>گزارش‌ها</h1><div class="ph-sub">گزارش‌های تفصیلی با فیلتر، چاپ و خروجی CSV — داده زنده از PostgreSQL</div></div><div class="ph-actions" id="srvRepActions">' +
+    '<div class="page-head"><div><h1>گزارش‌ها</h1><div class="ph-sub">شاخص‌ها و نمودارهای ماهانه با پیمایش تاریخ + گزارش‌های تفصیلی با فیلتر، چاپ و خروجی CSV — داده زنده از PostgreSQL</div></div><div class="ph-actions" id="srvRepActions">' +
       '<button class="btn btn-ghost btn-sm" id="srvRepPrint" style="padding:11px 17px;font-size:.88rem" disabled>'+icon('print',14)+' چاپ</button>' +
       '<button class="btn btn-soft btn-sm" id="srvRepCsv" style="padding:11px 17px;font-size:.88rem" disabled>'+icon('download',14)+' خروجی CSV</button></div></div>' +
+    '<div id="srvRepAnalytics" style="margin-top:14px"></div>' +
     '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>'+icon('chart',16)+' گزارش‌های تفصیلی</h3><span class="hint-t">انتخاب گزارش، اعمال فیلتر، چاپ و خروجی CSV</span></div><div class="card-b">' +
       '<div class="chips" style="margin-bottom:14px">' + defs0.map(d=>'<button class="chip'+(d.id===cur0.id?' on':'')+'" data-srep="'+d.id+'">'+icon(d.ic,15)+' '+d.title+'</button>').join('') + '</div>' +
       '<div class="toolbar" id="srvRepFilters"><span class="hint-t">در حال بارگذاری داده‌ها…</span></div>' +
@@ -6048,6 +6191,7 @@ async function renderSrvReportsPage(){
   if(pb){ pb.disabled = false; pb.onclick = ()=> srvPrintReport(cur, D); }
   if(cb){ cb.disabled = false; cb.onclick = ()=> srvExportCsv(cur, D); }
   srvRenderReportBody(cur, D);
+  srvLoadSrvAnalytics();
 }
 
 async function renderSrvTxnsPage(){
