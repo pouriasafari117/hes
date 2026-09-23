@@ -4416,7 +4416,7 @@ function injectSrvSec(){
   div.className = 'card tight set-sec';
   div.id = 'secSrv';
   div.style.marginBottom = '16px';
-  div.innerHTML = '<div class="card-h"><h3>' + icon('gear',16) + ' اتصال به سرور (Backend + PostgreSQL)</h3><span class="hint-t">حالت دوگانه: دمو یا دادهٔ واقعی از طریق API</span></div><div class="card-b sec-b" id="srvBox"></div>';
+  div.innerHTML = '<div class="card-h"><h3>' + icon('gear',16) + ' منبع داده و اتصال سرور (PostgreSQL)</h3><span class="hint-t">داده‌ها از کجا خوانده/نوشته شوند: حافظهٔ محلی (دمو) یا سرور واقعی</span></div><div class="card-b sec-b" id="srvBox"></div>';
   body.insertBefore(div, body.firstChild);
   renderSrvSec();
 }
@@ -4957,18 +4957,14 @@ function srvMemberForm(m){
 async function renderSrvDashboard(){
   const main = $('#main');
   main.innerHTML =
-    '<div class="page-head"><div><h1>داشبورد</h1><div class="ph-sub">حالت سرور — داده زنده از PostgreSQL · <span class="badge b-green">متصل به '+esc(SRV.instName||'')+'</span></div></div>' +
-    '<div class="ph-actions"><button class="btn btn-soft btn-sm" id="srvDashRefresh">'+icon('refresh',14)+' به‌روزرسانی</button></div></div>' +
+    '<div class="page-head"><div><h1>داشبورد</h1></div></div>' +
     '<div class="grid g-stats" id="srvStats"><div class="stat"><div class="stat-top">در حال دریافت آمار…</div><div class="stat-val">—</div></div></div>' +
-    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت اعضا</h3><span class="hint-t">توزیع وضعیت</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvMembers"></canvas></div><div class="legend" id="chSrvMembersLg"></div></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت اقساط</h3><span class="hint-t">توزیع اقساط بر اساس وضعیت</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvIns"></canvas></div><div class="legend" id="chSrvInsLg"></div></div></div>' +
     '<div class="card"><div class="card-h"><h3>گردش مالی ۱۲ ماه اخیر</h3><span class="hint-t">وام‌ها و پرداخت‌ها</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvFlow"></canvas></div><div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>وام‌ها</span><span class="lg-i"><i style="background:#9CCB3C"></i>پرداخت‌ها</span></div></div></div></div>' +
     '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>آخرین اعضا</h3><a class="btn btn-soft btn-sm" href="#/app/members">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashMembers"><p class="hint-t">در حال دریافت…</p></div></div>' +
     '<div class="card tight"><div class="card-h"><h3>آخرین وام‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/loans">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashLoans"><p class="hint-t">در حال دریافت…</p></div></div></div>' +
     '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>اقساط</h3></div><div class="card-b" id="srvDashIns"><p class="hint-t">در حال دریافت…</p></div></div>' +
     '<div class="card"><div class="card-h"><h3>خلاصه مالی</h3></div><div class="card-b" id="srvDashFinance"></div></div></div>';
-
-  const refreshBtn = $('#srvDashRefresh');
-  if(refreshBtn) refreshBtn.onclick = ()=> renderSrvDashboard();
 
   try {
     const stats = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/stats');
@@ -4984,14 +4980,15 @@ async function renderSrvDashboard(){
       stat('','bank','موجودی صندوق‌ها', fmtMShort(stats.funds.totalBalance)+' <small>'+CUR()+'</small>', faDigits(stats.funds.total)+' صندوق · '+faDigits(stats.funds.accounts)+' حساب') +
       stat('s-lime','wallet','پرداخت‌ها', fmtMShort(stats.payments.totalAmount)+' <small>'+CUR()+'</small>', faDigits(stats.payments.total)+' تراکنش');
 
-    // chart members status
-    const memActive = stats.members.active;
-    const memInactive = stats.members.total - memActive;
-    drawDonut($('#chSrvMembers'), [
-      {label:'فعال', value:memActive, color:'#1C6E31'},
-      {label:'غیرفعال', value:memInactive, color:'#B3362B'}
-    ].filter(d=>d.value>0), 'کل اعضا', faDigits(stats.members.total));
-    $('#chSrvMembersLg').innerHTML = '<span class="lg-i"><i style="background:#1C6E31"></i>فعال ('+faDigits(memActive)+')</span><span class="lg-i"><i style="background:#B3362B"></i>غیرفعال ('+faDigits(memInactive)+')</span>';
+    // chart installments status — پرداخت‌شده / در انتظار / معوق
+    const insPaid = stats.installments.paid||0, insPend = stats.installments.pending||0, insOd = stats.installments.overdue||0;
+    const insTot = insPaid+insPend+insOd;
+    drawDonut($('#chSrvIns'), [
+      {label:'پرداخت‌شده', value:insPaid, color:'#1C6E31'},
+      {label:'در انتظار', value:insPend, color:'#C4871F'},
+      {label:'معوق', value:insOd, color:'#B3362B'}
+    ].filter(d=>d.value>0), 'کل اقساط', faDigits(insTot));
+    $('#chSrvInsLg').innerHTML = '<span class="lg-i"><i style="background:#1C6E31"></i>پرداخت‌شده ('+faDigits(insPaid)+')</span><span class="lg-i"><i style="background:#C4871F"></i>در انتظار ('+faDigits(insPend)+')</span><span class="lg-i"><i style="background:#B3362B"></i>معوق ('+faDigits(insOd)+')</span>';
 
     // chart flow - loans vs payments monthly - تماما شمسی با نام ماه کامل
     function gregToShamsiMonth(gregYM){
@@ -5998,9 +5995,12 @@ function srvTxnForm(){
   const _renderSettings = renderSettings;
   renderSettings = function(){
     _renderSettings();
-    if(setTab === 'org'){
+    /* منبع داده/اتصال PostgreSQL منتقل شد به تب «داده‌ها و ممیزی» */
+    if(setTab === 'data'){
       injectSrvSec();
-      if(SRV.on && srvReady()){ const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb); }
+    }
+    if(setTab === 'org' && SRV.on && srvReady()){
+      const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb);
     }
   };
   PAGES.settings = function(){ renderSettings(); };
