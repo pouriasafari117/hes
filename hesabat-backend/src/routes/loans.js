@@ -75,6 +75,28 @@ r.get('/:loanId', asyncH(async (req, res) => {
   res.json(data);
 }));
 
+// POST /:loanId/settle — تسویهٔ نهایی وام: فقط وقتی ماندهٔ بدهی صفر است.
+// پس از تسویه دیگر هیچ پرداختی روی وام پذیرفته نمی‌شود و صفحهٔ وام فقط «تاریخچهٔ اقساط» را نشان می‌دهد.
+r.post('/:loanId/settle', asyncH(async (req, res) => {
+  const loanId = parseInt(req.params.loanId, 10);
+  const result = await withTenant(req.user, req.institutionId, async c => {
+    const loan = (await c.query('select id, amount, status from loans where id=$1 and institution_id=$2', [loanId, req.institutionId])).rows[0];
+    if (!loan) return { nf:true };
+    if (loan.status === 'paid') return { already:true };
+    const paidSum = Number((await c.query('select coalesce(sum(amount),0)::bigint as s from payments where institution_id=$1 and loan_id=$2', [req.institutionId, loanId])).rows[0].s || 0);
+    const planTotal = Number((await c.query('select coalesce(sum(amount),0)::bigint as s from installments where loan_id=$1', [loanId])).rows[0].s || 0);
+    const remaining = Math.max(0, Math.min(Number(loan.amount)||0, planTotal || (Number(loan.amount)||0)) - paidSum);
+    if (remaining > 0) return { notReady:true, remaining };
+    await c.query("update installments set status='paid', paid_at=coalesce(paid_at, now()) where loan_id=$1 and status<>'paid'", [loanId]);
+    await c.query("update loans set status='paid', updated_at=now() where id=$1", [loanId]);
+    return { ok:true, remaining:0 };
+  });
+  if (result.nf) return res.status(404).json({ error: 'وام پیدا نشد.' });
+  if (result.already) return res.status(400).json({ error: 'این وام پیش‌تر تسویه شده است.' });
+  if (result.notReady) return res.status(400).json({ error: 'هنوز ماندهٔ بدهی هست؛ تسویه فقط وقتی مانده صفر شد.', remaining: result.remaining });
+  res.json({ settled:true, remaining:0 });
+}));
+
 // POST loan
 r.post('/', asyncH(async (req, res) => {
   const { memberId, amount, installmentsCount, feePercent, fundId, description, plan, firstDue, intervalMonths } = req.body || {};

@@ -466,15 +466,6 @@ function loadDb(){
       /* تور ایمنی برای داده‌های قدیمی: هیچ عضوی نباید فیلد پایهٔ گم‌شده داشته باشد */
       d.members.forEach(m=>{ ['name','father','mobile','nationalId','birthDate','memberNo'].forEach(k=>{ if(typeof m[k]!=='string') m[k]=''; });
         if(!m.name.trim()) m.name='(عضو بدون نام)'; });
-      /* خودترمیمی وام‌ها: اگر مجموع پرداخت‌ها به مبلغ وام رسیده یا همه اقساط کامل‌اند، وضعیت «تسویه‌شده» شود */
-      try{
-        (d.loans||[]).forEach(l=>{
-          if(l.status !== 'active') return;
-          const ins = (d.installments||[]).filter(i=>i.loanId===l.id);
-          const paidSum = ins.reduce((s,i)=>s+(+i.paidAmount||0),0);
-          if((l.amount>0 && paidSum >= l.amount) || (ins.length && ins.every(i=>(+i.paidAmount||0) >= (+i.amount||0)))) l.status = 'paid';
-        });
-      }catch(e){}
       if(d.settings && Array.isArray(d.settings.memberFields)) d.settings.memberFields = d.settings.memberFields.filter(f=>f && f.key && f.label);
       return d; } }
   }catch(e){}
@@ -2209,6 +2200,7 @@ function loanDetail(id){
         (l.status==='pending' ? '<button class="btn btn-solid btn-sm" id="ldActivate" style="padding:11px 17px;font-size:.88rem">'+icon('check',15)+' تصویب و فعال‌سازی</button>' : '') +
         (loanEffStatus(l)!=='paid' && (l.status==='active') ? '<button class="btn btn-solid btn-sm" id="ldPay" style="padding:11px 17px;font-size:.88rem">'+icon('coins',15)+' ثبت پرداخت</button>' +
           '<button class="btn btn-danger btn-sm" id="ldCancel" style="padding:11px 17px;font-size:.88rem">'+icon('ban',15)+' لغو وام</button>' : '') +
+        (loanEffStatus(l)==='paid' && l.status==='active' ? '<button class="btn btn-solid btn-sm" id="ldSettle" style="padding:11px 17px;font-size:.88rem">'+icon('check',15)+' تسویه وام</button>' : '') +
       '</div></div>' +
 
     '<div class="grid g-4">' +
@@ -2235,7 +2227,9 @@ function loanDetail(id){
         : emptyState({icon:'coins', title:'هنوز پرداختی ثبت نشده'})) + '</div></div>' +
     '</div>' +
 
-    '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>برنامه اقساط</h3><span class="hint-t">'+faDigits(ins.length)+' قسط</span></div>' +
+    (l.status==='paid' ? '<div class="alert a-ok" style="margin-top:14px"><span class="al-ic">'+icon('check',16)+'</span><div>این وام به‌طور کامل <b>تسویه</b> شده و بسته است — دیگر پرداخت روی آن ممکن نیست؛ فقط تاریخچهٔ اقساط پرداخت‌شده نمایش داده می‌شود.</div></div>' : '') +
+
+    '<div class="card tight" style="margin-top:14px"><div class="card-h"><h3>'+(l.status==='paid'?'تاریخچهٔ اقساط پرداخت‌شده':'برنامه اقساط')+'</h3><span class="hint-t">'+faDigits(ins.length)+' قسط</span></div>' +
       (ins.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>قسط</th><th>سررسید</th><th>مبلغ</th><th>پرداخت‌شده</th><th>مانده</th><th>وضعیت</th><th style="text-align:left">عملیات</th></tr></thead><tbody>' +
         ins.map(i => { const st = insStatus(i);
           return '<tr><td class="c-fa-num c-strong">'+faDigits(i.no)+'</td><td class="c-fa-num">'+J.fmt(i.dueDate)+'</td>' +
@@ -2264,6 +2258,14 @@ function loanDetail(id){
       acc.balance -= l.amount; }
     audit('تصویب و فعال‌سازی وام '+(m?m.name:''), 'loan:'+l.id);
     saveDb(); toast('وام فعال شد و برنامه اقساط ساخته شد.','ok'); route();
+  });
+  const stl = $('#ldSettle');
+  if(stl) stl.onclick = ()=> guard('loanAdd', async ()=>{
+    const ok = await askConfirm({title:'تسویهٔ نهایی وام', text:'ماندهٔ بدهی این وام <b>صفر</b> است. با تسویه، وام بسته می‌شود و <b>دیگر هیچ پرداختی</b> روی آن ممکن نیست؛ فقط تاریخچهٔ اقساط پرداخت‌شده نمایش داده می‌شود. ادامه می‌دهید؟', ok:'بله، تسویهٔ نهایی'});
+    if(!ok) return;
+    l.status = 'paid';
+    audit('تسویهٔ نهایی وام '+(m?m.name:'')+' (ماندهٔ صفر)', 'loan:'+l.id);
+    saveDb(); toast('وام «'+(m?m.name:'')+'» به‌طور کامل تسویه شد. 🎉','ok'); route();
   });
   const cn = $('#ldCancel');
   if(cn) cn.onclick = ()=> guard('loanAdd', async ()=>{
@@ -2438,25 +2440,21 @@ function paymentForm(presetLoanId, presetInsId){
           ref:'FIS-'+(5000+DB.payments.length), tracking:'', notes:'بازپرداخت '+(alloc.length>1 ? faDigits(alloc.length)+' قسط' : 'قسط '+faDigits(firstNo))+' — '+(member?member.name:''), user:SESSION.name });
         acc.balance += amt;
         audit('ثبت پرداخت '+fmtM(amt)+' ('+faDigits(alloc.length)+' قسط) وام '+(member?member.name:''), 'loan:'+l.id);
-        let settled = false;
-        if(l.status === 'active' && loanEffStatus(l) === 'paid'){
-          l.status = 'paid'; settled = true;
-          loanInstallments(l.id).forEach(i=>{ if(i.paidAmount < i.amount){ i.paidAmount = i.amount; if(!i.paidDate) i.paidDate = dateIso; } });
-          audit('تسویهٔ کامل وام '+(member?member.name:''), 'loan:'+l.id);
-        }
+        /* ماندهٔ صفر = «آمادهٔ تسویه»؛ بستن نهایی فقط با تأیید کاربر از دکمهٔ «تسویه وام» */
+        const readyToSettle = (rem - amt) <= 0;
         saveDb();
         const fullN = alloc.filter(a=>a.full).length, partN = alloc.length - fullN;
-        toast(settled ? 'پرداخت ثبت شد و وام «'+(member?member.name:'')+'» به‌طور کامل تسویه شد. 🎉'
-                      : 'پرداخت ثبت شد — '+faDigits(fullN)+' قسط کامل'+(partN?' + '+faDigits(partN)+' قسط ناقص':'')+'.', 'ok');
-        stampFx({ text: settled ? 'تسویه شد' : 'پرداخت شد',
+        toast(readyToSettle ? 'پرداخت ثبت شد؛ ماندهٔ بدهی صفر شد — برای بستن وام، دکمهٔ «تسویه وام» را در صفحهٔ وام بزنید.'
+                            : 'پرداخت ثبت شد — '+faDigits(fullN)+' قسط کامل'+(partN?' + '+faDigits(partN)+' قسط ناقص':'')+'.', 'ok');
+        stampFx({ text: 'پرداخت شد',
           sub: fmtM(amt)+' — '+J.fmt(dateIso),
           color: stampColor('payment'),
           hold: 1050,
           onDone: ()=>{
             hh.close();
-            payReceipt({ title: settled ? 'وام به‌طور کامل تسویه شد 🎉' : 'رسید پرداخت',
+            payReceipt({ title: readyToSettle ? 'ماندهٔ بدهی صفر شد — آمادهٔ تسویه 🎉' : 'رسید پرداخت',
               sub: (member?member.name:'—')+' · '+fmtM(amt)+' · '+J.fmt(dateIso),
-              alloc, amt, remainAfter: Math.max(0, rem - amt), settled });
+              alloc, amt, remainAfter: Math.max(0, rem - amt), settled: readyToSettle });
             if(location.hash.indexOf('#/app/loans/')===0) route(); else if(location.hash==='#/app/installments'){ renderMembersPage('ins'); renderShell('installments'); }
             else route();
           } });
@@ -5040,12 +5038,20 @@ async function srvLoanDetail(loanId){
     const paidSum = pays.reduce((sum,p)=>sum+Number(p.amount||0),0);
     const bal = Math.max(0, Number(l.amount||0) - paidSum);
     const nextIns = ins.find(i=>i.status!=='paid');
+    const isSettled = l.status==='paid';
+    const canSettle = !isSettled && bal<=0; /* ماندهٔ بدهی صفر → فقط دکمهٔ تسویه نهایی */
 
     // Convert all dates to Shamsi full
     main.innerHTML =
       '<div class="page-head"><div><a href="#/app/loans" class="login-back" style="margin-bottom:8px">'+icon('arrowL',14)+' فهرست وام‌ها</a>' +
         '<h1>وام '+esc(mName)+' — '+fmtM(l.amount)+'</h1><div class="ph-sub"><span class="badge '+(l.status==='active'?'b-green':'b-gray')+'">'+faLoanStatus(l.status)+'</span> &nbsp; ثبت در <b>'+J.fmtLong(l.created_at||'')+'</b> — '+J.fmt(l.created_at||'')+'</div></div>' +
-        '<div class="ph-actions"><button class="btn btn-solid btn-sm" id="srvLoanPay" style="padding:11px 18px">'+icon('coins',15)+' ثبت پرداخت قسط</button><button class="btn btn-ghost btn-sm" id="srvLoanBack" style="padding:11px 18px">بازگشت</button></div></div>' +
+        '<div class="ph-actions">' +
+          (isSettled ? '' : canSettle
+            ? '<button class="btn btn-solid btn-sm" id="srvLoanSettle" style="padding:11px 18px">'+icon('check',15)+' تسویه وام</button>'
+            : '<button class="btn btn-solid btn-sm" id="srvLoanPay" style="padding:11px 18px">'+icon('coins',15)+' ثبت پرداخت قسط</button>') +
+          '<button class="btn btn-ghost btn-sm" id="srvLoanBack" style="padding:11px 18px">بازگشت</button></div></div>' +
+
+      (isSettled ? '<div class="alert a-ok" style="margin-top:12px"><span class="al-ic">'+icon('check',16)+'</span><div>این وام به‌طور کامل <b>تسویه</b> شده و بسته است — دیگر پرداخت روی آن ممکن نیست؛ فقط <b>تاریخچهٔ اقساط پرداخت‌شده</b> نمایش داده می‌شود.</div></div>' : '') +
 
       '<div class="grid g-4" style="margin-top:12px">' +
         '<div class="stat"><div class="stat-top"><span class="s-ic">'+icon('loan',15)+'</span>مبلغ اصل وام</div><div class="stat-val">'+fmtM(l.amount)+'</div><div class="stat-sub">کارمزد '+faDigits(l.fee_percent||0)+'% · '+faDigits(l.installments_count)+' قسط — از تنظیمات</div></div>' +
@@ -5078,17 +5084,17 @@ async function srvLoanDetail(loanId){
       '</div>' +
 
       '<div class="grid g-2" style="margin-top:16px">' +
-        '<div class="card tight" style="border-radius:16px"><div class="card-h"><h3>پرداخت‌های انجام‌شده — تاریخ شمسی</h3><span class="hint-t">'+faDigits(pays.length)+' پرداخت</span></div><div class="card-b">'+
+        '<div class="card tight" style="border-radius:16px"><div class="card-h"><h3>'+(isSettled?'تاریخچهٔ پرداخت‌ها — شمسی':'پرداخت‌های انجام‌شده — تاریخ شمسی')+'</h3><span class="hint-t">'+faDigits(pays.length)+' پرداخت</span></div><div class="card-b">'+
           (pays.length?'<div class="mini-list">'+pays.map(p=>'<div class="mini-item"><span class="avatar sz-34" style="border-radius:11px;background:var(--green-bg)">'+icon('coins',15)+'</span><span class="mi-t"><b>'+fmtM(p.amount)+' '+CUR()+'</b><span>تاریخ شمسی: '+J.fmtLong(p.created_at||'')+' — '+J.fmt(p.created_at||'')+'<br>نوع: '+esc(p.type||'')+'</span></span><span class="mi-v pos">+ '+fmtN(p.amount)+'</span></div>').join('')+'</div>':'<div class="empty" style="padding:24px;text-align:center"><p class="hint-t">هنوز پرداختی ثبت نشده — دکمه ثبت پرداخت را بزنید.</p></div>')+
         '</div></div>' +
 
-        '<div class="card tight" style="border-radius:16px"><div class="card-h"><h3>برنامه اقساط — تاریخ شمسی کامل</h3><span class="hint-t">'+faDigits(ins.length)+' قسط با نام ماه کامل</span></div>' +
+        '<div class="card tight" style="border-radius:16px"><div class="card-h"><h3>'+(isSettled?'تاریخچهٔ اقساط پرداخت‌شده':'برنامه اقساط — تاریخ شمسی کامل')+'</h3><span class="hint-t">'+faDigits(ins.length)+' قسط با نام ماه کامل</span></div>' +
           (ins.length?'<div class="tbl-wrap"><table class="tbl"><thead><tr><th>سررسید شمسی کامل</th><th>مبلغ</th><th>وضعیت</th><th>پرداخت شمسی</th><th></th></tr></thead><tbody>'+
             ins.map(i=>{
               const jDate = J.iso2j(i.due_date);
               const fullMonth = jDate ? J.MONTHS[jDate.jm-1] : '';
               const fullDate = J.fmtLong(i.due_date);
-              return '<tr><td class="c-fa-num"><b>'+fullDate+'</b><br><small class="hint-t">'+fullMonth+' ماه '+ (jDate?faDigits(jDate.jy):'') +' — '+J.fmt(i.due_date)+'</small></td><td class="c-fa-num c-strong">'+fmtN(i.amount)+'</td><td><span class="badge '+(i.status==='paid'?'b-green':'b-amber')+'"><i class="bd"></i>'+(typeof faInsStatus==='function'?faInsStatus(i.status):i.status)+'</span></td><td class="c-fa-num">'+(i.paid_at?J.fmtLong(i.paid_at)+'<br><small>'+J.fmt(i.paid_at)+'</small>':'—')+'</td><td>'+(i.status!=='paid'?'<button class="btn btn-soft btn-xs" data-pay="'+i.id+'">پرداخت</button>':'<span class="badge b-green">تسویه</span>')+'</td></tr>';
+              return '<tr><td class="c-fa-num"><b>'+fullDate+'</b><br><small class="hint-t">'+fullMonth+' ماه '+ (jDate?faDigits(jDate.jy):'') +' — '+J.fmt(i.due_date)+'</small></td><td class="c-fa-num c-strong">'+fmtN(i.amount)+'</td><td><span class="badge '+(i.status==='paid'?'b-green':'b-amber')+'"><i class="bd"></i>'+(typeof faInsStatus==='function'?faInsStatus(i.status):i.status)+'</span></td><td class="c-fa-num">'+(i.paid_at?J.fmtLong(i.paid_at)+'<br><small>'+J.fmt(i.paid_at)+'</small>':'—')+'</td><td>'+(i.status!=='paid' && !isSettled && !canSettle ?'<button class="btn btn-soft btn-xs" data-pay="'+i.id+'">پرداخت</button>':(i.status==='paid'?'<span class="badge b-green">تسویه</span>':'—'))+'</td></tr>';
             }).join('')+
           '</tbody></table></div>':'<div class="card-b"><p class="hint-t">قسطی وجود ندارد.</p></div>')+
         '</div>' +
@@ -5096,6 +5102,23 @@ async function srvLoanDetail(loanId){
 
     const payBtn = document.getElementById('srvLoanPay');
     if(payBtn) payBtn.onclick = ()=> srvPaymentForm(l.id);
+    const settleBtn = document.getElementById('srvLoanSettle');
+    if(settleBtn) settleBtn.onclick = async ()=>{
+      const ok = await askConfirm({title:'تسویهٔ نهایی وام',
+        text:'ماندهٔ بدهی این وام <b>صفر</b> است. با تسویه، وام بسته می‌شود و <b>دیگر هیچ پرداختی</b> روی آن ممکن نیست؛ فقط تاریخچهٔ اقساط پرداخت‌شده نمایش داده می‌شود. ادامه می‌دهید؟',
+        ok:'بله، تسویهٔ نهایی'});
+      if(!ok) return;
+      settleBtn.disabled = true; settleBtn.textContent = 'در حال تسویه…';
+      try{
+        const resp = await srvFetch('POST','/api/institutions/'+SRV.instId+'/loans/'+l.id+'/settle',{});
+        toast('وام «'+mName+'» به‌طور کامل تسویه شد. 🎉','ok');
+        if(typeof stampFx==='function') stampFx({ text:'تسویه شد', sub:mName, color:'#1C6E31', hold:1100, onDone:()=>srvLoanDetail(l.id) });
+        else srvLoanDetail(l.id);
+      }catch(e){
+        settleBtn.disabled = false; settleBtn.innerHTML = icon('check',15)+' تسویه وام';
+        toast(e.message||'خطا در تسویه وام.','err');
+      }
+    };
     const backBtn = document.getElementById('srvLoanBack');
     if(backBtn) backBtn.onclick = ()=> location.hash='#/app/loans';
     main.querySelectorAll('[data-pay]').forEach(b=> b.onclick=()=> srvPaymentForm(l.id, b.dataset.pay));
@@ -5624,6 +5647,8 @@ async function srvPaymentForm(loanId, installmentId){
   const planTotal = insAll.reduce((s,i)=>s+Number(i.amount||0),0);
   /* سقف واریز = ماندهٔ واقعی — هرگز بیشتر از آن پرداخت پذیرفته نمی‌شود تا بدهی منفی نشود */
   const cap = Math.max(0, planTotal - paidSum);
+  if(l.status==='paid'){ toast('این وام تسویه و بسته شده؛ دیگر پرداخت روی آن ممکن نیست.','warn'); return; }
+  if(cap<=0){ toast('ماندهٔ بدهی این وام صفر است — از صفحهٔ وام دکمهٔ «تسویه وام» را بزنید تا بسته شود.','warn'); return; }
   const openIns = insAll.filter(i=>i.status!=='paid');
   let pref = openIns.length ? Number(openIns[0].amount||0) : 0;
   if(installmentId){ const pi = openIns.find(x=>String(x.id)===String(installmentId)); if(pi) pref = Number(pi.amount||0); }
@@ -5688,14 +5713,14 @@ async function srvPaymentForm(loanId, installmentId){
           const covered = (resp && resp.covered) || [];
           const settled = !!(resp && resp.settled);
           const remainAfter = resp && (resp.remaining!==undefined) ? Number(resp.remaining) : Math.max(0, cap-amt);
-          toast(settled ? 'پرداخت ثبت شد و وام به‌طور کامل تسویه شد. 🎉' : 'پرداخت ثبت شد — '+faDigits(covered.length)+' قسط در صف پوشش داده شد.','ok');
+          toast(settled ? 'پرداخت ثبت شد؛ ماندهٔ بدهی صفر شد — برای بستن وام، دکمهٔ «تسویه وام» را در صفحهٔ وام بزنید.' : 'پرداخت ثبت شد — '+faDigits(covered.length)+' قسط در صف پوشش داده شد.','ok');
           const done = ()=>{ h.close();
-            payReceipt({ title: settled ? 'وام به‌طور کامل تسویه شد 🎉' : 'رسید پرداخت',
+            payReceipt({ title: settled ? 'ماندهٔ بدهی صفر شد — آمادهٔ تسویه 🎉' : 'رسید پرداخت',
               sub: mName+' · '+fmtM(amt)+' · '+J.fmt(dateIso||J.todayIso()),
               alloc: covered.map(cc=>({no:('سررسید '+J.fmt(cc.due||'')), take:cc.take, full:cc.full})),
               amt, remainAfter, settled });
             if(typeof srvLoanDetail==='function') srvLoanDetail(loanId); };
-          if(typeof stampFx==='function') stampFx({ text: settled?'تسویه شد':'پرداخت شد', sub:fmtM(amt)+' — '+J.fmtLong(dateIso||J.todayIso()), color:'#1C6E31', hold:1100, onDone:done });
+          if(typeof stampFx==='function') stampFx({ text: 'پرداخت شد', sub:fmtM(amt)+' — '+J.fmtLong(dateIso||J.todayIso()), color:'#1C6E31', hold:1100, onDone:done });
           else done();
         } catch(e){ bad(e.message); btn.disabled=false; btn.innerHTML=icon('check',14)+' ثبت پرداخت'; }
       };

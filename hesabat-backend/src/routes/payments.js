@@ -28,6 +28,7 @@ r.post('/', asyncH(async (req, res) => {
   const result = await withTenant(req.user, req.institutionId, async c => {
     const loan = (await c.query('select id, member_id, amount, status from loans where id=$1 and institution_id=$2', [loanId, req.institutionId])).rows[0];
     if (!loan) return { nf:true };
+    if (loan.status === 'paid') return { closed:true };
 
     // اقساط به ترتیب سررسید = ترتیب صف
     const insAll = (await c.query('select id, due_date, amount, status from installments where loan_id=$1 order by due_date asc, id asc', [loanId])).rows;
@@ -77,15 +78,14 @@ r.post('/', asyncH(async (req, res) => {
         [req.institutionId, loan.member_id, loanId, amt, 'پرداخت قسط وام #' + loanId]);
     } catch(e){}
 
-    // تسویه وام وقتی همه اقساط پوشش داده شد
+    // ماندهٔ بدهی صفر شدن به‌معنی «آمادهٔ تسویه» است — بستن نهایی فقط با دکمهٔ
+    // «تسویه وام» (POST /loans/:loanId/settle) انجام می‌شود که کاربر تأیید کند.
     const settled = (before + amt) >= planTotal;
-    if (settled) {
-      await c.query("update loans set status='paid', updated_at=now() where id=$1", [loanId]);
-    }
     return { payment: pay, settled, remaining: Math.max(0, planTotal-(before+amt)), covered };
   });
 
   if (result.nf) return res.status(404).json({ error: 'وام پیدا نشد.' });
+  if (result.closed) return res.status(400).json({ error: 'این وام تسویه و بسته شده؛ دیگر پرداخت روی آن ممکن نیست.', remaining:0 });
   if (result.noIns) return res.status(400).json({ error: 'این وام اقساطی ندارد.' });
   if (result.over) return res.status(400).json({ error: 'بیشتر از ماندهٔ وام قابل واریز نیست. سقف: ' + result.remaining, remaining: result.remaining });
   if (result.settled && !result.payment) return res.status(400).json({ error: 'این وام قبلاً کاملاً تسویه شده؛ ماندهٔ قابل‌پرداخت صفر است.', remaining:0 });
