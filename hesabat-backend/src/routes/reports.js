@@ -50,9 +50,13 @@ r.get('/summary', asyncH(async (req, res) => {
         (select coalesce(sum(case when type in ('deposit','repayment') then amount else 0 end),0)::bigint from txns where institution_id=$1) dep_sum,
         (select coalesce(sum(case when type in ('withdraw','loan_out') then amount else 0 end),0)::bigint from txns where institution_id=$1) wd_sum,
         (select coalesce(sum(initial_balance),0)::bigint from accounts where institution_id=$1) init_bal,
+        (select coalesce(fund_balance,0)::bigint from institutions where id=$1) fund_bal,
         (select count(*)::int from installments i join loans l on l.id=i.loan_id
            where i.institution_id=$1 and l.status<>'cancelled' and i.status<>'paid' and i.due_date < now()::date) od_now`,
-      [iid]).then(x => x.rows[0]).catch(() => null)) || { mem_total:0, loans_total:0, loans_amt:0, pay_sum:0, pays_cnt:0, dep_sum:0, wd_sum:0, init_bal:0, od_now:0 };
+      [iid]).then(x => x.rows[0]).catch(() => null)) || { mem_total:0, loans_total:0, loans_amt:0, pay_sum:0, pays_cnt:0, dep_sum:0, wd_sum:0, init_bal:0, fund_bal:0, od_now:0 };
+
+    /* مبنای موجودی: موجودی صندوق مؤسسه اگر ست شده، وگرنه مجموع موجودی اولیهٔ حساب‌ها — هم‌راستا با داشبورد */
+    const openBase = Number(kRow.fund_bal) > 0 ? Number(kRow.fund_bal) : Number(kRow.init_bal);
 
     /* نقشه‌های تجمیعی به‌کلید ماه جلالی */
     const todayKey = J2.todayJKey();
@@ -79,7 +83,7 @@ r.get('/summary', asyncH(async (req, res) => {
     const winStartKey = firstKey + winStart;
 
     /* پایه‌های تجمیعی قبل از شروع پنجره */
-    let balBase = Number(kRow.init_bal);
+    let balBase = openBase;
     Object.keys(depM).forEach(k => { if(+k < winStartKey) balBase += depM[k]; });
     Object.keys(wdM).forEach(k => { if(+k < winStartKey) balBase -= wdM[k]; });
     let memBase = 0, loanBase = 0;
@@ -107,7 +111,7 @@ r.get('/summary', asyncH(async (req, res) => {
         loans: Number(kRow.loans_total), loansAmt: Number(kRow.loans_amt),
         paySum: Number(kRow.pay_sum), paysCnt: Number(kRow.pays_cnt),
         depSum, wdSum,
-        curBal: Math.max(0, Number(kRow.init_bal) + depSum - wdSum),
+        curBal: Math.max(0, openBase + depSum - wdSum),
         odNow: Number(kRow.od_now)
       }
     };

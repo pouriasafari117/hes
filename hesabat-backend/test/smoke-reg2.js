@@ -21,14 +21,14 @@ async function until(fn,tries=40){ for(let i=0;i<tries;i++){ try{ const v=fn(); 
  T('فرم وام + نوع اقساط (سکشن‌بندی وام دست نخورده)', !!d.querySelector('#lfSave') && d.querySelectorAll('#lfKindChips .chip').length===2 && !!d.querySelector('.m-drawer .m-sec'));
  T('تعداد اقساط ورودی آزاد (عدد بدون سلکت)', !!d.querySelector('#lfMonths') && d.querySelector('#lfMonths').tagName==='INPUT' && d.querySelector('#lfMonths').type==='number');
  [...d.querySelectorAll('.drawer-wrap [data-x],.drawer-wrap [data-close]')].pop()?.click(); await sleep(80);
- // تنظیمات + منبع داده (منتقل شده به تب داده‌ها و ممیزی)
+ // تنظیمات — سکشن «تنظیمات اتصال سرور» کاملاً حذف شده؛ اتصال خودکار است
  w.location.hash='#/app/settings';
  await until(()=>d.querySelector('[data-st]'),30);
  const dataTab=[...d.querySelectorAll('[data-st]')].find(b=>b.dataset.st==='data');
  if(dataTab) dataTab.click();
- await until(()=>d.querySelector('#srvBox .ds-card'),30);
- T('کارت منبع داده در تب «داده‌ها و ممیزی»', d.querySelectorAll('#srvBox .ds-card').length===2 && /منبع داده/.test(d.querySelector('#srvBox').innerHTML));
- T('تیتر سکشن: منبع داده و اتصال سرور', d.querySelector('#secSrv .card-h') && /منبع داده و اتصال سرور/.test(d.querySelector('#secSrv .card-h').textContent));
+ await sleep(250);
+ T('بدون کارت منبع داده/اتصال سرور در تنظیمات', !d.querySelector('#srvBox') && !d.querySelector('#secSrv') && !d.querySelector('.ds-card'));
+ T('بدون فیلدهای اتصال دستی (srvBase/srvEmail/srvPass)', !d.querySelector('#srvBase') && !d.querySelector('#srvEmail') && !d.querySelector('#srvPass'));
  // جدول اقساط وام سید + paymentForm از جزئیات وام
  const loan=JSON.parse(w.eval("JSON.stringify(DB.loans.find(l=>l.status==='active'))"));
  w.location.hash='#/app/loans/'+loan.id;

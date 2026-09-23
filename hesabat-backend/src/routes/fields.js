@@ -24,31 +24,13 @@ function slugKey(label) {
 r.get('/', asyncH(async (req, res) => {
   const includeArchived = req.query.includeArchived === '1';
   const rows = await withTenant(req.user, req.institutionId, async c => {
-    let q = await c.query(
+    // فیلدها دقیقاً همان‌هایی هستند که هنگام ساخت مؤسسه (آنبردینگ) یا در تنظیمات ساخته شده‌اند؛
+    // هیچ فیلد پیش‌فرضی به‌صورت خودکار تزریق نمی‌شود تا انتخاب کاربر دست‌نخورده بماند.
+    const q = await c.query(
       `select id, key, label, type, is_required, options, sort_order, archived, created_at
        from field_definitions
        where institution_id=$1 ${includeArchived ? '' : 'and archived=false'}
        order by sort_order, id`, [req.institutionId]);
-    // اگر هیچ فیلدی نیست، فیلدهای پیش‌فرض بساز (برای اینکه عضو اضافه کردن کار کند)
-    if (q.rows.length === 0 && !includeArchived) {
-      const defaults = [
-        {key:'name', label:'نام و نام خانوادگی', type:'text', req:true, order:0},
-        {key:'father', label:'نام پدر', type:'text', req:false, order:1},
-        {key:'mobile', label:'شماره تماس', type:'mobile', req:true, order:2},
-        {key:'nationalId', label:'کد ملی', type:'nid', req:true, order:3},
-        {key:'birthDate', label:'تاریخ تولد', type:'date', req:true, order:4},
-      ];
-      for (const f of defaults) {
-        await c.query(
-          `insert into field_definitions (institution_id, key, label, type, is_required, sort_order)
-           values ($1,$2,$3,$4,$5,$6) on conflict (institution_id,key) do nothing`,
-          [req.institutionId, f.key, f.label, f.type, f.req, f.order]
-        );
-      }
-      q = await c.query(
-        `select id, key, label, type, is_required, options, sort_order, archived, created_at
-         from field_definitions where institution_id=$1 and archived=false order by sort_order, id`, [req.institutionId]);
-    }
     return q.rows;
   });
   res.json({ fields: rows });

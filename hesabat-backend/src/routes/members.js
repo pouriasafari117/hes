@@ -78,25 +78,8 @@ r.post('/', asyncH(async (req, res) => {
   }
 
   const result = await withTenant(req.user, req.institutionId, async c => {
+    // فیلدها دقیقاً همان‌هایی هستند که در آنبردینگ/تنظیمات ساخته شده‌اند؛ بدون تزریق پیش‌فرض
     let defs = await getActiveFields(c, req.institutionId);
-    // اگر فیلدی نیست، پیش‌فرض بساز تا عضو اضافه کردن قفل نشود
-    if (defs.length === 0) {
-      const defaults = [
-        {key:'name', label:'نام و نام خانوادگی', type:'text', req:true, order:0},
-        {key:'father', label:'نام پدر', type:'text', req:false, order:1},
-        {key:'mobile', label:'شماره تماس', type:'mobile', req:true, order:2},
-        {key:'nationalId', label:'کد ملی', type:'nid', req:true, order:3},
-        {key:'birthDate', label:'تاریخ تولد', type:'date', req:true, order:4},
-      ];
-      for (const f of defaults) {
-        await c.query(
-          `insert into field_definitions (institution_id, key, label, type, is_required, sort_order)
-           values ($1,$2,$3,$4,$5,$6) on conflict (institution_id,key) do nothing`,
-          [req.institutionId, f.key, f.label, f.type, f.req, f.order]
-        );
-      }
-      defs = await getActiveFields(c, req.institutionId);
-    }
     const v = validateValues(defs, values, { partial: false });
     if (!v.ok) return { bad: true, errors: v.errors };
 

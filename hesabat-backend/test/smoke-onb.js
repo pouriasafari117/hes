@@ -35,11 +35,11 @@ T('دکمه جزئیات وام در مودال', src.includes('data-vloan'));
 // ۵) داشبورد سرور: حذف هدر اتصال + نمودار وضعیت اقساط
 T('بدون «متصل به» در داشبورد', !src.includes('متصل به \'+esc(SRV.instName||\'\')'));
 T('بدون دکمه srvDashRefresh', !src.includes('srvDashRefresh'));
-T('نمودار دایره‌ای وضعیت اقساط', src.includes('chSrvIns') && src.includes('معوق') && src.includes('پرداخت‌شده') && !src.includes('chSrvMembers'));
+T('نمودار دایره‌ای وضعیت وام‌ها (تسویه + در جریان + معوق)', src.includes('chSrvIns') && src.includes('معوق') && src.includes('تسویه‌شده') && src.includes('وضعیت وام‌ها') && !src.includes('chSrvMembers'));
 
-// ۶) سکشن اتصال سرور در تب داده‌ها و ممیزی
-T('injectSrvSec زیر تب data', /if\(setTab === 'data'\)\{\s*\n?\s*injectSrvSec\(\);/.test(src));
-T('تیتر سکشن منبع داده', src.includes('منبع داده و اتصال سرور (PostgreSQL)'));
+// ۶) سکشن اتصال سرور کاملاً حذف شده (اتصال خودکار، بدون تنظیمات دستی)
+T('بدون injectSrvSec/کارت اتصال', !src.includes('injectSrvSec') && !src.includes('منبع داده و اتصال سرور (PostgreSQL)') && !src.includes('ds-card'));
+T('اتصال خودکار هنگام بوت', src.includes('if(SRV.token && SRV.instId) SRV.on = true;'));
 
 // ۷) گزارش‌های سرور
 T('srvReportDefs موجود', /function srvReportDefs\(/.test(src));
@@ -48,6 +48,16 @@ T('چاپ سرور', /function srvPrintReport\(/.test(src) && src.includes('wind
 T('CSV سرور', /function srvExportCsv\(/.test(src));
 T('هفت گزارش', (src.match(/id:'(members|loans|installments|payments|txns|balances|debtors)', title:'گزارش/g)||[]).length >= 3 && src.includes("title:'گزارش بدهکاران'"));
 T('پایگاه داده از اندپوینت‌های واقعی', src.includes("'/api/institutions/'+SRV.instId+'/installments?page=1&pageSize=1000'"));
+
+// ۸) سینک دقیق فیلدهای اعضا: هیچ‌جا فیلد پیش‌فرض بی‌صدا ساخته نمی‌شود
+const fSrc = fs.readFileSync(__dirname+'/../src/routes/fields.js','utf8');
+const mSrc = fs.readFileSync(__dirname+'/../src/routes/members.js','utf8');
+const aSrc = fs.readFileSync(__dirname+'/../src/routes/auth.js','utf8');
+T('بدون ساخت خودکار فیلد پیش‌فرض در GET /fields', !/defaults\s*=/.test(fSrc));
+T('بدون ساخت خودکار فیلد پیش‌فرض در ثبت عضو', !/defaults\s*=/.test(mSrc));
+T('register-v2 دقیقاً همان فیلدهای انتخاب‌شده را می‌سازد', aSrc.includes('fieldsToCreate') && /texttt|labelToKey/.test(aSrc));
+T('در تنظیمات CSV فقط در گزارش/تراکنش است', !src.includes('id="mCsv"') && !src.includes('id="lCsv"') && src.includes('id="tCsv"') && src.includes('id="srvTxnCsv"'));
+T('بدون میانبرها در کارت هشدارها', !src.includes('dashShorts'));
 
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

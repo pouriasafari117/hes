@@ -1317,12 +1317,11 @@ function pageDashboard(){
 
     '<div class="grid g-2" style="margin-top:14px">' +
       '<div class="card tight"><div class="card-h"><h3>اقساط نزدیک به سررسید</h3><span class="hint-t">تا ۷ روز آینده</span></div><div class="card-b" id="dashSoon"></div></div>' +
-      '<div class="card"><div class="card-h"><h3>هشدارها و موارد نیازمند اقدام</h3></div><div class="card-b" id="dashAlerts"></div>' +
-        '<div class="card-b" style="border-top:1px dashed var(--line)"><div class="dp-h" style="padding:0 0 8px">میانبرها</div><div class="grid g-4" id="dashShorts"></div></div></div>' +
+    '<div class="card"><div class="card-h"><h3>هشدارها و موارد نیازمند اقدام</h3></div><div class="card-b" id="dashAlerts"></div></div>' +
     '</div>';
 
   /* نمودار اقساط */
-  const actIns = DB.installments.filter(i => { const l=qLoan(i.loanId); return l && l.status==='active'; });
+  const actIns = DB.installments.filter(i => { const l=qLoan(i.loanId); return l && l.status!=='pending' && l.status!=='cancelled'; }); // همهٔ وام‌های واقعی: در جریان + تسویه‌شده + معوق
   const cPaid = actIns.filter(i=>i.paidAmount>=i.amount).length;
   const cOd = actIns.filter(i=>insStatus(i)==='overdue').length;
   const cPart = actIns.filter(i=>insStatus(i)==='partial').length;
@@ -1384,10 +1383,6 @@ function pageDashboard(){
     ? alerts.map(a => '<div class="alert a-' + (a.color==='var(--red)'?'err':'warn') + '" style="margin-bottom:9px;cursor:pointer" data-go="'+a.go+'"><span class="al-ic" style="color:'+a.color+'">'+icon(a.ic,17)+'</span><div>'+a.html+'</div></div>').join('')
     : '<div class="alert a-ok"><span class="al-ic">'+icon('check',17)+'</span><div>همه‌چیز تحت کنترل است؛ مورد نیازمند اقدامی وجود ندارد.</div></div>';
   $('#dashAlerts').querySelectorAll('[data-go]').forEach(r => r.onclick = ()=> location.hash = r.dataset.go);
-  $('#dashShorts').innerHTML = [
-    ['memberAdd','plus','افزودن عضو','member'],['loanAdd','loan','ثبت وام','loan'],
-    ['paymentAdd','coins','ثبت پرداخت','calendar'],['txnAdd','swap','ثبت تراکنش','swap']
-  ].map(s => '<button class="btn btn-soft btn-sm" style="justify-content:center" data-shortcut="'+s[0]+'">'+icon(s[1],15)+' '+s[2]+'</button>').join('');
   bindShortcuts(main);
 }
 function qaBtn(perm, ic, label, anchor){
@@ -1459,19 +1454,12 @@ function renderMembersTab(){
         '<option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option></select>' +
       '<span class="t-lbl">مرتب‌سازی:</span><select class="t-select" id="mSort">' +
         '<option value="joined">تاریخ عضویت</option><option value="name">نام</option><option value="debt">بدهی جاری</option><option value="loans">تعداد وام‌ها</option></select>' +
-      '<button class="btn btn-ghost btn-sm" id="mCsv" style="margin-inline-start:auto"'+(can('reportExport')?'':' disabled data-tip="مجوز خروجی ندارید"')+'>'+icon('download',13)+' خروجی CSV</button>' +
       '<button class="btn btn-ghost btn-sm" id="mReset">'+icon('refresh',13)+' حذف فیلترها</button>' +
     '</div>' +
     '<div id="mIncSlot"></div>' +
     '<div class="card tight" id="mTblWrap"></div>';
   $('#mStatus').value = membersState.status; $('#mSort').value = membersState.sort;
-  $('#mCsv').onclick = ()=> guard('reportExport', ()=>{
-    const head = FIELDS().map(f=>f.label).concat(['شماره عضویت','وضعیت','تعداد وام‌ها','بدهی جاری ('+CUR()+')','تاریخ عضویت']);
-    const rows = filteredMembers().map(m => FIELDS().map(f=>fldVal(m,f.key)).concat([
-      m.memberNo, m.status==='active'?'فعال':'غیرفعال',
-      memberLoans(m.id).filter(l=>l.status!=='cancelled').length, memberDebt(m.id), J.fmt(m.joinedAt)]));
-    downloadCsv('hesabat-members-'+J.todayIso()+'.csv', head, rows, 'فهرست اعضا');
-  });
+  /* خروجی CSV فقط در منوهای «گزارش‌ها» و «تراکنش‌ها» موجود است. */
   $('#mQ').addEventListener('input', e => { membersState.q = e.target.value; membersState.page = 1; renderMembersTable(); });
   $('#mStatus').addEventListener('change', e => { membersState.status = e.target.value; membersState.page = 1; renderMembersTable(); });
   $('#mSort').addEventListener('change', e => { membersState.sort = e.target.value; renderMembersTable(); });
@@ -1949,17 +1937,11 @@ function renderLoans(){
         '<option value="all">همه</option><option value="active">فعال</option><option value="overdue">معوق</option><option value="pending">در انتظار تصویب</option><option value="paid">تسویه‌شده</option><option value="cancelled">لغو شده</option></select>' +
       '<span class="t-lbl">صندوق:</span><select class="t-select" id="lFund">' +
         '<option value="all">همه</option>' + DB.funds.map(f=>'<option value="'+f.id+'">'+esc(f.name)+'</option>').join('') + '</select>' +
-      '<button class="btn btn-ghost btn-sm" id="lCsv" style="margin-inline-start:auto"'+(can('reportExport')?'':' disabled data-tip="مجوز خروجی ندارید"')+'>'+icon('download',13)+' خروجی CSV</button>' +
       '<button class="btn btn-ghost btn-sm" id="lReset">'+icon('refresh',13)+' حذف فیلتر</button>' +
     '</div>' +
     '<div class="card tight" id="lTblWrap"></div>';
   $('#btnAddLoan').onclick = ()=> guard('loanAdd', ()=> loanForm());
-  $('#lCsv').onclick = ()=> guard('reportExport', ()=>{
-    const head = ['عضو','شماره عضویت','مبلغ اصل وام ('+CUR()+')','صندوق','تعداد اقساط','پرداخت‌شده ('+CUR()+')','مانده بدهی ('+CUR()+')','وضعیت','تاریخ درخواست'];
-    const rows = filteredLoans().map(l => { const m = qMember(l.memberId);
-      return [m?m.name:'—', m?m.memberNo:'', l.amount, (qFund(l.fundId)||{}).name||'—', l.months, loanPaidSum(l), loanBalance(l), faLoanStatus(loanEffStatus(l)), J.fmt(l.requestDate)]; });
-    downloadCsv('hesabat-loans-'+J.todayIso()+'.csv', head, rows, 'فهرست وام‌ها');
-  });
+  /* خروجی CSV فقط در منوهای «گزارش‌ها» و «تراکنش‌ها» موجود است. */
   $('#lStatus').value = loansState.status; $('#lFund').value = loansState.fund;
   $('#lQ').addEventListener('input', e => { loansState.q = e.target.value; loansState.page=1; renderLoansTable(); });
   $('#lStatus').addEventListener('change', e => { loansState.status = e.target.value; loansState.page=1; renderLoansTable(); });
@@ -2915,22 +2897,25 @@ function filterSummary(def){
 }
 function analyticsCsvLines(){
   const D = chartsData(), K = D.kpis;
+  const U = CUR();
   const L = [];
+  L.push('== '+(DB.settings.institution.name||'مؤسسه')+' — گزارش جامع — تاریخ تهیه: '+J.fmtLong(J.todayIso())+' ==');
+  L.push('');
   L.push('== شاخص‌های کلیدی — '+D.rangeTitle+' ==');
-  L.push('شاخص,مقدار');
-  L.push('اعضای مؤسسه,'+K.members);
-  L.push('وام‌های ثبت‌شده,'+K.loans);
-  L.push('وام‌های جدید بازه,'+K.newLoans);
-  L.push('ارزش وام‌های جدید بازه,'+K.newLoanAmt);
-  L.push('مجموع دریافتی اقساط,'+K.paySum);
-  L.push('تعداد پرداخت‌های بازه,'+K.paysCnt);
-  L.push('مجموع واریزی‌ها,'+K.depSum);
-  L.push('مجموع برداشت‌ها,'+K.wdSum);
-  L.push('موجودی فعلی صندوق‌ها,'+K.curBal);
-  L.push('اقساط معوق فعال,'+K.odNow);
+  L.push('شاخص,مقدار,واحد');
+  L.push('اعضای مؤسسه,'+K.members+',نفر');
+  L.push('وام‌های ثبت‌شده,'+K.loans+',وام');
+  L.push('وام‌های جدید بازه,'+K.newLoans+',وام');
+  L.push('ارزش وام‌های جدید بازه,'+K.newLoanAmt+','+U);
+  L.push('مجموع دریافتی اقساط,'+K.paySum+','+U);
+  L.push('تعداد پرداخت‌های بازه,'+K.paysCnt+',پرداخت');
+  L.push('مجموع واریزی‌ها,'+K.depSum+','+U);
+  L.push('مجموع برداشت‌ها,'+K.wdSum+','+U);
+  L.push('موجودی فعلی صندوق‌ها,'+K.curBal+','+U);
+  L.push('اقساط معوق فعال,'+K.odNow+',قسط');
   L.push('');
   L.push('== داده ماهانه نمودارها — '+D.winTitle+' ==');
-  L.push('ماه,واریزی,برداشت,موجودی تجمیعی,اعضای تجمیعی,وام‌های تجمیعی,اقساط پرداخت‌شده,اقساط سررسیدشده,اقساط معوق');
+  L.push('ماه,واریزی ('+U+'),برداشت ('+U+'),موجودی تجمیعی ('+U+'),اعضای تجمیعی (نفر),وام‌های تجمیعی (عدد),اقساط پرداخت‌شده (قسط),اقساط سررسیدشده (قسط),اقساط معوق (قسط)');
   D.wm.forEach((m,i)=>{
     L.push([m.full, D.depWin[i], D.wdWin[i], D.balWin[i], D.memWin[i], D.loanWin[i], D.paidWin[i], D.dueWin[i], D.odWin[i]].join(','));
   });
@@ -2990,7 +2975,7 @@ function exportCsv(def){
   const body = rows.map(r => r.map(c => { const s2 = String(c==null?'':c).replace(/"/g,'""'); return /["\,\n]/.test(s2) ? '"'+s2+'"' : s2; }).join(',')).join('\r\n');
   const fs = filterSummary(def);
   const lines = analyticsCsvLines();
-  lines.push('== '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ==');
+  lines.push('== '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ('+faDigits(rows.length)+' رکورد) ==');
   lines.push(head);
   lines.push(body);
   const blob = new Blob(['\uFEFF'+lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
@@ -4308,6 +4293,9 @@ const SRV_DEFAULT_BASE = (typeof location !== 'undefined' && /^https?:$/.test(lo
   ? '' : 'http://localhost:4000';
 let SRV = { base:SRV_DEFAULT_BASE, token:'', user:null, instId:null, instName:'', on:false };
 try { const sv = JSON.parse(localStorage.getItem(SRV_KEY)); if(sv && typeof sv === 'object') SRV = Object.assign(SRV, sv); } catch(e){}
+/* اتصال خودکار: با وجود نشست سرور ذخیره‌شده، حالت سرور همیشه و بدون هیچ تنظیمات دستی فعال است —
+   سوپابیس (PostgreSQL) و سرویس ریلوی هر دو از همان API نسبی به مبدأ سرو می‌شوند. */
+if(SRV.token && SRV.instId) SRV.on = true;
 function srvSave(){ try{ localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); }catch(e){} }
 function srvReady(){ return !!(SRV.token && SRV.instId); }
 
@@ -4447,164 +4435,7 @@ function srvFieldInput(f, val){
   return '<div class="field">' + lbl + '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + ph + '"></div>';
 }
 
-/* ── بخش اتصال در تنظیمات (تب سازمان) ── */
-function injectSrvSec(){
-  const body = $('#setBody'); if(!body || $('#secSrv')) return;
-  const div = document.createElement('div');
-  div.className = 'card tight set-sec';
-  div.id = 'secSrv';
-  div.style.marginBottom = '16px';
-  div.innerHTML = '<div class="card-h"><h3>' + icon('gear',16) + ' منبع داده و اتصال سرور (PostgreSQL)</h3><span class="hint-t">داده‌ها از کجا خوانده/نوشته شوند: حافظهٔ محلی (دمو) یا سرور واقعی</span></div><div class="card-b sec-b" id="srvBox"></div>';
-  body.insertBefore(div, body.firstChild);
-  renderSrvSec();
-}
-function renderSrvSec(){
-  const box = $('#srvBox'); if(!box) return;
-  const conn = srvReady();
-  const dsOn = SRV.on && srvReady();
-  const dsCard = (k, on, ic, t, d) => '<div class="ds-card'+(on?' on':'')+'" data-ds="'+k+'" role="button" tabindex="0">' +
-    '<span class="ds-ic">'+icon(ic,17)+'</span><span class="ds-t"><b>'+t+'</b><p>'+d+'</p></span>' +
-    '<span class="ds-check">'+(on?icon('check',12):'')+'</span></div>';
-  box.innerHTML =
-    '<div style="margin-bottom:6px"><b style="font-size:.93rem">منبع داده</b><p style="font-size:.78rem;color:var(--ink-2);margin-top:3px">پنل داده‌ها را از کجا بخواند؟ همهٔ صفحات (داشبورد، اعضا، وام‌ها، گزارش‌ها) بر اساس این انتخاب پر می‌شوند.</p></div>' +
-    '<div class="ds-grid">' +
-      dsCard('local', !dsOn, 'wallet', 'حافظهٔ محلی مرورگر (دمو)', 'داده‌ها روی همین مرورگر ذخیره می‌شود؛ برای آزمایش سریع. نیازی به سرور نیست.') +
-      dsCard('server', dsOn, 'bank', 'سرور PostgreSQL', conn ? 'متصل به مؤسسهٔ «'+esc(SRV.instName||('#'+SRV.instId))+'» — داده‌ها از API خوانده می‌شود.' : 'داده‌ها از پایگاه‌دادهٔ واقعی از طریق API خوانده می‌شود. ابتدا اتصال را از فرم پایین بسازید.') +
-    '</div>' +
-    '<div class="card-h" style="padding:14px 0 8px;border:0"><h3 style="font-size:.82rem">'+icon('gear',15)+' تنظیمات اتصال سرور</h3></div>' +
-    '<div class="setting-row"><div class="sr-t"><b>وضعیت اتصال</b><p>' +
-      (conn ? 'متصل به <b>' + esc(SRV.base) + '</b> — مؤسسهٔ <b>' + esc(SRV.instName || ('#' + SRV.instId)) + '</b> (' + esc((SRV.user && SRV.user.name) || '') + ')</p>'
-            : 'هنوز به سروری متصل نشده‌اید. ابتدا وارد شوید یا حساب بسازید.</p>') +
-      '</div>' + (conn ? '<button class="btn btn-soft btn-sm" id="srvLogout">' + icon('x',14) + ' قطع اتصال</button>' : '') + '</div>' +
-    (conn ? '' :
-      '<div class="fields" style="max-width:640px">' +
-        '<div class="field full"><label>آدرس سرور (API)</label><input type="text" id="srvBase" value="' + esc(SRV.base) + '" placeholder="http://localhost:4000"></div>' +
-        '<div class="field"><label>ایمیل</label><input type="text" id="srvEmail" placeholder="admin@example.com"></div>' +
-        '<div class="field"><label>رمز عبور</label><input type="password" id="srvPass" placeholder="حداقل ۶ حرف"></div>' +
-      '</div>' +
-      '<div class="field-row" style="gap:8px;margin-top:10px">' +
-        '<button class="btn btn-soft btn-sm" id="srvLogin">' + icon('check',14) + ' ورود</button>' +
-        '<button class="btn btn-soft btn-sm" id="srvReg">' + icon('plus',14) + ' ساخت حساب</button>' +
-        '<button class="btn btn-soft btn-sm" id="srvPing">' + icon('info',14) + ' آزمایش سلامت سرور</button>' +
-      '</div>' +
-      '<div id="srvInstBox" style="display:none;margin-top:14px;border-top:1px dashed var(--line);padding-top:12px">' +
-        '<div class="fields" style="max-width:640px">' +
-          '<div class="field full"><label>مؤسسهٔ خود را انتخاب کنید</label><select id="srvInstSel"></select></div>' +
-          '<div class="field"><label>یا مؤسسهٔ جدید — نام</label><input type="text" id="srvNewName" placeholder="قرض‌الحسنه …"></div>' +
-          '<div class="field"><label>اسلاگ (اختیاری)</label><input type="text" id="srvNewSlug" placeholder="my-inst"></div>' +
-        '</div>' +
-        '<div class="field-row" style="gap:8px;margin-top:10px">' +
-          '<button class="btn btn-soft btn-sm" id="srvInstCreate">' + icon('plus',14) + ' ساخت مؤسسه</button>' +
-          '<button class="btn btn-primary btn-sm" id="srvInstGo">' + icon('check',14) + ' اتصال به مؤسسهٔ انتخابی</button>' +
-        '</div>' +
-      '</div>') +
-    (conn ?
-      '<div class="setting-row"><div class="sr-t"><b>حالت سرور</b><p>با فعال‌شدن، فیلدها و اعضا از سرور (PostgreSQL) خوانده و نوشته می‌شوند. دمودیتا دست نمی‌خورد.</p></div>' +
-        '<button class="btn btn-sm ' + (SRV.on ? 'btn-primary' : 'btn-soft') + '" id="srvToggle">' + icon('check',14) + (SRV.on ? ' فعال است — برای غیرفعال‌کردن بزنید' : ' فعال‌سازی حالت سرور') + '</button></div>'
-      : '');
-  const $id = x => document.getElementById(x);
-  const ping = $id('srvPing');
-  if(ping) ping.onclick = async ()=>{
-    SRV.base = ($id('srvBase').value || '').trim() || SRV.base; srvSave();
-    try { const j = await fetch(SRV.base.replace(/\/+$/,'') + '/api/health').then(r => r.json());
-      toast(j.ok ? 'سرور پاسخ می‌دهد ✔' : 'پاسخ سرور معتبر نبود.', j.ok ? 'ok' : 'err');
-    } catch(e){ toast('سرور در دسترس نیست: ' + SRV.base, 'err'); }
-  };
-  const doAuth = async (path)=>{
-    SRV.base = ($id('srvBase').value || '').trim() || SRV.base;
-    const email = ($id('srvEmail').value || '').trim();
-    const pass = ($id('srvPass').value || '');
-    if(!email || !pass){ toast('ایمیل و رمز را وارد کنید.', 'err'); return; }
-    try {
-      const j = await srvFetch('POST', path, { email, password: pass, name: email.split('@')[0] });
-      SRV.token = j.token; SRV.user = j.user; srvSave();
-      toast('ورود موفق. حالا مؤسسه را انتخاب کنید.', 'ok');
-      renderSrvSec(); await srvFillInstSel();
-    } catch(e){ toast(e.message, 'err'); }
-  };
-  const bl = $id('srvLogin'); if(bl) bl.onclick = ()=> doAuth('/api/auth/login');
-  const br = $id('srvReg');  if(br) br.onclick = ()=> doAuth('/api/auth/register');
-  const bi = $id('srvInstCreate');
-  if(bi) bi.onclick = async ()=>{
-    const name = ($id('srvNewName').value || '').trim();
-    if(!name){ toast('نام مؤسسه را وارد کنید.', 'err'); return; }
-    const slug = ($id('srvNewSlug').value || '').trim();
-    try {
-      const j = await srvFetch('POST', '/api/institutions', { name, slug: slug || undefined });
-      toast('مؤسسهٔ «' + j.name + '» ساخته شد.', 'ok');
-      await srvFillInstSel(String(j.id));
-    } catch(e){ toast(e.message, 'err'); }
-  };
-  const bg = $id('srvInstGo');
-  if(bg) bg.onclick = ()=>{
-    const sel = $id('srvInstSel');
-    if(!sel || !sel.value){ toast('اول یک مؤسسه انتخاب یا ایجاد کنید.', 'err'); return; }
-    SRV.instId = +sel.value; SRV.instName = sel.options[sel.selectedIndex].text; srvSave();
-    srvDropFieldsCache();
-    toast('به مؤسسهٔ «' + SRV.instName + '» متصل شدید.', 'ok');
-    renderSrvSec();
-  };
-  const bo = $id('srvLogout');
-  if(bo) bo.onclick = async ()=>{
-    const okc = await askConfirm({ title:'قطع اتصال از سرور', ok:'قطع شود', danger:true,
-      text:'اتصال و توکن حذف می‌شود' + (SRV.on ? ' و حالت سرور غیرفعال می‌شود' : '') + '. دمودیتا تغییری نمی‌کند.' });
-    if(!okc) return;
-    SRV.token = ''; SRV.user = null; SRV.instId = null; SRV.instName = ''; SRV.on = false; srvSave(); srvDropFieldsCache();
-    toast('اتصال قطع شد.', 'ok'); renderSrvSec();
-  };
-  /* انتخاب منبع داده */
-  box.querySelectorAll('.ds-card').forEach(c => c.onclick = async ()=>{
-    if(c.dataset.ds === 'local'){
-      if(SRV.on && srvReady()){
-        const okc = await askConfirm({ title:'تغییر منبع داده به لوکال', ok:'بله، روی دمو برگرد',
-          text:'همهٔ صفحات دوباره از «حافظهٔ محلی مرورگر (دمو)» خوانده می‌شوند. اتصال سرور حفظ می‌شود و هر وقت بخواهی از همین‌جا فعالش می‌کنی.' });
-        if(!okc) return;
-        SRV.on = false; srvSave(); toast('منبع داده: لوکال (دمو)','ok');
-      }
-      renderSrvSec(); try{ route(); }catch(e){} return;
-    }
-    if(!srvReady()){
-      toast('هنوز به سروری متصل نیستی — اول با فرم «تنظیمات اتصال سرور» همین بخش وارد شو و مؤسسه را انتخاب کن.','warn');
-      const f = $id('srvBase'); if(f){ try{ f.focus(); f.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
-      return;
-    }
-    if(!SRV.on){
-      try { await srvLoadFields(true); } catch(e){ toast('خطا در اتصال: '+e.message, 'err'); return; }
-      SRV.on = true; srvSave();
-      toast('منبع داده: سرور — اعضا، وام‌ها و گزارش‌ها از PostgreSQL می‌آیند.','ok');
-    }
-    renderSrvSec();
-    if(SRV.on && srvReady() && document.getElementById('secFld')){ const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb); }
-    try{ route(); }catch(e){}
-  });
-  const bt = $id('srvToggle');
-  if(bt) bt.onclick = async ()=>{
-    if(!SRV.on){
-      try { await srvLoadFields(true); }
-      catch(e){ toast('خطا در اتصال: ' + e.message, 'err'); return; }
-      SRV.on = true; srvSave();
-      toast('حالت سرور فعال شد — اعضا و فیلدها از این پس از سرور می‌آیند.', 'ok');
-    } else {
-      SRV.on = false; srvSave();
-      toast('حالت سرور غیرفعال شد — روی دمودیتا برگشتید.', 'ok');
-    }
-    renderSrvSec();
-    if(SRV.on && srvReady() && document.getElementById('secFld')){
-      const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb);
-    }
-  };
-}
-async function srvFillInstSel(selectId){
-  const box = document.getElementById('srvInstBox');
-  const sel = document.getElementById('srvInstSel');
-  if(!box || !sel) return;
-  box.style.display = '';
-  try {
-    const me = await srvFetch('GET', '/api/auth/me');
-    sel.innerHTML = (me.institutions || []).map(i => '<option value="' + i.id + '"' + (String(i.id) === selectId ? ' selected' : '') + '>' + esc(i.name) + ' (' + esc(i.slug) + ')</option>').join('')
-      || '<option value="">— هنوز مؤسسه‌ای ندارید؛ بسازید —</option>';
-  } catch(e){ toast(e.message, 'err'); }
-}
+/* سکشن «تنظیمات اتصال سرور» کاملاً حذف شد — اتصال به سرور (سوپابیس/ریلوی) خودکار و از همان مبدأ است؛ ورود فقط از صفحهٔ ورود یا افتتاح حساب انجام می‌شود. */
 
 /* ── مدیریت فیلدها از سرور (جایگزین بخش فیلدهای دمو وقتی حالت سرور روشن است) ── */
 async function srvFieldsSec(box){
@@ -5006,7 +4837,7 @@ async function renderSrvDashboard(){
         '<button class="btn btn-soft btn-xs" id="srvDashAddPay" style="border-radius:16px">'+icon('coins',13)+' ثبت پرداخت</button>' +
       '</span></div></div></div>' +
     '<div class="grid g-stats" id="srvStats"><div class="stat"><div class="stat-top">در حال دریافت آمار…</div><div class="stat-val">—</div></div></div>' +
-    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت اقساط</h3><span class="hint-t">توزیع اقساط بر اساس وضعیت</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvIns"></canvas></div><div class="legend" id="chSrvInsLg"></div></div></div>' +
+    '<div class="grid g-2" style="margin-top:14px"><div class="card"><div class="card-h"><h3>وضعیت وام‌ها</h3><span class="hint-t">تسویه‌شده + در جریان + معوق</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvIns"></canvas></div><div class="legend" id="chSrvInsLg"></div></div></div>' +
     '<div class="card"><div class="card-h"><h3>گردش مالی ۱۲ ماه اخیر</h3><span class="hint-t">وام‌ها و پرداخت‌ها</span></div><div class="card-b"><div class="chart-box"><canvas id="chSrvFlow"></canvas></div><div class="legend"><span class="lg-i"><i style="background:#1C6E31"></i>وام‌ها</span><span class="lg-i"><i style="background:#9CCB3C"></i>پرداخت‌ها</span></div></div></div></div>' +
     '<div class="grid g-2" style="margin-top:14px"><div class="card tight"><div class="card-h"><h3>آخرین تراکنش‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/txns">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashTxns"><p class="hint-t">در حال دریافت…</p></div></div>' +
     '<div class="card tight"><div class="card-h"><h3>آخرین وام‌ها</h3><a class="btn btn-soft btn-sm" href="#/app/loans">همه '+icon('chevS',12)+'</a></div><div class="card-b" id="srvDashLoans"><p class="hint-t">در حال دریافت…</p></div></div></div>' +
@@ -5031,15 +4862,15 @@ async function renderSrvDashboard(){
       stat('','bank','موجودی صندوق‌ها', fmtMShort(stats.funds.totalBalance)+' <small>'+CUR()+'</small>', faDigits(stats.funds.total)+' صندوق · '+faDigits(stats.funds.accounts)+' حساب') +
       stat('s-lime','wallet','پرداخت‌ها', fmtMShort(stats.payments.totalAmount)+' <small>'+CUR()+'</small>', faDigits(stats.payments.total)+' تراکنش');
 
-    // chart installments status — پرداخت‌شده / در انتظار / معوق
-    const insPaid = stats.installments.paid||0, insPend = stats.installments.pending||0, insOd = stats.installments.overdue||0;
-    const insTot = insPaid+insPend+insOd;
+    // چارت وضعیت وام‌ها — تسویه‌شده + در جریان + معوق (نه فقط وام‌های در جریان)
+    const lnAct = Number((stats.loans&&stats.loans.active)||0), lnPaid = Number((stats.loans&&stats.loans.paid)||0), lnOd = Number((stats.loans&&stats.loans.overdue)||0);
+    const lnTot = lnAct+lnPaid+lnOd;
     drawDonut($('#chSrvIns'), [
-      {label:'پرداخت‌شده', value:insPaid, color:'#1C6E31'},
-      {label:'در انتظار', value:insPend, color:'#C4871F'},
-      {label:'معوق', value:insOd, color:'#B3362B'}
-    ].filter(d=>d.value>0), 'کل اقساط', faDigits(insTot));
-    $('#chSrvInsLg').innerHTML = '<span class="lg-i"><i style="background:#1C6E31"></i>پرداخت‌شده ('+faDigits(insPaid)+')</span><span class="lg-i"><i style="background:#C4871F"></i>در انتظار ('+faDigits(insPend)+')</span><span class="lg-i"><i style="background:#B3362B"></i>معوق ('+faDigits(insOd)+')</span>';
+      {label:'تسویه‌شده', value:lnPaid, color:'#1C6E31'},
+      {label:'در جریان', value:lnAct, color:'#C4871F'},
+      {label:'معوق', value:lnOd, color:'#B3362B'}
+    ].filter(d=>d.value>0), 'کل وام‌ها', faDigits(lnTot));
+    $('#chSrvInsLg').innerHTML = '<span class="lg-i"><i style="background:#1C6E31"></i>تسویه‌شده ('+faDigits(lnPaid)+')</span><span class="lg-i"><i style="background:#C4871F"></i>در جریان ('+faDigits(lnAct)+')</span><span class="lg-i"><i style="background:#B3362B"></i>معوق ('+faDigits(lnOd)+')</span>';
 
     // chart flow - loans vs payments monthly - تماما شمسی با نام ماه کامل
     function gregToShamsiMonth(gregYM){
@@ -6029,7 +5860,7 @@ function srvExportCsv(def, D){
   const rows = def.rows(srvRepState.f);
   const fs = srvRepFilterSummary(def);
   const lines = srvAnalyticsCsvLines();
-  lines.push('== '+esc(SRV.instName||'مؤسسه')+' — '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ==');
+  lines.push('== '+(SRV.instName||'مؤسسه')+' — '+def.title+(fs ? ' — فیلترها: '+fs : '')+' ('+faDigits(rows.length)+' رکورد) ==');
   lines.push(def.cols.join(','));
   lines.push(rows.map(r => r.map(c => { const s2 = String(c==null?'':c).replace(/"/g,'""'); return /["\,\n]/.test(s2) ? '"'+s2+'"' : s2; }).join(',')).join('\r\n'));
   const blob = new Blob(['\uFEFF'+lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
@@ -6156,21 +5987,24 @@ function srvAnalyticsCsvLines(){
   const M = srvRepMonthly;
   if(!M) return [];
   const K = M.kpis;
+  const U = CUR();
   const L = [];
+  L.push('== '+(SRV.instName||'مؤسسه')+' — گزارش جامع — تاریخ تهیه: '+J.fmtLong(J.todayIso())+' ==');
+  L.push('');
   L.push('== شاخص‌های کلیدی — از تأسیس مؤسسه تاکنون ==');
-  L.push('شاخص,مقدار');
-  L.push('اعضای مؤسسه,'+K.members);
-  L.push('وام‌های ثبت‌شده,'+K.loans);
-  L.push('ارزش کل وام‌ها,'+K.loansAmt);
-  L.push('مجموع دریافتی اقساط,'+K.paySum);
-  L.push('تعداد پرداخت‌ها,'+K.paysCnt);
-  L.push('مجموع واریزی‌ها,'+K.depSum);
-  L.push('مجموع برداشت‌ها,'+K.wdSum);
-  L.push('موجودی فعلی صندوق‌ها,'+K.curBal);
-  L.push('اقساط معوق فعال,'+K.odNow);
+  L.push('شاخص,مقدار,واحد');
+  L.push('اعضای مؤسسه,'+K.members+',نفر');
+  L.push('وام‌های ثبت‌شده,'+K.loans+',وام');
+  L.push('ارزش کل وام‌ها,'+K.loansAmt+','+U);
+  L.push('مجموع دریافتی اقساط,'+K.paySum+','+U);
+  L.push('تعداد پرداخت‌ها,'+K.paysCnt+',پرداخت');
+  L.push('مجموع واریزی‌ها,'+K.depSum+','+U);
+  L.push('مجموع برداشت‌ها,'+K.wdSum+','+U);
+  L.push('موجودی فعلی صندوق‌ها,'+K.curBal+','+U);
+  L.push('اقساط معوق فعال,'+K.odNow+',قسط');
   L.push('');
   L.push('== داده ماهانه نمودارها — '+srvRepWinTitle(M)+' ==');
-  L.push('ماه,واریزی,برداشت,موجودی تجمیعی,اعضای تجمیعی,وام‌های تجمیعی,اقساط پرداخت‌شده,اقساط سررسیدشده,اقساط معوق');
+  L.push('ماه,واریزی ('+U+'),برداشت ('+U+'),موجودی تجمیعی ('+U+'),اعضای تجمیعی (نفر),وام‌های تجمیعی (عدد),اقساط پرداخت‌شده (قسط),اقساط سررسیدشده (قسط),اقساط معوق (قسط)');
   M.wm.forEach((m,i)=>{
     L.push([srvRepMonthFmt(m).full, M.depWin[i], M.wdWin[i], M.balWin[i], M.memWin[i], M.loanWin[i], M.paidWin[i], M.dueWin[i], M.odWin[i]].join(','));
   });
@@ -6238,12 +6072,34 @@ async function renderSrvTxnsPage(){
     '<div class="page-head"><div><h1>تراکنش‌ها</h1><div class="ph-sub">حالت سرور — تمام تراکنش‌ها از PostgreSQL — تاریخ شمسی کامل با نام ماه</div></div><div class="ph-actions"><button class="btn btn-solid btn-sm" id="srvAddTxn">'+icon('plus',15)+' ثبت تراکنش</button></div></div>' +
     '<div class="toolbar"><div class="t-search">'+icon('search',15)+'<input id="srvTxnQ" placeholder="جستجو توضیحات..."></div>' +
     '<select class="t-select" id="srvTxnType"><option value="all">همه انواع</option><option value="deposit">واریز</option><option value="withdraw">برداشت</option><option value="loan_out">پرداخت وام</option><option value="repayment">بازپرداخت</option></select>' +
+    '<button class="btn btn-ghost btn-sm" id="srvTxnCsv" style="margin-inline-start:auto">'+icon('download',13)+' خروجی CSV</button>' +
     '<button class="btn btn-ghost btn-sm" id="srvTxnReset">'+icon('refresh',13)+' حذف فیلتر</button></div>' +
     '<div class="card tight" id="srvTxnsBox"><p class="hint-t" style="padding:18px">در حال دریافت تراکنش‌ها…</p></div>';
 
   $('#srvAddTxn').onclick = ()=> srvTxnForm();
   $('#srvTxnType').onchange = ()=>{ srvTxnsState.type=$('#srvTxnType').value; srvTxnsState.page=1; srvLoadTxns(); };
   $('#srvTxnReset').onclick = ()=>{ srvTxnsState.type='all'; srvTxnsState.page=1; $('#srvTxnType').value='all'; $('#srvTxnQ').value=''; srvLoadTxns(); };
+  $('#srvTxnCsv').onclick = async ()=>{ /* خروجی CSV تراکنش‌ها — یکی از دو منوی مجاز (گزارش‌ها و تراکنش‌ها) */
+    try {
+      const type = srvTxnsState.type!=='all' ? '&type='+srvTxnsState.type : '';
+      // سقف هر صفحهٔ API عدد ۲۰۰ است؛ صفحه‌به‌صفحه تا همهٔ تراکنش‌ها خوانده شود (حداکثر ۲۵ صفحه ≈ ۵۰۰۰ رکورد)
+      const q = ($('#srvTxnQ')?.value||'').trim();
+      const all = [];
+      for(let pg=1; pg<=25; pg++){
+        const data = await srvFetch('GET','/api/institutions/'+SRV.instId+'/txns?page='+pg+'&pageSize=200'+type);
+        const batch = (data.rows||[]);
+        batch.forEach(x => {
+          if(q && !((x.description||'').includes(q) || (x.account_name||'').includes(q))) return;
+          const memb = x.member_values ? (Object.values(x.member_values)[0]?.value || x.member_no || '') : (x.member_no || '');
+          all.push([ J.fmtLong(x.created_at||''), faTxnType(x.type), String(x.amount), x.account_name||x.fund_name||'—', memb, x.description||'' ]);
+        });
+        if(!batch.length) break;
+      }
+      if(!all.length){ toast('تراکنشی برای خروجی نیست.','warn'); return; }
+      downloadCsv('hesabat-txns-'+J.todayIso()+'.csv', ['تاریخ','نوع','مبلغ ('+CUR()+')','حساب/صندوق','عضو','توضیحات'], all, 'تراکنش‌های '+(SRV.instName||'مؤسسه'));
+      toast('فایل CSV تراکنش‌ها ('+faDigits(all.length)+' رکورد) دانلود شد.','ok');
+    } catch(e){ toast(e.message,'err'); }
+  };
   $('#srvTxnQ').oninput = ()=>{ srvTxnsState.page=1; srvLoadTxns(); };
 
   await srvLoadTxns();
@@ -6369,10 +6225,6 @@ function srvTxnForm(){
   const _renderSettings = renderSettings;
   renderSettings = function(){
     _renderSettings();
-    /* منبع داده/اتصال PostgreSQL منتقل شد به تب «داده‌ها و ممیزی» */
-    if(setTab === 'data'){
-      injectSrvSec();
-    }
     if(setTab === 'org' && SRV.on && srvReady()){
       const fb = document.querySelector('#secFld .sec-b'); if(fb) srvFieldsSec(fb);
     }

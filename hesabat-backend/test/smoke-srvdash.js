@@ -7,7 +7,7 @@ const bad=[];
 const T=(n,c)=>{ if(!c) bad.push(n); console.log((c?'✔':'✘')+' '+n); };
 const STATS = {
   members:{total:2,active:2,inactive:0,newThisMonth:1},
-  loans:{total:2,active:1,overdue:0,totalAmount:42000000},
+  loans:{total:2,active:1,overdue:0,paid:1,totalAmount:42000000},
   installments:{pending:8,overdue:1,paid:4,totalPendingAmount:20000000},
   funds:{total:1,accounts:1,totalBalance:50000000},
   payments:{total:5,totalAmount:10000000},
@@ -62,7 +62,8 @@ const DUE = { rows:[
  const insHtml = d.querySelector('#srvDashIns') ? d.querySelector('#srvDashIns').innerHTML : '';
  T('قسط سررسیدنزدیک رندر (عضو)', insHtml.includes('علی محمدی'));
  T('«روز مانده» در ردیف قسط', insHtml.includes('روز مانده'));
- T('نمودار وضعیت اقساط (chSrvIns) هست', !!d.querySelector('#chSrvIns'));
+ T('نمودار وضعیت وام‌ها (chSrvIns) هست', !!d.querySelector('#chSrvIns'));
+ T('لجند وضعیت وام‌ها: تسویه‌شده + در جریان + معوق', /تسویه‌شده/.test(d.querySelector('#chSrvInsLg').innerHTML) && /در جریان/.test(d.querySelector('#chSrvInsLg').innerHTML) && /معوق/.test(d.querySelector('#chSrvInsLg').innerHTML));
 
  // صفحهٔ اعضا: دکمهٔ تخصیص وام
  w.eval(`

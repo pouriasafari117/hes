@@ -119,7 +119,8 @@ function payload(page){
  T('CSV سکشن شاخص‌ها', csv.includes('شاخص‌های کلیدی — از تأسیس مؤسسه تاکنون'));
  T('CSV KPI اعضا ۳۰', csv.includes('اعضای مؤسسه,30'));
  T('CSV سکشن دادهٔ ماهانه', csv.includes('داده ماهانه نمودارها'));
- T('CSV سرستون ماهانه', csv.includes('ماه,واریزی,برداشت,موجودی تجمیعی'));
+ T('CSV سرستون ماهانه (با واحد)', csv.includes('ماه,واریزی (') && csv.includes('موجودی تجمیعی (') && csv.includes('قسط)'));
+ T('CSV KPI با ستون واحد', csv.includes('شاخص,مقدار,واحد') && csv.includes('موجودی فعلی صندوق‌ها,'));
  T('CSV سکشن گزارش تفصیلی', csv.includes('== صندوق امید — گزارش'));
 
  T('بدون خطای jsdom', errs.length===0 || (console.log('ERRS',errs.slice(0,3)),false));

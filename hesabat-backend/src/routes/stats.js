@@ -13,21 +13,28 @@ r.get('/', asyncH(async (req, res) => {
     const memActive = (await c.query("select count(*)::int as n from members where institution_id=$1 and status='active' and deleted_at is null", [req.institutionId])).rows[0].n;
     const memNewMonth = (await c.query("select count(*)::int as n from members where institution_id=$1 and created_at >= date_trunc('month', now()) and deleted_at is null", [req.institutionId])).rows[0].n;
 
-    // صندوق‌ها و حساب‌ها
+    // صندوق‌ها و حساب‌ها — موجودی صندوق مؤسسه (fund_balance) مبنای ماندهٔ داشبورد است؛
+    // اگر صفر باشد، مثل قبل مجموع موجودی اولیهٔ حساب‌ها مبنا می‌شود و گردش تراکنش‌ها رویش اعمال می‌شود.
     let fundsTotal = 0, accountsTotal = 0, totalBalance = 0;
     try {
       fundsTotal = (await c.query('select count(*)::int as n from funds where institution_id=$1', [req.institutionId])).rows[0].n;
       accountsTotal = (await c.query('select count(*)::int as n from accounts where institution_id=$1', [req.institutionId])).rows[0].n;
-      totalBalance = (await c.query('select coalesce(sum(initial_balance),0)::bigint as s from accounts where institution_id=$1', [req.institutionId])).rows[0].s;
+      const initSum = Number((await c.query('select coalesce(sum(initial_balance),0)::bigint as s from accounts where institution_id=$1', [req.institutionId])).rows[0].s);
+      const fundBal = Number((await c.query('select coalesce(fund_balance,0)::bigint as b from institutions where id=$1', [req.institutionId])).rows[0].b);
+      const base = fundBal > 0 ? fundBal : initSum;
+      const depAll = Number((await c.query("select coalesce(sum(amount),0)::bigint as s from txns where institution_id=$1 and type in ('deposit','repayment')", [req.institutionId])).rows[0].s);
+      const wdAll = Number((await c.query("select coalesce(sum(amount),0)::bigint as s from txns where institution_id=$1 and type in ('withdraw','loan_out')", [req.institutionId])).rows[0].s);
+      totalBalance = Math.max(0, base + depAll - wdAll);
     } catch(e) { /* جدول نیست */ }
 
     // وام‌ها
-    let loansTotal = 0, loansActive = 0, loansAmount = 0, loansOverdue = 0;
+    let loansTotal = 0, loansActive = 0, loansAmount = 0, loansOverdue = 0, loansPaid = 0;
     try {
       loansTotal = (await c.query('select count(*)::int as n from loans where institution_id=$1', [req.institutionId])).rows[0].n;
       loansActive = (await c.query("select count(*)::int as n from loans where institution_id=$1 and status='active'", [req.institutionId])).rows[0].n;
       loansAmount = (await c.query('select coalesce(sum(amount),0)::bigint as s from loans where institution_id=$1', [req.institutionId])).rows[0].s;
       loansOverdue = (await c.query("select count(*)::int as n from loans where institution_id=$1 and status='overdue'", [req.institutionId])).rows[0].n;
+      loansPaid = (await c.query("select count(*)::int as n from loans where institution_id=$1 and status='paid'", [req.institutionId])).rows[0].n;
     } catch(e) {}
 
     // اقساط
@@ -104,7 +111,7 @@ r.get('/', asyncH(async (req, res) => {
     return {
       members: { total: memTotal, active: memActive, newThisMonth: memNewMonth },
       funds: { total: fundsTotal, accounts: accountsTotal, totalBalance: Number(totalBalance) },
-      loans: { total: loansTotal, active: loansActive, overdue: loansOverdue, totalAmount: Number(loansAmount) },
+      loans: { total: loansTotal, active: loansActive, overdue: loansOverdue, paid: loansPaid, totalAmount: Number(loansAmount) },
       installments: { pending: insPending, overdue: insOverdue, paid: insPaid, totalPendingAmount: Number(insTotalAmount) },
       payments: { total: payTotal, totalAmount: Number(payAmount) },
       txns: { total: txnsTotal, deposit: Number(txnsDeposit), withdraw: Number(txnsWithdraw) },
