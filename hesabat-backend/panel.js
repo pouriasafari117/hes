@@ -2022,7 +2022,7 @@ function loanForm(preset, presetMemberId){
     '</div></div></div>' +
 
     '<div class="m-sec t-blue"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
-      '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="lfMonths">'+(()=>{ const cur=ld.months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option'+(x===cur?' selected':'')+' value="'+x+'">'+faDigits(x)+'</option>').join(''); })()+'</select></div>' +
+      '<div class="field"><label>تعداد اقساط <span class="req">*</span> <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="lfMonths" type="number" inputmode="numeric" class="num-inp" min="1" max="120" value="'+esc(String(ld.months||12))+'"><span class="help">به میل خودت؛ مثلاً ۷، ۹، ۱۵…</span><span class="err-msg"></span></div>' +
       '<div class="field"><label>فاصله / دوره اقساط</label><select id="lfInt"><option value="1"'+((ld.interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((ld.interval||1)==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((ld.interval||1)==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="lfFirst"><span class="err-msg"></span></div>' +
       '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="lfPer" class="num-inp"><span class="help">با تغییر مبلغ/تعداد، به‌صورت خودکار پیشنهاد می‌شود</span></div>' +
@@ -2121,6 +2121,7 @@ function loanForm(preset, presetMemberId){
     buildVarGrid(plan);
   };
   el('#lfAmt').addEventListener('input', suggest);
+  el('#lfMonths').addEventListener('input', suggest);
   el('#lfMonths').addEventListener('change', suggest);
   el('#lfRate').addEventListener('input', suggest);
   el('#lfPer').addEventListener('input', updateSum);
@@ -2131,11 +2132,13 @@ function loanForm(preset, presetMemberId){
 
   el('#lfSave').onclick = ()=>{
     const memberId = el('#lfMember').value, fundId = el('#lfFund').value, accId = el('#lfAcc').value;
-    const amt = moneyVal(el('#lfAmt')), months = +el('#lfMonths').value, intM = +el('#lfInt').value;
+    const amt = moneyVal(el('#lfAmt')), intM = +el('#lfInt').value;
+    const months = clampNum(Math.round(+el('#lfMonths').value || 0), 1, 120);
     let okf = true;
     const need = (cond, inp, msg) => { if(cond) clearErr(inp); else { markErr(inp,msg); okf = false; } };
     need(memberId, el('#lfMember'), 'عضو را انتخاب کنید.');
     need(amt > 0, el('#lfAmt'), 'مبلغ وام را وارد کنید.');
+    need(months >= 1 && months <= 120, el('#lfMonths'), 'تعداد اقساط بین ۱ تا ۱۲۰ باشد.');
     need(!!jdVal(el('#lfFirst')), el('#lfFirst'), 'تاریخ اولین سررسید الزامی است.');
     if(!okf){ toast('برخی فیلدها ناقص است.','err'); return; }
     const status = el('#lfStatus').value;
@@ -3280,13 +3283,17 @@ function renderFieldsSec(box){
 }
 function renderFinSec(box){
     const body = box; const s = DB.settings; const canEdit = can('settingsEdit'); const disAttr = canEdit ? '' : ' disabled style="opacity:.55;pointer-events:none"';
+  /* حالت سرور: تنظیمات مالی از خود مؤسسهٔ PostgreSQL می‌آید و به آن برمی‌گردد —
+     یعنی همان چیزهایی که در «افتتاح حساب» انتخاب شده، اینجا هم خوش‌دیده و قابل ویرایش است */
+  const srvFin = (SRV.on && srvReady());
+  if(srvFin) return renderSrvFinSec(body, canEdit, disAttr, s);
     
     body.innerHTML = '<div class="fields">' +
       '<div class="field"><label>واحد پول</label><select id="setCur"'+disAttr+'><option'+(s.currency==='تومان'?' selected':'')+'>تومان</option><option'+(s.currency==='ریال'?' selected':'')+'>ریال</option></select></div>' +
       '<div class="field"><label>قالب شماره‌گذاری اعضا</label><input id="setNoTpl" class="num-inp" value="'+esc(s.memberNoTemplate)+'"'+disAttr+'>' +
         '<span class="help">متغیر <b>{seq}</b> یا <b>{seq:4}</b> = شماره ردیف. پیش‌نمایش: <b id="noPrev">'+esc(s.memberNoTemplate.replace(/\{seq(?::(\d+))?\}/g,(x,p)=>String(DB.counters.member+1).padStart(p?+p:1,'0')))+'</b></span></div>' +
       '<div class="field"><label>پیش‌فرض کارمزد سالانه وام <small>(٪)</small></label><input id="setLdRate" class="num-inp" value="'+esc(String((s.loanDefaults||{}).rate!==undefined?s.loanDefaults.rate:4))+'"'+disAttr+'><span class="help">فرم ثبت وام با این مقدار پر می‌شود.</span></div>' +
-      '<div class="field"><label>پیش‌فرض تعداد اقساط</label><select id="setLdMonths"'+disAttr+'>'+(()=>{ const cur=(s.loanDefaults||{}).months||12; const opts=[6,12,18,24,30,36,48]; if(opts.indexOf(cur)<0) opts.push(cur); opts.sort((a,b)=>a-b); return opts.map(x=>'<option value="'+x+'"'+(x===cur?' selected':'')+'>'+faDigits(x)+'</option>').join(''); })()+'</select><span class="help">تعداد اقساط پیشنهادی هنگام ثبت وام جدید.</span></div>' +
+      '<div class="field"><label>پیش‌فرض تعداد اقساط <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="setLdMonths" class="num-inp" type="number" inputmode="numeric" min="1" max="120" value="'+esc(String((s.loanDefaults||{}).months||12))+'"'+disAttr+'><span class="help">تعداد اقساط پیشنهادی هنگام ثبت وام جدید — با آنبردینگ سینک است.</span></div>' +
       '<div class="field"><label>پیش‌فرض دوره اقساط</label><select id="setLdInt"'+disAttr+'><option value="1"'+(((s.loanDefaults||{}).interval||1)==1?' selected':'')+'>ماهانه</option><option value="2"'+((s.loanDefaults||{}).interval==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((s.loanDefaults||{}).interval==3?' selected':'')+'>سه‌ماه یک‌بار</option></select></div>' +
       (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setFinSave">'+icon('check',14)+' ذخیره تنظیمات مالی</button></div>' : noPermNote()) +
     '</div>';
@@ -3296,12 +3303,64 @@ function renderFinSec(box){
       s.currency = $('#setCur').value; s.memberNoTemplate = fieldVal('#setNoTpl') || 'M-{seq:4}';
       s.loanDefaults = {
         rate: Math.max(0, Math.min(100, +fieldVal('#setLdRate') || 0)),
-        months: +($('#setLdMonths')&&$('#setLdMonths').value) || 12,
+        months: clampNum(Math.round(+($('#setLdMonths')&&$('#setLdMonths').value)||0),1,120)||12,
         interval: +($('#setLdInt')&&$('#setLdInt').value) || 1
       };
       audit('به‌روزرسانی تنظیمات مالی', 'settings'); saveDb(); toast('تنظیمات مالی ذخیره شد.','ok'); route();
     };
   }
+
+/* تنظیمات مالی در حالت سرور — مقادیر همان institutions است که موقع «افتتاح حساب» ساخته شد.
+   عنوان‌ها شامل نام مؤسسه و modifiable هر تعداد اقساط (۱ تا ۱۲۰)، دوره اقساط، واحد پول، کارمزد. */
+async function renderSrvFinSec(body, canEdit, disAttr, s){
+  body.innerHTML = '<p class="hint-t" style="padding:10px 4px">در حال بارگذاری تنظیمات مؤسسه از سرور…</p>';
+  let inst = null;
+  try{ const r = await srvFetch('GET', '/api/institutions/'+SRV.instId); inst = r.institution||r; }catch(e){ body.innerHTML='<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div>'; return; }
+  const lm = s.loanDefaults||{};
+  const perOpts = [['monthly','ماهانه'],['bimonthly','دوماه یک‌بار'],['quarterly','سه‌ماه یک‌بار']];
+  const per = inst.installment_period||'monthly';
+  body.innerHTML =
+    '<div class="alert a-info" style="margin-bottom:14px"><span class="al-ic">'+icon('info',16)+'</span><div>این تنظیمات از <b>'+esc(inst.name||SRV.instName||'')+'</b> (PostgreSQL) خوانده می‌شود و علاوه‌بر نمایش، با کلیک ذخیره، در دیتابیس سرور هم به‌روزرسانی می‌شود — همان آپشن‌های «افتتاح حساب».</div></div>'+
+    '<div class="fields">' +
+      '<div class="field"><label>واحد پول</label><select id="setSrvCur"'+disAttr+'><option'+(inst.currency==='تومان'?' selected':'')+'>تومان</option><option'+(inst.currency==='ریال'?' selected':'')+'>ریال</option></select></div>' +
+      '<div class="field"><label>پیش‌فرض کارمزد سالانه وام <small>(٪)</small></label><input id="setSrvFee" class="num-inp" type="number" min="0" max="100" value="'+esc(String(inst.fee_percent!=null?inst.fee_percent:4))+'"'+disAttr+'><span class="help">همان «کارمزد» آنبردینگ — فرم ثبت وام با این مقدار پر می‌شود.</span></div>' +
+      '<div class="field"><label>پیش‌فرض تعداد اقساط <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="setSrvMonths" class="num-inp" type="number" inputmode="numeric" min="1" max="120" value="'+esc(String(inst.installments_count||12))+'"'+disAttr+'><span class="help">همان «تعداد اقساط پیش‌فرض» آنبردینگ.</span></div>' +
+      '<div class="field"><label>دوره اقساط</label><select id="setSrvPeriod"'+disAttr+'>'+perOpts.map(o=>'<option value="'+o[0]+'"'+(per===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select><span class="help">همان «دوره اقساط» آنبردینگ.</span></div>' +
+      '<div class="field full"><label>نام مؤسسه</label><input id="setSrvName" value="'+esc(inst.name||'')+'"'+disAttr+'></div>' +
+      '<div class="field full"><label>آدرس مؤسسه</label><textarea id="setSrvAddr" rows="2"'+disAttr+'>'+esc(inst.address||'')+'</textarea></div>' +
+      '<div class="field full"><label style="color:var(--ink-2);font-weight:600">فیلدهای محلی (فقط حالت دمو)</label></div>'+
+      '<div class="field"><label>قالب شماره‌گذاری اعضا (فقط دمو)</label><input id="setNoTpl" class="num-inp" value="'+esc(s.memberNoTemplate)+'"'+disAttr+'><span class="help">متغیر {seq} یا {seq:4} = شماره ردیف.</span></div>' +
+      '<div class="field"><label>پیش‌فرض محلی کارمزد/اقساط (فقط دمو)</label><div style="display:flex;gap:6px">'+
+        '<input id="setLdRate" class="num-inp" value="'+esc(String(lm.rate!==undefined?lm.rate:4))+'"'+disAttr+' placeholder="کارمزد ٪">'+
+        '<input id="setLdMonths" class="num-inp" type="number" min="1" max="120" value="'+esc(String(lm.months||12))+'"'+disAttr+' placeholder="اقساط">'+
+        '<select id="setLdInt"'+disAttr+'><option value="1"'+(((lm.interval||1)==1)?' selected':'')+'>ماهانه</option><option value="2"'+((lm.interval)==2?' selected':'')+'>دوماه یک‌بار</option><option value="3"'+((lm.interval)==3?' selected':'')+'>سه‌ماه یک‌بار</option></select>'+
+      '</div></div>' +
+      (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setSrvFinSave">'+icon('check',14)+' ذخیره تنظیمات مالی (سرور)</button></div>' : noPermNote()) +
+    '</div>';
+  const sv = $('#setSrvFinSave'); if(sv) sv.onclick = async ()=>{
+    const monthsN = clampNum(Math.round(parseInt($('#setSrvMonths').value)||0),1,120);
+    const payload = {
+      name: $('#setSrvName').value.trim()||inst.name,
+      address: $('#setSrvAddr').value,
+      currency: $('#setSrvCur').value,
+      fee_percent: Math.max(0,Math.min(100,+$('#setSrvFee').value||0)),
+      installments_count: monthsN,
+      installment_period: $('#setSrvPeriod').value
+    };
+    try{
+      await srvFetch('PATCH', '/api/institutions/'+SRV.instId, payload);
+      s.memberNoTemplate = fieldVal('#setNoTpl') || s.memberNoTemplate;
+      s.loanDefaults = {
+        rate: Math.max(0, Math.min(100, +fieldVal('#setLdRate') || 0)),
+        months: clampNum(Math.round(+($('#setLdMonths')&&$('#setLdMonths').value)||0),1,120)||12,
+        interval: +($('#setLdInt')&&$('#setLdInt').value) || 1
+      };
+      SRV.instName = payload.name; srvSave();
+      audit('به‌روزرسانی تنظیمات مالی مؤسسه در سرور', 'settings'); saveDb();
+      toast('تنظیمات مالی در سرور ذخیره شد — با همان آپشن‌های آنبردینگ.','ok'); route();
+    }catch(e){ toast('خطا در ذخیره سرور: '+e.message,'err'); }
+  };
+}
 function renderNotifSec(box){
     const body = box; const s = DB.settings; const canEdit = can('settingsEdit'); const disAttr = canEdit ? '' : ' disabled style="opacity:.55;pointer-events:none"';
     
@@ -4745,17 +4804,34 @@ async function srvViewMember(id, cachedRows){
   const name = vals[Object.keys(vals)[0]] || m.member_no || '#'+m.id;
   let fields;
   try { fields = await srvLoadFieldsCached(); } catch(e){ fields=[]; }
+  let loans = [];
+  try { const lData = await srvFetch('GET', '/api/institutions/'+SRV.instId+'/loans?memberId='+m.id+'&page=1&pageSize=100'); loans = lData.rows||[]; } catch(e){}
   const rowsHtml = fields.map(f=>'<div class="kv"><span class="k">'+esc(f.label)+'</span><span class="v">'+esc(vals[f.key]||'—')+'</span></div>').join('') || Object.entries(vals).map(([k,v])=>'<div class="kv"><span class="k">'+esc(k)+'</span><span class="v">'+esc(v)+'</span></div>').join('');
+  /* تاریخچهٔ وام‌ها: در جریان و تسویه‌شده جدا، با امکان پرش به جزئیات هر وام */
+  const ongoing = loans.filter(l=>l.status!=='paid' && l.status!=='cancelled');
+  const settled = loans.filter(l=>l.status==='paid');
+  const loanRow = l => '<div class="mini-item" style="padding:10px 0;border-bottom:1px dashed var(--line)"><span class="avatar sz-34 teal" style="border-radius:11px">'+icon('loan',15)+'</span>' +
+    '<span class="mi-t"><b>'+fmtM(l.amount)+' <small>'+CUR()+'</small></b><span>'+faDigits(l.installments_count)+' قسط · '+J.fmtLong(l.created_at||'')+'</span></span>' +
+    '<span class="badge '+(l.status==='paid'?'b-lime':l.status==='active'?'b-green':'b-gray')+'" style="font-size:.72rem">'+(l.status==='paid'?icon('check',11)+' تسویه‌شده':faLoanStatus(l.status))+'</span>' +
+    '<button class="btn btn-soft btn-xs" data-vloan="'+l.id+'" style="border-radius:16px">جزئیات</button></div>';
+  const loansSec =
+    (loans.length ? '<div class="m-sec"><div class="m-sec-h">'+icon('loan',14)+' تاریخچهٔ وام‌های این عضو ('+faDigits(loans.length)+')</div><div class="m-sec-b">' +
+      (ongoing.length ? '<div style="font-size:.75rem;font-weight:700;color:var(--green-deep);margin:2px 0 4px">وام‌های در جریان ('+faDigits(ongoing.length)+')</div><div class="mini-list">'+ongoing.map(loanRow).join('')+'</div>' : '') +
+      (settled.length ? '<div style="font-size:.75rem;font-weight:700;color:var(--ink-2);margin:'+(ongoing.length?'14px':'2px')+' 0 4px">وام‌های تسویه‌شده ('+faDigits(settled.length)+')</div><div class="mini-list">'+settled.map(loanRow).join('')+'</div>' : '') +
+    '</div></div>'
+    : '<div class="m-sec"><div class="m-sec-h">'+icon('loan',14)+' تاریخچهٔ وام‌های این عضو</div><div class="m-sec-b"><p class="hint-t" style="padding:8px 2px">هنوز وامی برای این عضو ثبت نشده است.</p></div></div>');
   openModal({
     title: esc(name),
     sub: 'پرونده عضو · '+esc(m.member_no||'')+' · '+ (m.status==='active'?'فعال':'غیرفعال'),
     size:'md',
     body: '<div class="m-sec"><div class="m-sec-h">اطلاعات هویتی</div><div class="m-sec-b"><div class="kv-list">'+rowsHtml+'</div></div></div>' +
-          '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(m.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(m.status==='active'?'فعال':'غیرفعال')+'</span></span></div></div></div></div>',
+          '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(m.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(m.status==='active'?'فعال':'غیرفعال')+'</span></span></div></div></div></div>' +
+          loansSec,
     foot: '<button class="btn btn-ghost btn-sm" data-x>بستن</button><button class="btn btn-solid btn-sm" id="srvViewEdit">'+icon('pen',14)+' ویرایش</button>',
     onOpen(h){
       h.el.querySelector('[data-x]').onclick=()=>h.close();
       h.el.querySelector('#srvViewEdit').onclick=()=>{ h.close(); srvMemberForm(m); };
+      h.el.querySelectorAll('[data-vloan]').forEach(b=>{ b.onclick=()=>{ h.close(); if(typeof srvLoanDetail==='function') srvLoanDetail(b.dataset.vloan); }; });
     }
   });
 }
@@ -5172,7 +5248,7 @@ async function srvLoanForm(presetMemberId){
         '<div class="field"><label>تاریخ پرداخت</label><input id="slfPay" placeholder="1403/02/16"></div>' +
       '</div></div></div>' +
       '<div class="m-sec t-blue"><div class="m-sec-h"><span class="sn">۳</span> برنامه اقساط</div><div class="m-sec-b"><div class="fields">' +
-        '<div class="field"><label>تعداد اقساط <span class="req">*</span></label><select id="slfCnt"><option value="6"'+(cntDefault==6?' selected':'')+'>6</option><option value="12"'+(cntDefault==12?' selected':'')+'>12</option><option value="18"'+(cntDefault==18?' selected':'')+'>18</option><option value="24"'+(cntDefault==24?' selected':'')+'>24</option><option value="36"'+(cntDefault==36?' selected':'')+'>36</option><option value="48"'+(cntDefault==48?' selected':'')+'>48</option></select></div>' +
+        '<div class="field"><label>تعداد اقساط <span class="req">*</span> <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="slfCnt" type="number" inputmode="numeric" class="num-inp" min="1" max="120" value="'+esc(String(cntDefault))+'"><span class="help">به میل خودت؛ مثلاً ۷، ۹، ۱۵…</span></div>' +
         '<div class="field"><label>فاصله اقساط</label><select id="slfInt"><option value="1" selected>ماهانه</option><option value="2">دوماه یک‌بار</option><option value="3">سه‌ماه یک‌بار</option></select></div>' +
         '<div class="field"><label>تاریخ اولین سررسید <span class="req">*</span></label><input id="slfFirst" placeholder="1403/03/15"><span class="err-msg"></span></div>' +
         '<div class="field"><label>مبلغ هر قسط <small>('+CUR()+')</small></label><input id="slfPer" class="num-inp"><span class="help">خودکار محاسبه می‌شود</span></div>' +
@@ -5280,6 +5356,7 @@ async function srvLoanForm(presetMemberId){
     slfBuildGrid(plan);
   };
   el('#slfAmt').addEventListener('input', updateSum);
+  el('#slfCnt').addEventListener('input', updateSum);
   el('#slfCnt').addEventListener('change', updateSum);
   el('#slfFee').addEventListener('input', updateSum);
   el('#slfPer').addEventListener('input', updateSum);
@@ -5296,7 +5373,9 @@ async function srvLoanForm(presetMemberId){
     if(!mid){ err.style.display=''; err.textContent='عضو را انتخاب کنید.'; return; }
     if(!amt || Number(amt)<=0){ err.style.display=''; err.textContent='مبلغ وام را وارد کنید.'; return; }
     if(!first){ err.style.display=''; err.textContent='تاریخ اولین سررسید الزامی است.'; return; }
-    const payload = { memberId: parseInt(mid), amount: amt, installmentsCount: parseInt(cnt), feePercent: fee, description: desc,
+    const cntN = Math.round(parseInt(cnt)||0);
+    if(cntN < 1 || cntN > 120){ err.style.display=''; err.textContent='تعداد اقساط باید بین ۱ تا ۱۲۰ باشد.'; return; }
+    const payload = { memberId: parseInt(mid), amount: amt, installmentsCount: cntN, feePercent: fee, description: desc,
       intervalMonths: parseInt(el('#slfInt').value)||1 };
     try { const fd = (typeof jdVal==='function') ? jdVal(el('#slfFirst')) : ''; if(fd) payload.firstDue = fd; } catch(e){}
     if(slfKind === 'custom'){
@@ -6090,10 +6169,10 @@ function onboardingHtml(){
         <div class="fields">
           <div class="field"><label>نام <span class="req">*</span></label><input id="obFirstName" value="${esc(onboardData.firstName||'')}" placeholder="مثلاً علی"></div>
           <div class="field"><label>نام خانوادگی <span class="req">*</span></label><input id="obLastName" value="${esc(onboardData.lastName||'')}" placeholder="مثلاً رضایی"></div>
-          <div class="field"><label>شماره تماس <span class="req">*</span></label><input id="obPhone" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
-          <div class="field"><label>کد ملی <span class="req">*</span></label><input id="obNid" value="${esc(onboardData.nid||'')}" placeholder="10 رقم" maxlength="10"></div>
+          <div class="field"><label>شماره تماس <span class="req">*</span></label><input id="obPhone" class="num-inp" inputmode="numeric" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
+          <div class="field"><label>کد ملی <span class="req">*</span></label><input id="obNid" class="num-inp" inputmode="numeric" value="${esc(onboardData.nid||'')}" placeholder="10 رقم" maxlength="10"></div>
           <div class="field"><label>نام پدر</label><input id="obFather" value="${esc(onboardData.fatherName||'')}" placeholder="مثلاً حسین"></div>
-          <div class="field"><label>تاریخ تولد</label><input id="obBirth" value="${esc(onboardData.birthDate||'')}" placeholder="1370/05/02"></div>
+          <div class="field"><label>تاریخ تولد</label><input id="obBirth" class="num-inp" inputmode="numeric" value="${esc(onboardData.birthDate||'')}" placeholder="۱۳۷۰/۰۵/۰۲" data-jdate><span class="help">تقویم شمسی باز می‌شود.</span></div>
         </div>
       `;
     } else if (onboardStep === 2) {
@@ -6101,7 +6180,7 @@ function onboardingHtml(){
         <div class="onb-step"><span class="sn">۲</span><div><h4>اطلاعات مؤسسه مالی</h4><p>مشخصات قرض‌الحسنه یا صندوق</p></div></div>
         <div class="fields">
           <div class="field full"><label>نام مؤسسه <span class="req">*</span></label><input id="obInstName" value="${esc(onboardData.institutionName||'')}" placeholder="مثلاً قرض‌الحسنه مهرگان"></div>
-          <div class="field"><label>تاریخ تأسیس</label><input id="obEstDate" value="${esc(onboardData.establishedAt||'')}" placeholder="1390/01/01"></div>
+          <div class="field"><label>تاریخ تأسیس</label><input id="obEstDate" class="num-inp" inputmode="numeric" value="${esc(onboardData.establishedAt||'')}" placeholder="1390/01/01"></div>
           <div class="field full"><label>آدرس مؤسسه</label><textarea id="obAddress" rows="2" placeholder="تهران، خیابان...">${esc(onboardData.address||'')}</textarea></div>
           <div class="field"><label>تعداد اقساط پیش‌فرض</label><input id="obInstCount" type="number" min="1" max="120" value="${esc(onboardData.installmentsCount||'12')}" placeholder="مثلاً 12"><span class="help">متغیر - هر عددی (1 تا 120)</span></div>
           <div class="field"><label>دوره اقساط</label><select id="obPeriod"><option value="monthly" ${!onboardData.installmentPeriod||onboardData.installmentPeriod=='monthly'?'selected':''}>ماهانه</option><option value="bimonthly" ${onboardData.installmentPeriod=='bimonthly'?'selected':''}>دوماه یک‌بار</option><option value="quarterly" ${onboardData.installmentPeriod=='quarterly'?'selected':''}>سه‌ماه یک‌بار</option></select></div>
@@ -6129,10 +6208,10 @@ function onboardingHtml(){
         <div class="fields">
           <div class="field"><label>نام <span class="req">*</span></label><input id="obFirstName" value="${esc(onboardData.firstName||'')}" placeholder="مثلاً علی"></div>
           <div class="field"><label>نام خانوادگی <span class="req">*</span></label><input id="obLastName" value="${esc(onboardData.lastName||'')}" placeholder="مثلاً رضایی"></div>
-          <div class="field"><label>شماره تماس <span class="req">*</span></label><input id="obPhone" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
-          <div class="field"><label>کد ملی <span class="req">*</span></label><input id="obNid" value="${esc(onboardData.nid||'')}" placeholder="10 رقم" maxlength="10"></div>
+          <div class="field"><label>شماره تماس <span class="req">*</span></label><input id="obPhone" class="num-inp" inputmode="numeric" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
+          <div class="field"><label>کد ملی <span class="req">*</span></label><input id="obNid" class="num-inp" inputmode="numeric" value="${esc(onboardData.nid||'')}" placeholder="10 رقم" maxlength="10"></div>
           <div class="field"><label>نام پدر</label><input id="obFather" value="${esc(onboardData.fatherName||'')}" placeholder="مثلاً حسین"></div>
-          <div class="field"><label>تاریخ تولد</label><input id="obBirth" value="${esc(onboardData.birthDate||'')}" placeholder="1370/05/02"></div>
+          <div class="field"><label>تاریخ تولد</label><input id="obBirth" class="num-inp" inputmode="numeric" value="${esc(onboardData.birthDate||'')}" placeholder="۱۳۷۰/۰۵/۰۲" data-jdate><span class="help">تقویم شمسی باز می‌شود.</span></div>
         </div>
       `;
     } else {
