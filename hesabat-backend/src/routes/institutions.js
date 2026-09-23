@@ -45,12 +45,23 @@ r.post('/', asyncH(async (req, res) => {
     if (e.code === '23505') return res.status(409).json({ error: 'این اسلاگ قبلاً استفاده شده است.' });
     throw e;
   }
+  /* موجودی اولیهٔ صندوق (اختیاری) */
+  const initBalance = Math.max(0, parseInt(String(b.fundBalance == null ? 0 : b.fundBalance).replace(/[^0-9-]/g,'')) || 0);
+  if (initBalance > 0) {
+    try {
+      await withTenant(req.user, id, async c => {
+        await c.query('update institutions set fund_balance=$1, updated_at=now() where id=$2', [initBalance, id]);
+        await c.query('insert into institution_audit(institution_id,user_id,action,old_value,new_value,note) values($1,$2,$3,$4,$5,$6)',
+          [id, req.user.id, 'fund_balance', '0', String(initBalance), 'موجودی اولیه هنگام ساخت مؤسسه']);
+      });
+    } catch(e){ console.warn('set initial fund_balance failed:', e.message); }
+  }
   res.status(201).json({ id, name, slug, status: 'active' });
 }));
 
 r.get('/:id', requireInstitution, asyncH(async (req, res) => {
   const inst = await withTenant(req.user, req.institutionId, async c => {
-    return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
+    return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
   });
   if (!inst) return res.status(404).json({ error: 'مؤسسه پیدا نشد.' });
   res.json({ institution: inst });
@@ -58,7 +69,7 @@ r.get('/:id', requireInstitution, asyncH(async (req, res) => {
 
 /* PATCH /api/institutions/:id {name?, status?, address?, ...} */
 r.patch('/:id', requireInstitution, asyncH(async (req, res) => {
-  const { name, status, address, established_at, installments_count, currency, fee_percent, installment_period, icon } = req.body || {};
+  const { name, status, address, established_at, installments_count, currency, fee_percent, installment_period, fund_balance, fund_balance_note, icon } = req.body || {};
   if (status !== undefined && !['active','inactive'].includes(status))
     return res.status(400).json({ error: 'وضعیت نامعتبر است.' });
   const inst = await withTenant(req.user, req.institutionId, async c => {
@@ -74,13 +85,42 @@ r.patch('/:id', requireInstitution, asyncH(async (req, res) => {
     if (fee_percent !== undefined) { sets.push(`fee_percent=$${idx++}`); vals.push(parseFloat(fee_percent)||0); }
     if (installment_period !== undefined) { sets.push(`installment_period=$${idx++}`); vals.push(String(installment_period)); }
     if (icon !== undefined) { sets.push(`icon=$${idx++}`); vals.push(String(icon)); }
+    /* موجودی صندوق: فقط با مقدار متفاوت + لاگ در دفتر تغییرات */
+    let balChanged = false, balOld = 0, balNew = 0;
+    if (fund_balance !== undefined) {
+      balNew = Math.max(0, parseInt(String(fund_balance).replace(/[^0-9-]/g,'')) || 0);
+      const cur = await c.query('select fund_balance from institutions where id=$1', [req.institutionId]);
+      balOld = Number((cur.rows[0] && cur.rows[0].fund_balance) || 0);
+      balChanged = balNew !== balOld;
+      if (balChanged) { sets.push(`fund_balance=$${idx++}`); vals.push(balNew); }
+    }
     if (sets.length) {
       vals.push(req.institutionId);
       await c.query(`update institutions set ${sets.join(', ')}, updated_at=now() where id=$${idx}`, vals);
     }
-    return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
+    if (balChanged) {
+      try {
+        await c.query('insert into institution_audit(institution_id,user_id,action,old_value,new_value,note) values($1,$2,$3,$4,$5,$6)',
+          [req.institutionId, req.user.id, 'fund_balance', String(balOld), String(balNew), String(fund_balance_note || '').trim()]);
+      } catch(e){ console.warn('fund_balance audit insert failed:', e.message); }
+    }
+    return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
   });
   res.json({ institution: inst });
+}));
+
+/* دفتر تغییرات مالی مؤسسه (لاگ موجودی صندوق) */
+r.get('/:id/audit', requireInstitution, asyncH(async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit)||50));
+  const rows = await withTenant(req.user, req.institutionId, async c => {
+    const q = await c.query(`
+      select a.id, a.action, a.old_value, a.new_value, a.note, a.created_at,
+             coalesce(u.name, u.first_name||' '||u.last_name) as user_name
+      from institution_audit a left join users u on u.id=a.user_id
+      where a.institution_id=$1 order by a.created_at desc, a.id desc limit $2`, [req.institutionId, limit]);
+    return q.rows;
+  });
+  res.json({ rows });
 }));
 
 /* درخواست‌های عضویت */

@@ -3018,7 +3018,7 @@ function printReport(def){
     '<div class="pr-head"><h1>'+esc(DB.settings.institution.name)+' — '+esc(def.title)+'</h1>' +
     '<p>تاریخ تهیه: '+J.fmtLong(J.todayIso())+' · تهیه‌کننده: '+esc(SESSION.name)+' ('+esc(ROLE_FA[SESSION.role])+')</p></div>' +
     '<h2 class="pr-h2">شاخص‌های کلیدی — '+esc(D.rangeTitle)+'</h2>' +
-    '<table class="pr-kpis"><tbody><tr>'+kpiPairs.map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr></tbody></table>' +
+    '<table class="pr-kpis"><tbody><tr>'+kpiPairs.slice(0,3).map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr><tr>'+kpiPairs.slice(3).map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr></tbody></table>' +
     (chartImgs.length ? '<h2 class="pr-h2">نمودارها — '+esc(D.winTitle)+'</h2><div class="pr-charts">' +
       chartImgs.map(c=>'<figure><img src="'+c[1]+'" alt="'+esc(c[0])+'"><figcaption>'+esc(c[0])+'</figcaption></figure>').join('') + '</div>' : '') +
     '<h2 class="pr-h2">داده ماهانه نمودارها</h2>' +
@@ -3327,6 +3327,10 @@ async function renderSrvFinSec(body, canEdit, disAttr, s){
       '<div class="field"><label>پیش‌فرض تعداد اقساط <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="setSrvMonths" class="num-inp" type="number" inputmode="numeric" min="1" max="120" value="'+esc(String(inst.installments_count||12))+'"'+disAttr+'><span class="help">همان «تعداد اقساط پیش‌فرض» آنبردینگ.</span></div>' +
       '<div class="field"><label>دوره اقساط</label><select id="setSrvPeriod"'+disAttr+'>'+perOpts.map(o=>'<option value="'+o[0]+'"'+(per===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select><span class="help">همان «دوره اقساط» آنبردینگ.</span></div>' +
       '<div class="field full"><label>نام مؤسسه</label><input id="setSrvName" value="'+esc(inst.name||'')+'"'+disAttr+'></div>' +
+      '<div class="field"><label>تاریخ تأسیس</label><span class="t-jd"><input id="setSrvEst"'+disAttr+'></span><span class="help">همان «تاریخ تأسیس» آنبردینگ.</span></div>' +
+      '<div class="field"><label>موجودی صندوق <small>('+CUR()+')</small></label><input id="setSrvBal" class="t-money" data-cur="'+esc(String(inst.fund_balance!=null?inst.fund_balance:0))+'"'+disAttr+'><span class="help">همان «موجودی صندوق» آنبردینگ — هر کم/زیاد شدنش با توضیح در دفتر تغییرات لاگ می‌شود.</span></div>' +
+      '<div class="field full" id="setSrvBalNoteWrap" style="display:none"><label>توضیح تغییر موجودی <span class="req">*</span></label><textarea id="setSrvBalNote" rows="2" placeholder="مثلاً واریز سرمایهٔ اولیه یا اصلاح مقدار اشتباه"></textarea></div>' +
+      '<div class="field full" id="srvBalLogWrap"><span class="hint-t">دفتر تغییرات موجودی از سرور خوانده می‌شود…</span></div>' +
       '<div class="field full"><label>آدرس مؤسسه</label><textarea id="setSrvAddr" rows="2"'+disAttr+'>'+esc(inst.address||'')+'</textarea></div>' +
       '<div class="field full"><label style="color:var(--ink-2);font-weight:600">فیلدهای محلی (فقط حالت دمو)</label></div>'+
       '<div class="field"><label>قالب شماره‌گذاری اعضا (فقط دمو)</label><input id="setNoTpl" class="num-inp" value="'+esc(s.memberNoTemplate)+'"'+disAttr+'><span class="help">متغیر {seq} یا {seq:4} = شماره ردیف.</span></div>' +
@@ -3337,6 +3341,27 @@ async function renderSrvFinSec(body, canEdit, disAttr, s){
       '</div></div>' +
       (canEdit ? '<div class="full"><button class="btn btn-solid btn-sm" id="setSrvFinSave">'+icon('check',14)+' ذخیره تنظیمات مالی (سرور)</button></div>' : noPermNote()) +
     '</div>';
+  { const balInp = $('#setSrvBal');
+    if(balInp && typeof attachMoney==='function'){
+      attachMoney(balInp); if(typeof setMoney==='function') setMoney(balInp, inst.fund_balance||0);
+      balInp.addEventListener('input', ()=>{ const wEl = $('#setSrvBalNoteWrap'); if(wEl) wEl.style.display = (moneyVal(balInp) !== Number(balInp.dataset.cur||0)) ? '' : 'none'; });
+    }
+    const estInp = $('#setSrvEst');
+    if(estInp && typeof attachJDate==='function'){ attachJDate(estInp); if(inst.established_at && typeof setJd==='function') setJd(estInp, String(inst.established_at).slice(0,10)); }
+    (async()=>{
+      const wEl = $('#srvBalLogWrap'); if(!wEl) return;
+      try{
+        const r = await srvFetch('GET','/api/institutions/'+SRV.instId+'/audit?limit=6');
+        const rows = r.rows||[];
+        wEl.innerHTML = rows.length
+          ? '<div style="font-size:.8rem;font-weight:700;color:var(--ink-2);margin-bottom:4px">'+icon('clock',13)+' دفتر تغییرات موجودی صندوق</div><div class="mini-list" style="border:1px solid var(--line);border-radius:12px;padding:4px">' +
+            rows.map(a=>{ const up = Number(a.new_value) >= Number(a.old_value);
+              return '<div class="mini-item"><span class="avatar sz-34 '+(up?'teal':'amber')+'">'+icon(up?'download':'upload',13)+'</span><span class="mi-t"><b>'+fmtN(+a.old_value)+' ← '+fmtN(+a.new_value)+' '+CUR()+'</b><span>'+esc(a.note||'بدون توضیح')+(a.user_name?' · '+esc(a.user_name):'')+' · '+J.fmtLong(a.created_at)+'</span></span></div>';
+            }).join('') + '</div>'
+          : '<span class="hint-t">هنوز تغییری در موجودی صندوق ثبت نشده.</span>';
+      }catch(e){ wEl.innerHTML = '<span class="hint-t">دفتر تغییرات موجودی در دسترس نیست — ابتدا اسکریپت «۰۰۵ موجودی صندوق» را در دیتابیس اجرا کنید.</span>'; }
+    })();
+  }
   const sv = $('#setSrvFinSave'); if(sv) sv.onclick = async ()=>{
     const monthsN = clampNum(Math.round(parseInt($('#setSrvMonths').value)||0),1,120);
     const payload = {
@@ -3347,6 +3372,19 @@ async function renderSrvFinSec(body, canEdit, disAttr, s){
       installments_count: monthsN,
       installment_period: $('#setSrvPeriod').value
     };
+    const estInp2 = $('#setSrvEst');
+    payload.established_at = (estInp2 && typeof jdVal==='function' && jdVal(estInp2)) ? jdVal(estInp2) : null;
+    const balInp2 = $('#setSrvBal');
+    if(balInp2){
+      const balNew = moneyVal(balInp2);
+      if(balNew !== Number(balInp2.dataset.cur||0)){
+        const noteEl = $('#setSrvBalNote');
+        const note = noteEl ? noteEl.value.trim() : '';
+        if(!note){ toast('برای کم/زیاد شدن موجودی صندوق، نوشتن «توضیح تغییر موجودی» الزامی است.','warn'); if(noteEl) noteEl.focus(); return; }
+        payload.fund_balance = balNew;
+        payload.fund_balance_note = note;
+      }
+    }
     try{
       await srvFetch('PATCH', '/api/institutions/'+SRV.instId, payload);
       s.memberNoTemplate = fieldVal('#setNoTpl') || s.memberNoTemplate;
@@ -6155,7 +6193,7 @@ function srvRepAnalyticsPrintHtml(){
     try{ const cv = document.getElementById(c[0]); if(cv && cv.width > 0 && cv.toDataURL) chartImgs.push([c[1], cv.toDataURL('image/png')]); }catch(e){}
   });
   return '<h2 class="pr-h2">شاخص‌های کلیدی — از تأسیس مؤسسه تاکنون</h2>' +
-    '<table class="pr-kpis"><tbody><tr>'+kpiPairs.map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr></tbody></table>' +
+    '<table class="pr-kpis"><tbody><tr>'+kpiPairs.slice(0,3).map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr><tr>'+kpiPairs.slice(3).map(p=>'<td><b>'+esc(p[0])+':</b> '+esc(p[1])+'</td>').join('')+'</tr></tbody></table>' +
     (chartImgs.length ? '<h2 class="pr-h2">نمودارها — '+esc(srvRepWinTitle(M))+'</h2><div class="pr-charts">' +
       chartImgs.map(c=>'<figure><img src="'+c[1]+'" alt="'+esc(c[0])+'"><figcaption>'+esc(c[0])+'</figcaption></figure>').join('') + '</div>' : '') +
     '<h2 class="pr-h2">داده ماهانه نمودارها</h2>' +
@@ -6522,6 +6560,7 @@ function onboardingHtml(){
           <div class="field"><label>دوره اقساط</label><select id="obPeriod"><option value="monthly" ${!onboardData.installmentPeriod||onboardData.installmentPeriod=='monthly'?'selected':''}>ماهانه</option><option value="bimonthly" ${onboardData.installmentPeriod=='bimonthly'?'selected':''}>دوماه یک‌بار</option><option value="quarterly" ${onboardData.installmentPeriod=='quarterly'?'selected':''}>سه‌ماه یک‌بار</option></select></div>
           <div class="field"><label>واحد پول</label><select id="obCurrency"><option ${!onboardData.currency||onboardData.currency=='تومان'?'selected':''}>تومان</option><option ${onboardData.currency=='ریال'?'selected':''}>ریال</option></select></div>
           <div class="field"><label>کارمزد ٪</label><input id="obFee" type="number" value="${esc(onboardData.feePercent||'4')}" min="0" max="100"></div>
+          <div class="field"><label>موجودی صندوق <small>(به ${onboardData.currency==='ریال'?'ریال':'تومان'})</small></label><input id="obFundBalance" class="num-inp" inputmode="numeric" value="${onboardData.fundBalance?Number(onboardData.fundBalance).toLocaleString('en-US'):''}" placeholder="0"><span class="help">موجودی فعلی صندوق در شروع کار — بعداً در تنظیمات قابل تغییر است (هر تغییر با توضیح لاگ می‌شود).</span></div>
           <div class="field full"><label>فیلدهای اعضا (اختیاری)</label><div class="chips" style="flex-wrap:wrap">${['نام','نام پدر','موبایل','کدملی','تاریخ تولد','آدرس','شغل'].map(f=>`<span class="chip ${onboardData.memberFields&&onboardData.memberFields.includes(f)?'on':''}" data-mf="${f}">${f}</span>`).join('')}</div><small>فیلدهای پیش‌فرض اعضا - بعداً در تنظیمات قابل تغییر</small></div>
         </div>
         <div class="alert a-info" style="margin-top:12px"><span class="al-ic">${icon('info',16)}</span><div>پس از تأیید، ایمیل <b>${esc(genInstitutionEmail(onboardData.institutionName||'inst', onboardData.nid||''))}</b> برای اتصال ربات‌ها ساخته می‌شود.</div></div>
@@ -6639,6 +6678,8 @@ function bindOnboarding(){
   if (birth) attachJDate(birth);
   const est = document.getElementById('obEstDate');
   if (est) attachJDate(est);
+  const obBal = document.getElementById('obFundBalance');
+  if (obBal && typeof attachMoney==='function') attachMoney(obBal);
 }
 
 function saveOnboardStep(){
@@ -6658,6 +6699,8 @@ function saveOnboardStep(){
     const pr = document.getElementById('obPeriod'); if (pr) onboardData.installmentPeriod = pr.value;
     const cur = document.getElementById('obCurrency'); if (cur) onboardData.currency = cur.value;
     const fee = document.getElementById('obFee'); if (fee) onboardData.feePercent = fee.value;
+    const bal = document.getElementById('obFundBalance');
+    if (bal) onboardData.fundBalance = (typeof moneyVal==='function') ? moneyVal(bal) : (parseInt((bal.value||'').replace(/[^0-9]/g,''),10)||0);
     // memberFields already saved via chips
   }
   try { localStorage.setItem(ONBOARD_KEY, JSON.stringify({role:onboardRole, step:onboardStep, data:onboardData})); } catch(e){}
@@ -6705,6 +6748,7 @@ async function submitOnboarding(){
     installmentPeriod: onboardData.installmentPeriod,
     currency: onboardData.currency,
     feePercent: onboardData.feePercent,
+    fundBalance: onboardData.fundBalance||0,
     memberFields: (onboardData.memberFields||[]).map(label=>({label, type:'text', required: label==='نام'})),
     email: genInstitutionEmail(onboardData.institutionName||'inst', onboardData.nid||'')
   };
@@ -6797,6 +6841,7 @@ async function submitOnboarding(){
             DB.settings.institution.name = payload.institutionName;
             DB.settings.institution.address = payload.address||'';
             DB.settings.institution.establishedAt = onboardData.establishedAt||'';
+            DB.settings.institution.fundBalance = payload.fundBalance||0;
             DB.settings.institution.email = payload.email;
             DB.settings.currency = payload.currency||'تومان';
             DB.settings.loanDefaults = {
@@ -6867,6 +6912,7 @@ async function submitOnboarding(){
       DB.settings.institution.name = payload.institutionName;
       DB.settings.institution.address = payload.address||'';
       DB.settings.institution.establishedAt = onboardData.establishedAt||'';
+      DB.settings.institution.fundBalance = payload.fundBalance||0;
       DB.settings.institution.email = payload.email;
       DB.settings.currency = payload.currency||'تومان';
       DB.settings.loanDefaults = {

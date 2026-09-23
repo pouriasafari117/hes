@@ -8,6 +8,7 @@
 BEGIN;
 
 TRUNCATE TABLE
+  institution_audit,
   txns,
   payments,
   installments,

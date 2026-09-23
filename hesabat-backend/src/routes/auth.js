@@ -72,12 +72,17 @@ r.post('/register-v2', asyncH(async (req, res) => {
     try {
       const slugBase = slug.replace(/[^a-z0-9]/g,'') || 'inst';
       institutionEmail = slugBase + nid + '@hes.com';
+      const fundBalance = Math.max(0, parseInt(faToEnDigits(String(b.fundBalance == null ? 0 : b.fundBalance)).replace(/[^0-9-]/g,'')) || 0);
       const iq = await pool.query(
-        `insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period, bot_email, bot_active)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) returning id`,
-        [instName, slug, uid, establishedAt, b.address || '', parseInt(b.installmentsCount)||12, b.currency||'تومان', parseFloat(b.feePercent)||4, b.installmentPeriod||'monthly', institutionEmail]
+        `insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period, fund_balance, bot_email, bot_active)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) returning id`,
+        [instName, slug, uid, establishedAt, b.address || '', parseInt(b.installmentsCount)||12, b.currency||'تومان', parseFloat(b.feePercent)||4, b.installmentPeriod||'monthly', fundBalance, institutionEmail]
       );
       institutionId = iq.rows[0].id;
+      try {
+        await pool.query('insert into institution_audit(institution_id,user_id,action,old_value,new_value,note) values($1,$2,$3,$4,$5,$6)',
+          [institutionId, uid, 'fund_balance', '0', String(fundBalance), 'موجودی اولیه هنگام ساخت مؤسسه']);
+      } catch(e){ console.warn('initial fund_balance audit failed:', e.message); }
       await pool.query('insert into institution_members(user_id, institution_id, role) values($1,$2,$3) on conflict do nothing', [uid, institutionId, 'owner']);
       await pool.query('update users set email=$1 where id=$2', [institutionEmail, uid]);
 

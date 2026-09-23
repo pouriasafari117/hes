@@ -67,6 +67,7 @@ alter table institutions add column if not exists member_fields_config jsonb def
 alter table institutions add column if not exists icon text;
 alter table institutions add column if not exists bot_email text;
 alter table institutions add column if not exists bot_active boolean default true;
+alter table institutions add column if not exists fund_balance bigint not null default 0;
 
 create table if not exists institution_members (
   user_id        bigint not null references users(id) on delete cascade,
@@ -193,6 +194,18 @@ create table if not exists txns (
   created_at     timestamptz not null default now()
 );
 
+/* دفتر تغییرات مالی مؤسسه — لاگ کاهش/افزایش موجودی صندوق با توضیحات */
+create table if not exists institution_audit (
+  id             bigserial primary key,
+  institution_id bigint not null references institutions(id) on delete cascade,
+  user_id        bigint references users(id) on delete set null,
+  action         text not null,
+  old_value      text,
+  new_value      text,
+  note           text,
+  created_at     timestamptz not null default now()
+);
+
 create index if not exists idx_fields_inst  on field_definitions(institution_id);
 create index if not exists idx_members_inst on members(institution_id);
 create index if not exists idx_mfv_inst     on member_field_values(institution_id);
@@ -216,6 +229,7 @@ create index if not exists idx_txns_acc on txns(account_id);
 
 -- گزارش‌های تحلیلی ماهانه (بخش «گزارش‌ها» پنل): تجمیع بر اساس ماه
 create index if not exists idx_txns_inst_created    on txns(institution_id, created_at);
+create index if not exists idx_inst_audit_inst  on institution_audit(institution_id);
 create index if not exists idx_pay_inst_created     on payments(institution_id, created_at);
 create index if not exists idx_ins_inst_due         on installments(institution_id, due_date);
 create index if not exists idx_mem_inst_created     on members(institution_id, created_at);
@@ -243,6 +257,7 @@ alter table loans enable row level security;
 alter table installments enable row level security;
 alter table payments enable row level security;
 alter table txns enable row level security;
+alter table institution_audit enable row level security;
 
 alter table institutions        force row level security;
 alter table institution_members force row level security;
@@ -278,6 +293,11 @@ create policy p_members on members for all
 
 drop policy if exists p_mfv on member_field_values;
 create policy p_mfv on member_field_values for all
+  using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
+  with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
+
+drop policy if exists p_inst_audit on institution_audit;
+create policy p_inst_audit on institution_audit for all
   using (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id))
   with check (institution_id = nullif(current_setting('app.institution_id', true), '')::bigint and fn_is_member(institution_id));
 

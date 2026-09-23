@@ -557,8 +557,8 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
   #printRoot .pr-head p{font-size:9pt; color:#444}
   #printRoot .pr-filters{font-size:9pt; color:#333; margin-bottom:10px}
   #printRoot .pr-h2{font-size:11pt; color:#1C6E31; margin:16px 0 6px; border-bottom:1px solid #cfe0d2; padding-bottom:4px; page-break-after:avoid}
-  #printRoot table.pr-kpis{margin-bottom:6px}
-  #printRoot table.pr-kpis td{border:1px solid #d7e4da; padding:6px 10px; font-size:9pt; white-space:nowrap}
+  #printRoot table.pr-kpis{margin-bottom:6px; width:100%; table-layout:fixed; border-collapse:collapse}
+  #printRoot table.pr-kpis td{border:1px solid #d7e4da; padding:6px 10px; font-size:9pt; white-space:normal; vertical-align:top; overflow-wrap:anywhere}
   #printRoot .pr-charts{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px}
   #printRoot .pr-charts figure{flex:1 1 46%; margin:0; page-break-inside:avoid}
   #printRoot .pr-charts img{width:100%; border:1px solid #ddd; border-radius:6px}
