@@ -4822,7 +4822,7 @@ async function srvViewMember(id, cachedRows){
     : '<div class="m-sec"><div class="m-sec-h">'+icon('loan',14)+' تاریخچهٔ وام‌های این عضو</div><div class="m-sec-b"><p class="hint-t" style="padding:8px 2px">هنوز وامی برای این عضو ثبت نشده است.</p></div></div>');
   openModal({
     title: esc(name),
-    sub: 'پرونده عضو · '+esc(m.member_no||'')+' · '+ (m.status==='active'?'فعال':'غیرفعال'),
+    sub: 'پرونده عضو · '+esc(m.member_no||'')+' · '+ (m.status==='active'?'فعال':'غیرفعال') + (loans.length ? ' · '+faDigits(ongoing.length)+' وام در جریان · '+faDigits(settled.length)+' تسویه‌شده' : ''),
     size:'md',
     body: '<div class="m-sec"><div class="m-sec-h">اطلاعات هویتی</div><div class="m-sec-b"><div class="kv-list">'+rowsHtml+'</div></div></div>' +
           '<div class="m-sec"><div class="m-sec-h">اطلاعات سیستمی</div><div class="m-sec-b"><div class="kv-list"><div class="kv"><span class="k">شماره عضویت</span><span class="v">'+esc(m.member_no||'')+'</span></div><div class="kv"><span class="k">تاریخ ثبت</span><span class="v">'+esc(m.created_at||'')+'</span></div><div class="kv"><span class="k">وضعیت</span><span class="v"><span class="badge '+(m.status==='active'?'b-green':'b-gray')+'"><i class="bd"></i>'+(m.status==='active'?'فعال':'غیرفعال')+'</span></span></div></div></div></div>' +
