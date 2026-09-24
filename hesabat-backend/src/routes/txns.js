@@ -23,6 +23,8 @@ r.get('/', asyncH(async (req, res) => {
       `select t.*, a.name as account_name, f.name as fund_name,
         (select json_object_agg(f2.key, json_build_object('label', f2.label, 'value', v.value))
          from member_field_values v join field_definitions f2 on f2.id=v.field_id where v.member_id=t.member_id) as member_values,
+        (select v.value from member_field_values v join field_definitions d on d.id=v.field_id
+         where v.member_id=t.member_id order by d.sort_order, d.id limit 1) as member_name,
         m.member_no
        from txns t
        left join accounts a on a.id=t.account_id

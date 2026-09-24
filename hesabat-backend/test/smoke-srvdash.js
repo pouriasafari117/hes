@@ -16,7 +16,7 @@ const STATS = {
   recent:{members:[{id:7,name:'علی محمدی',member_no:'M-0001',status:'active',created_at:'2026-03-01'}],loans:[{id:5,member_id:7,member_name:'علی محمدی',amount:30000000,status:'active',created_at:'2026-03-01'}]}
 };
 const TXNS = { rows:[
-  {id:1,type:'deposit',amount:20000000,description:'واریز اولیه',account_name:'حساب اصلی',created_at:'2026-03-02'},
+  {id:1,type:'deposit',amount:20000000,description:'پرداخت وام #3',member_name:'علی محمدی',account_name:'حساب اصلی',created_at:'2026-03-02'},
   {id:2,type:'withdraw',amount:3000000,description:'برداشت خرج',account_name:'حساب اصلی',created_at:'2026-03-04'},
 ]};
 const DUE = { rows:[
@@ -55,7 +55,7 @@ const DUE = { rows:[
  T('کارت «آخرین تراکنش‌ها»', [...d.querySelectorAll('.card-h h3')].some(h=>h.textContent==='آخرین تراکنش‌ها'));
  T('بدون کارت «آخرین اعضا»', ![...d.querySelectorAll('.card-h h3')].some(h=>h.textContent==='آخرین اعضا'));
  const txHtml = d.querySelector('#srvDashTxns') ? d.querySelector('#srvDashTxns').innerHTML : '';
- T('تراکنش واریز با +', txHtml.includes('+') && txHtml.includes('واریز اولیه'));
+ T('تراکنش واریز با نام عضو نه #3', txHtml.includes('علی محمدی') && !txHtml.includes('#3') && txHtml.includes('+'));
  T('تراکنش برداشت با −', txHtml.includes('برداشت خرج') && txHtml.includes('−'));
  T('تیتر «اقساط نزدیک به سررسید»', [...d.querySelectorAll('.card-h h3')].some(h=>h.textContent==='اقساط نزدیک به سررسید'));
  await sleep(500);

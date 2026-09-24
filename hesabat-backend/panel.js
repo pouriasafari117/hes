@@ -1207,6 +1207,7 @@ async function srvSyncInstSettings(){
 
   /* فقط‌سرور: تنظیمات نمایشی از مؤسسهٔ PostgreSQL سینک می‌شود */
   try{ if(srvReady()) srvSyncInstSettings(); }catch(e){}
+  try{ if(srvReady()) srvFetch('GET','/api/institutions/'+SRV.instId+'/stats').then(st=>{ SRV_OD_COUNT=Number((st.installments&&st.installments.overdue)||0); srvFillAlerts(st); }).catch(()=>{}); }catch(e){}
   route();
 })();
 
@@ -1716,7 +1717,10 @@ async function renderSrvDashboard(){
         if(!rows.length){ txBox.innerHTML='<p class="hint-t">تراکنشی ثبت نشده.</p>'; return; }
         txBox.innerHTML = '<div class="mini-list">'+rows.map(t=>{
           const dep = t.type==='deposit' || t.type==='repayment';
-          return '<div class="mini-item"><span class="avatar sz-34" style="background:'+(dep?'var(--green-bg)':'var(--red-bg)')+';color:'+(dep?'var(--green-deep)':'var(--red)')+'" title="'+esc(faTxnType(t.type))+'">'+icon(dep?'download':'upload',14)+'</span><span class="mi-t"><b>'+esc(t.description||faTxnType(t.type))+'</b><span>'+(t.account_name?esc(t.account_name)+' · ':'')+J.fmt(t.created_at||'')+'</span></span><span class="mi-v '+(dep?'pos':'neg')+'">'+(dep?'+':'−')+' '+fmtN(t.amount)+'</span></div>';
+          const mv = t.member_values && typeof t.member_values==='object' ? Object.values(t.member_values).find(x=>x&&x.value) : null;
+          const mName = t.member_name || (mv && mv.value) || '';
+          const title = mName || t.description || faTxnType(t.type);
+          return '<div class="mini-item"><span class="avatar sz-34" style="background:'+(dep?'var(--green-bg)':'var(--red-bg)')+';color:'+(dep?'var(--green-deep)':'var(--red)')+'" title="'+esc(faTxnType(t.type))+'">'+icon(dep?'download':'upload',14)+'</span><span class="mi-t"><b>'+esc(title)+'</b><span>'+(mName?esc(faTxnType(t.type))+' · ':'')+(t.account_name?esc(t.account_name)+' · ':'')+J.fmt(t.created_at||'')+'</span></span><span class="mi-v '+(dep?'pos':'neg')+'">'+(dep?'+':'−')+' '+fmtN(t.amount)+'</span></div>';
         }).join('')+'</div>';
       } catch(e){ txBox.innerHTML = '<p class="hint-t">'+esc(e.message)+'</p>'; }
     })();
