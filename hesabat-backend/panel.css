@@ -147,7 +147,8 @@ body.sb-open .sb-backdrop{opacity:1; pointer-events:auto}
   display:flex; align-items:center; gap:12px; padding:0 clamp(14px,2vw,26px);
   background:rgba(251,247,234,.86); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid var(--line)}
-.hamb{display:none; border:1px solid var(--line); background:var(--card); border-radius:10px; padding:8px; cursor:pointer; color:var(--ink)}
+.hamb{display:inline-flex; border:1px solid var(--line); background:var(--card); border-radius:10px; padding:8px; cursor:pointer; color:var(--ink)}
+.sidebar.off{width:0!important; min-width:0; overflow:hidden; opacity:0; pointer-events:none; border:0; padding:0}
 .org-chip{display:inline-flex; align-items:center; gap:9px; background:var(--card); border:1px solid var(--line);
   border-radius:999px; padding:7px 15px 7px 9px; font-size:.85rem; font-weight:700; color:var(--ink); max-width:280px}
 .org-chip .org-dot{width:9px;height:9px;border-radius:50%;background:var(--green-deep);flex:none;position:relative}
@@ -575,6 +576,7 @@ input.num, .num-inp{direction:ltr; text-align:left; font-variant-numeric:tabular
   [dir="ltr"] .sidebar{transform:translateX(-110%)}
   body.sb-open .sidebar{transform:none!important}
   .hamb{display:inline-flex}
+  .sidebar.off{width:var(--sb-w)!important; opacity:1; pointer-events:auto}
   .g-2,.g-3,.g-4{grid-template-columns:1fr}
   .qsearch{width:180px}
 }

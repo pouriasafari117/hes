@@ -72,6 +72,8 @@ T('تقویم از سال ۱۲۸۵', src.includes('const y = 1285+i') && !src.in
 T('نوع فیلد آنبردینگ: عدد/تاریخ نه همه متن', src.includes("type = /موبایل|شماره تماس|کد\\s*ملی|کدملی/.test(lbl) ? 'number'") && !src.includes("map(label=>({label, type:'text'"));
 T('دکمه حذف کامل کنار آرشیو', src.includes('حذف کامل') && src.includes('data-sfh') && src.includes('?hard=1'));
 T('رنگ مُهر در ظاهر', src.includes('setStampMem') && src.includes('setStampPay') && src.includes('type=\"color\"'));
+T('فیلتر قدیمی‌ترین اعضا', src.includes('قدیمی‌ترین') && src.includes('value=\"oldest\"') && src.includes('srvMemSort'));
+T('همبرگر سایدبار را کامل می‌بندد', src.includes("sb.classList.toggle('off')") && src.includes('hesabat-sb-off'));
 
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

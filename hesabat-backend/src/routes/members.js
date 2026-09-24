@@ -30,6 +30,8 @@ r.get('/', asyncH(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const q = (req.query.q || '').trim();
+  const sort = String(req.query.sort || 'newest').trim();
+  const status = String(req.query.status || '').trim();
   const out = await withTenant(req.user, req.institutionId, async c => {
     const where = ['m.institution_id=$1', 'm.deleted_at is null'];
     const args = [req.institutionId];
@@ -37,10 +39,19 @@ r.get('/', asyncH(async (req, res) => {
       args.push(q);
       where.push(`exists (select 1 from member_field_values v where v.member_id=m.id and v.value ilike '%'||$${args.length}||'%')`);
     }
+    if (status === 'active' || status === 'inactive') {
+      args.push(status);
+      where.push(`m.status=$${args.length}`);
+    }
+    const orderBy = sort === 'oldest'
+      ? 'm.id asc'
+      : (sort === 'name'
+        ? `(select v.value from member_field_values v join field_definitions f on f.id=v.field_id where v.member_id=m.id order by f.sort_order, f.id limit 1) asc nulls last, m.id desc`
+        : 'm.id desc');
     const total = (await c.query(`select count(*)::int as n from members m where ${where.join(' and ')}`, args)).rows[0].n;
     args.push(pageSize, (page - 1) * pageSize);
     const mq = await c.query(
-      `select m.id, m.status, m.member_no, m.created_at, m.updated_at from members m where ${where.join(' and ')} order by m.id desc limit $${args.length - 1} offset $${args.length}`,
+      `select m.id, m.status, m.member_no, m.created_at, m.updated_at from members m where ${where.join(' and ')} order by ${orderBy} limit $${args.length - 1} offset $${args.length}`,
       args);
     const ids = mq.rows.map(x => x.id);
     let vmap = {};

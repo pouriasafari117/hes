@@ -1200,9 +1200,20 @@ async function srvSyncInstSettings(){
   /* سایدبار: جمع‌کردن، موبایل، خروج */
   const sb = $('#sidebar');
   try{ if(localStorage.getItem('hesabat-sb')==='1') sb.classList.add('collapsed'); }catch(e){}
+  try{ if(localStorage.getItem('hesabat-sb-off')==='1') sb.classList.add('off'); }catch(e){}
   $('#btnSbCollapse').onclick = ()=>{ sb.classList.toggle('collapsed'); try{ localStorage.setItem('hesabat-sb', sb.classList.contains('collapsed')?'1':'0'); }catch(e){} };
   $('#btnSbLogout').onclick = ()=> logout();
-  $('#btnHamb').onclick = ()=> document.body.classList.toggle('sb-open');
+  $('#btnHamb').onclick = ()=>{
+    const mobile = window.matchMedia && window.matchMedia('(max-width:1080px)').matches;
+    if(mobile){
+      document.body.classList.toggle('sb-open');
+    } else {
+      document.body.classList.remove('sb-open');
+      sb.classList.remove('collapsed');
+      sb.classList.toggle('off');
+      try{ localStorage.setItem('hesabat-sb-off', sb.classList.contains('off')?'1':'0'); }catch(e){}
+    }
+  };
   $('#sbBackdrop').onclick = ()=> document.body.classList.remove('sb-open');
 
   /* فقط‌سرور: تنظیمات نمایشی از مؤسسهٔ PostgreSQL سینک می‌شود */
@@ -1324,7 +1335,7 @@ function srvFieldForm(f){
 }
 
 /* ── صفحهٔ اعضا از سرور ── */
-let srvQ = '', srvPage = 1;
+let srvQ = '', srvPage = 1, srvMemSort = 'newest', srvMemStatus = 'all';
 async function renderSrvMembersPage(){
   srvFieldsCache = null; // پاک کردن کش تا فیلدهای جدید ظاهر بشن
 
@@ -1358,8 +1369,8 @@ async function srvLoadMembers(){
   box.innerHTML =
     '<div class="toolbar">' +
       '<div class="t-search">'+icon('search',15)+'<input id="srvSearch" placeholder="جستجو: نام، کد ملی، موبایل، شماره عضویت…" value="'+esc(srvQ)+'"></div>' +
-      '<span class="t-lbl">وضعیت:</span><select class="t-select" id="srvStatus"><option value="all">همه</option><option value="active">فعال</option><option value="inactive">غیرفعال</option></select>' +
-      '<span class="t-lbl">مرتب‌سازی:</span><select class="t-select" id="srvSort"><option value="newest">جدیدترین</option><option value="name">نام</option></select>' +
+      '<span class="t-lbl">وضعیت:</span><select class="t-select" id="srvStatus"><option value="all"'+(srvMemStatus==='all'?' selected':'')+'>همه</option><option value="active"'+(srvMemStatus==='active'?' selected':'')+'>فعال</option><option value="inactive"'+(srvMemStatus==='inactive'?' selected':'')+'>غیرفعال</option></select>' +
+      '<span class="t-lbl">مرتب‌سازی:</span><select class="t-select" id="srvSort"><option value="newest"'+(srvMemSort==='newest'?' selected':'')+'>جدیدترین</option><option value="oldest"'+(srvMemSort==='oldest'?' selected':'')+'>قدیمی‌ترین</option><option value="name"'+(srvMemSort==='name'?' selected':'')+'>نام</option></select>' +
       '<button class="btn btn-ghost btn-sm" id="srvReset" style="margin-inline-start:auto">'+icon('refresh',13)+' حذف فیلترها</button>' +
     '</div>' +
     '<div id="srvMemBox" style="margin-top:12px"><p class="hint-t" style="padding:18px 4px">در حال دریافت…</p></div>';
@@ -1370,7 +1381,11 @@ async function srvLoadMembers(){
     searchEl.focus();
   }
   const resetBtn = $('#srvReset');
-  if(resetBtn) resetBtn.onclick = ()=>{ srvQ=''; srvPage=1; const se=$('#srvSearch'); if(se) se.value=''; srvLoadMembersData(); };
+  if(resetBtn) resetBtn.onclick = ()=>{ srvQ=''; srvPage=1; srvMemSort='newest'; srvMemStatus='all'; srvLoadMembers(); };
+  const sortEl = $('#srvSort');
+  if(sortEl) sortEl.onchange = ()=>{ srvMemSort = sortEl.value || 'newest'; srvPage = 1; srvLoadMembersData(); };
+  const stEl = $('#srvStatus');
+  if(stEl) stEl.onchange = ()=>{ srvMemStatus = stEl.value || 'all'; srvPage = 1; srvLoadMembersData(); };
 
   await srvLoadMembersData();
 }
@@ -1387,7 +1402,7 @@ async function srvLoadMembersData(){
   let fields, data;
   try {
     fields = await srvLoadFieldsCached();
-    const qs = '/api/institutions/' + SRV.instId + '/members?page=' + srvPage + '&pageSize=30' + (srvQ ? '&q=' + encodeURIComponent(srvQ) : '');
+    const qs = '/api/institutions/' + SRV.instId + '/members?page=' + srvPage + '&pageSize=30' + (srvQ ? '&q=' + encodeURIComponent(srvQ) : '') + '&sort=' + encodeURIComponent(srvMemSort||'newest') + (srvMemStatus && srvMemStatus!=='all' ? '&status=' + encodeURIComponent(srvMemStatus) : '');
     data = await srvFetch('GET', qs);
   } catch(e){
     box.innerHTML = '<div class="alert a-err"><span class="al-ic">'+icon('warn',16)+'</span><div>'+esc(e.message)+'</div></div><button class="btn btn-soft btn-sm" onclick="srvLoadMembersData()" style="margin-top:10px">تلاش دوباره</button>';
