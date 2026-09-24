@@ -234,10 +234,10 @@ try{
     .stage { height: calc(100vh - 24px); height: calc(100svh - 24px); min-height: 560px; }
     .veil, [dir="rtl"] .veil {
       background: linear-gradient(to bottom,
-        rgba(251,247,234,.97) 0%,
-        rgba(251,247,234,.94) 52%,
-        rgba(251,247,234,.70) 72%,
-        rgba(251,247,234,0)   90%);
+        rgba(251,247,234,.96) 0%,
+        rgba(251,247,234,.88) 34%,
+        rgba(251,247,234,.45) 55%,
+        rgba(251,247,234,0)   74%);
     }
     .nav-links { display: none; }
     .copy {
@@ -264,29 +264,7 @@ try{
       line-height: 1.65;
     }
     .ctas, .stats { grid-column: 1 / -1; }
-    .ctas { margin-top: 12px; }
     .ctas .btn { padding: 12px 18px; font-size: .93rem; }
-    .stats {
-      margin-top: 14px;
-      padding: 12px 0 4px;
-      flex-wrap: nowrap;
-      justify-content: space-between;
-      gap: 0;
-    }
-    .stats > div {
-      flex: 1;
-      min-width: 0;
-      padding: 0 8px;
-    }
-    .stats > div:first-child { padding-inline-start: 0; }
-    .stats dt { font-size: .66rem; font-weight: 700; white-space: nowrap; }
-    .stats dd {
-      font-size: 1.05rem;
-      margin-top: 4px;
-      direction: rtl;
-      unicode-bidi: isolate;
-      gap: 6px;
-    }
     .hint { font-size: .78rem; padding: 9px 13px; }
   }
 
@@ -324,9 +302,9 @@ try{
     html.dark .veil {
       background: linear-gradient(to bottom,
         rgba(12,19,14,.97) 0%,
-        rgba(12,19,14,.94) 52%,
-        rgba(12,19,14,.65) 72%,
-        rgba(12,19,14,0)   90%);
+        rgba(12,19,14,.88) 34%,
+        rgba(12,19,14,.45) 55%,
+        rgba(12,19,14,0)   74%);
     }
   }
 
