@@ -3101,11 +3101,28 @@ async function renderSrvBulkImport(){
     if(!labs.length) return 'ترتیب فیلدها همان ترتیب فرم «افزودن عضو» در تنظیمات این مؤسسه است.';
     return 'ترتیب این مؤسسه: <b>'+labs.map(esc).join('</b> ← <b>')+'</b>';
   }
+  function mgrName(){
+    return ((SESSION&&SESSION.name) || (SRV.user&&SRV.user.name) || 'مدیر مؤسسه').trim();
+  }
+  function sampleCell(f, mgr){
+    const t = ((f.type||'')+' '+(f.key||'')+' '+(f.label||'')).toLowerCase();
+    if(/nid|national|کدملی|کد ملی/.test(t)) return '0012345678';
+    if(/mobile|phone|موبایل|تماس/.test(t)) return '09121234567';
+    if(/father|پدر/.test(t)) return mgr.split(/\s+/)[0];
+    if(/date|تاریخ/.test(t)) return '۱۳۷۰/۰۵/۰۲';
+    if(/name|نام/.test(t)) return mgr;
+    return '—';
+  }
+  function bulkSample(){
+    const mgr = mgrName();
+    const fs = instFields||[];
+    if(!fs.length) return mgr+'  09121234567';
+    return fs.map(f=>sampleCell(f, mgr)).join('  ');
+  }
   function lensGuide(){
-    const labs = (instFields||[]).map(f=>f.label).filter(Boolean);
-    const sample = labs.length ? labs.map((l,i)=> i===0?'نمونه نام':(i===1?'09121234567':'نمونه')).join('  ') : 'نام کامل  09121234567  نام پدر';
+    const sample = bulkSample();
     return '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>'+icon('info',16)+' نحوهٔ ورود متن</h3></div><div class="card-b">'+
-      '<p class="hint-t" style="margin-bottom:10px">هر خط یک عضو است. مقدار فیلدها را <b>به همان ترتیبی که در فرم افزودن عضو آمده</b> بنویسید و بین هر دو فیلد <b>دو فاصله</b> بگذارید. فاصلهٔ داخل نام (مثلاً علی صفری) یک فاصله است و مشکلی ندارد.</p>'+
+      '<p class="hint-t" style="margin-bottom:10px">هر خط یک عضو است. مقدار فیلدها را <b>به همان ترتیبی که در فرم افزودن عضو آمده</b> بنویسید و بین هر دو فیلد <b>دو فاصله</b> بگذارید. فاصلهٔ داخل نام (مثلاً '+esc(mgrName())+') یک فاصله است و مشکلی ندارد.</p>'+
       '<p style="font-size:.88rem;margin-bottom:10px">'+fieldOrderHint()+'</p>'+
       '<p class="hint-t" style="margin-bottom:12px">نمونه:<br><code dir="rtl" style="display:block;margin-top:6px;padding:8px 10px;background:var(--card-2);border-radius:8px">'+esc(sample)+'</code></p>'+
       '<ol class="bulk-ol">'+
@@ -3138,7 +3155,7 @@ async function renderSrvBulkImport(){
           '</div></div>'
         : lensGuide()+
           '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>اطلاعات اعضا</h3><span class="hint-t">هر خط یک نفر — بین فیلدها دو فاصله — ترتیب = فیلدهای تنظیمات</span></div><div class="card-b">'+
-          '<textarea id="bulkText" rows="10" placeholder="علی صفری  09121234567  علی"></textarea>'+
+          '<textarea id="bulkText" rows="10" placeholder="'+esc(bulkSample())+'"></textarea>'+
           '</div></div>'
       )+
       '<div class="field-row" style="gap:8px;margin-bottom:14px"><button class="btn btn-solid" id="bulkParse">'+icon('check',15)+' پردازش اطلاعات</button></div>'+
