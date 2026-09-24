@@ -241,7 +241,6 @@ try{
     }
     .nav-links { display: none; }
     .copy { max-width: 100%; margin-top: clamp(16px,4vh,38px); }
-    h1 br { display: none; }
     .sub { font-size: .96rem; }
     .ctas .btn { padding: 12px 18px; font-size: .93rem; }
     .hint { font-size: .78rem; padding: 9px 13px; }
@@ -308,7 +307,7 @@ try{
           <circle cx="16" cy="16" r="13.5" fill="#2E9E4C"/>
           <circle cx="16" cy="16" r="13.5" fill="none" stroke="#1C6E31" stroke-width="2.6"/>
           <circle cx="16" cy="16" r="9" fill="none" stroke="#BFE8A8" stroke-width="1.6" stroke-dasharray="3.4 2.6"/>
-          <text x="16" y="20.6" text-anchor="middle" font-size="13.5" font-weight="600" font-family="IBM Plex Sans Arabic, Tahoma, sans-serif" fill="#EAF9D6">ح</text>
+          <text x="16" y="20.6" text-anchor="middle" font-size="13.5" font-weight="600" font-family="Fredoka, IBM Plex Sans Arabic, Tahoma, sans-serif" fill="#EAF9D6">$</text>
         </svg>
         <span data-i="brand"></span>
       </a>
@@ -689,10 +688,10 @@ var T = {
     brand:'حساب‌ها', navRates:'امکانات', navHow:'چطور کار می‌کنه', navHelp:'راهنما',
     login:'ورود', open:'افتتاح حساب',
     eyebrow:'سامانه مدیریت صندوق‌های قرض‌الحسنه و مؤسسات مالی',
-    h1:'عضو، وام و اقساط<br><span class="hl">همه‌جا یکجا'+SQUIG+'</span>',
+    h1:'عضو، وام و اقساط<br><span class="hl"> همه‌جا یکجا'+SQUIG+'</span>',
     sub:'از ثبت عضو با فیلدهای دلخواه تا برنامه اقساط شمسی، صندوق‌ها و حساب‌ها، نمودارها و گزارش‌های آماده چاپ — ساخته‌شده برای قرض‌الحسنه‌ها و صندوق‌های خانوادگی.',
     ctaPrimary:'رایگان شروع کن', ctaSecondary:'ورود به پنل',
-    statApy:'زمان راه‌اندازی', statFee:'کارمزد ماهانه', statSaved:'وام پرداخت‌شده این هفته',
+    statApy:'زمان راه‌اندازی', statFee:'کارمزد ماهانه', statSaved:'تعداد اعضا',
     apyV:'۵ دقیقه', feeV:'۰ تومان',
     hint:'ماوس رو بکش لای پول‌ها — کلیک کن تا کشوی صندوق جیرینگ بده!',
     toasts:{
@@ -928,10 +927,17 @@ document.addEventListener('pointerdown', function(){ FX.unlock(); }, {once:true}
 var hint = document.getElementById('hint');
 document.addEventListener('pointerdown', function(){ if(hint) hint.classList.add('gone'); }, {once:true});
 
-var saved = 2847193;
+var saved = 0;
 var tickerEl = document.getElementById('ticker');
-function renderTicker(){ if(tickerEl) tickerEl.textContent = fmtMoney(saved); }
-setInterval(function(){ saved += 3 + Math.floor(Math.random()*17); renderTicker(); }, 1300);
+function faCount(n){ return String(n).replace(/\d/g, function(d){ return '۰۱۲۳۴۵۶۷۸۹'[d]; }); }
+function renderTicker(){ if(tickerEl) tickerEl.textContent = faCount(saved); }
+function loadMemberCount(){
+  fetch('/api/public/stats').then(function(r){ return r.json(); }).then(function(j){
+    if(j && typeof j.members === 'number'){ saved = j.members; renderTicker(); }
+  }).catch(function(){});
+}
+loadMemberCount();
+setInterval(loadMemberCount, 15000);
 
 bindStub('lnkBrand','brand');   bindStub('lnkRates','rates');
 bindStub('lnkHow','how');

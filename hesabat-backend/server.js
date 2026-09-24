@@ -94,6 +94,20 @@ app.get('/api/debug', async (req, res) => {
   }
 });
 }
+app.get('/api/public/stats', async (req, res) => {
+  try {
+    const { pool } = require('./src/db');
+    let n = 0;
+    try {
+      n = (await pool.query('select count(*)::int as n from members where deleted_at is null')).rows[0].n;
+    } catch (_) {
+      n = (await pool.query('select count(*)::int as n from members')).rows[0].n;
+    }
+    res.json({ members: n });
+  } catch (e) {
+    res.json({ members: 0 });
+  }
+});
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/users', require('./src/routes/users'));
 app.use('/api/institutions', require('./src/routes/institutions'));
