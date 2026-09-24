@@ -95,15 +95,21 @@ r.post('/register-v2', asyncH(async (req, res) => {
       };
       const labelToType = {
         'نام': 'text', 'نام و نام خانوادگی': 'text', 'نام خانوادگی': 'text',
-        'نام پدر': 'text', 'موبایل': 'mobile', 'شماره تماس': 'mobile',
-        'کدملی': 'nid', 'کد ملی': 'nid', 'تاریخ تولد': 'date',
+        'نام پدر': 'text', 'موبایل': 'number', 'شماره تماس': 'number', 'شماره موبایل': 'number',
+        'کدملی': 'number', 'کد ملی': 'number', 'تاریخ تولد': 'date',
         'آدرس': 'text', 'شغل': 'text', 'شهر': 'text', 'مدرک': 'text'
       };
+      function inferFieldType(lbl, clientType){
+        if (/موبایل|شماره تماس|کد\s*ملی/.test(lbl)) return 'number';
+        if (/تاریخ/.test(lbl)) return 'date';
+        if (clientType && clientType !== 'text') return clientType;
+        return labelToType[lbl] || 'text';
+      }
       const defaultFields = [
         {key:'name', label:'نام و نام خانوادگی', type:'text', required:true},
         {key:'father', label:'نام پدر', type:'text', required:false},
-        {key:'mobile', label:'شماره تماس', type:'mobile', required:true},
-        {key:'nationalId', label:'کد ملی', type:'nid', required:true},
+        {key:'mobile', label:'شماره تماس', type:'number', required:true},
+        {key:'nationalId', label:'کد ملی', type:'number', required:true},
         {key:'birthDate', label:'تاریخ تولد', type:'date', required:true},
       ];
       let fieldsToCreate = [];
@@ -111,7 +117,7 @@ r.post('/register-v2', asyncH(async (req, res) => {
         fieldsToCreate = b.memberFields.filter(f=>f && f.label).map((f,i)=>{
           const lbl = String(f.label).trim();
           const key = labelToKey[lbl] || (f.key || lbl).toString().trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').slice(0,30) || 'field_'+i;
-          const type = f.type || labelToType[lbl] || 'text';
+          const type = inferFieldType(lbl, f.type);
           return {key, label: lbl, type, required: !!f.required || lbl==='نام' || lbl==='نام و نام خانوادگی'};
         });
       } else {

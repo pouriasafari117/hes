@@ -68,5 +68,10 @@ T('سینک تنظیمات از سرور', src.includes('async function srvSyncI
 T('بدون جستجوی سریع دمو', !src.includes('function bindQuickSearch(') && !src.includes('qInput'));
 T('رواداری رمز دمو حذف شده', !src.includes('admin / 1234') && !src.includes('حساب‌های نمایشی'));
 
+T('تقویم از سال ۱۲۸۵', src.includes('const y = 1285+i') && !src.includes('const y = 1385+i'));
+T('نوع فیلد آنبردینگ: عدد/تاریخ نه همه متن', src.includes("type = /موبایل|شماره تماس|کد\\s*ملی|کدملی/.test(lbl) ? 'number'") && !src.includes("map(label=>({label, type:'text'"));
+T('دکمه حذف کامل کنار آرشیو', src.includes('حذف کامل') && src.includes('data-sfh') && src.includes('?hard=1'));
+T('رنگ مُهر در ظاهر', src.includes('setStampMem') && src.includes('setStampPay') && src.includes('type=\"color\"'));
+
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

@@ -88,17 +88,25 @@ r.patch('/:fieldId', asyncH(async (req, res) => {
   res.json({ field: row });
 }));
 
-/* DELETE /api/institutions/:id/fields/:fieldId → آرشیو (حذف نرم؛ مقادیر قدیمی اعضا نمی‌شکنند) */
+/* DELETE /api/institutions/:id/fields/:fieldId → آرشیو (حذف نرم)
+   ?hard=1 → حذف کامل فیلد و مقادیر اعضا (cascade روی member_field_values) */
 r.delete('/:fieldId', asyncH(async (req, res) => {
   const fid = parseInt(req.params.fieldId, 10);
+  const hard = req.query.hard === '1' || req.query.hard === 'true';
   const row = await withTenant(req.user, req.institutionId, async c => {
+    if (hard) {
+      const q = await c.query(
+        'delete from field_definitions where id=$1 and institution_id=$2 returning id',
+        [fid, req.institutionId]);
+      return q.rows[0];
+    }
     const q = await c.query(
       'update field_definitions set archived=true where id=$1 and institution_id=$2 returning id',
       [fid, req.institutionId]);
     return q.rows[0];
   });
   if (!row) return res.status(404).json({ error: 'فیلد پیدا نشد.' });
-  res.json({ archived: true, fieldId: fid });
+  res.json(hard ? { deleted: true, fieldId: fid } : { archived: true, fieldId: fid });
 }));
 
 module.exports = r;

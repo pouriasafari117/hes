@@ -287,7 +287,12 @@ function loadDb(){
   return emptyDb();
 }
 function saveDb(){ /* فقط‌سرور: هیچ‌چیز در مرورگر ذخیره نمی‌شود؛ خواندن/نوشتن فقط از طریق API است. */ }
-function stampColor(task){ const c=(DB.settings&&DB.settings.stampColors)||{}; return c[task] || (task==='payment' ? '#1C6E31' : '#B3261E'); }
+function stampColor(task){
+  let c = {};
+  try{ c = JSON.parse(localStorage.getItem('hesabat-stamp-colors')||'{}')||{}; }catch(e){ c = {}; }
+  if(!c || typeof c!=='object') c = (DB.settings&&DB.settings.stampColors)||{};
+  return c[task] || (task==='payment' ? '#1C6E31' : '#B3261E');
+}
 function cssVar(name, fallback){
   try{ const v = getComputedStyle(document.body).getPropertyValue(name).trim(); return v || fallback; }
   catch(e){ return fallback; }
@@ -470,7 +475,7 @@ function attachJDate(input){
       '<div class="jd-head">' +
         '<button type="button" class="jd-nav" data-nav="next" aria-label="ماه بعد">'+icon(document.documentElement.dir==='rtl'?'chevS':'chevE',14)+'</button>' +
         '<span class="jd-t"><span>'+J.MONTHS[view.jm-1]+'</span>' +
-        '<select data-year>' + Array.from({length:60},(_,i)=>{ const y = 1385+i; return '<option'+(y===view.jy?' selected':'')+'>'+faDigits(y)+'</option>'; }).join('') + '</select></span>' +
+        '<select data-year>' + Array.from({length:160},(_,i)=>{ const y = 1285+i; return '<option'+(y===view.jy?' selected':'')+'>'+faDigits(y)+'</option>'; }).join('') + '</select></span>' +
         '<button type="button" class="jd-nav" data-nav="prev" aria-label="ماه قبل">'+icon(document.documentElement.dir==='rtl'?'chevE':'chevS',14)+'</button>' +
       '</div>' +
       '<div class="jd-grid">' + J.WD.map(w=>'<span class="jd-wd">'+w+'</span>').join('') + cells + '</div>' +
@@ -1250,6 +1255,7 @@ async function srvFieldsSec(box){
     '</p></div><div class="field-row" style="gap:6px">' +
       '<button class="btn btn-soft btn-xs" data-sfe="' + f.id + '">' + icon('pen',13) + ' ویرایش</button>' +
       '<button class="btn btn-soft btn-xs" data-sfd="' + f.id + '" data-sfl="' + esc(f.label) + '">' + icon('trash',13) + ' آرشیو</button>' +
+      '<button class="btn btn-soft btn-xs" data-sfh="' + f.id + '" data-sfl="' + esc(f.label) + '" style="color:var(--red)">' + icon('trash',13) + ' حذف کامل</button>' +
     '</div></div>').join('');
   box.innerHTML = (rows || '<p class="hint-t">هنوز فیلدی تعریف نشده — اولین فیلد را بسازید.</p>') +
     '<div class="field-row" style="gap:8px;margin-top:10px"><button class="btn btn-primary btn-sm" id="srvFieldAdd">' + icon('plus',14) + ' فیلد جدید</button></div>';
@@ -1261,6 +1267,13 @@ async function srvFieldsSec(box){
       text:'فیلد «' + b.dataset.sfl + '» آرشیو می‌شود؛ مقادیر قبلی اعضا حذف نمی‌شوند ولی فیلد از فرم‌ها حذف می‌شود.' });
     if(!okc) return;
     try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/fields/' + b.dataset.sfd); srvDropFieldsCache(); toast('فیلد آرشیو شد.', 'ok'); srvFieldsSec(box); }
+    catch(e){ toast(e.message, 'err'); }
+  });
+  box.querySelectorAll('[data-sfh]').forEach(b => b.onclick = async ()=>{
+    const okc = await askConfirm({ title:'حذف کامل فیلد', danger:true, ok:'حذف شود',
+      text:'فیلد «' + b.dataset.sfl + '» و همهٔ مقادیر آن در اعضا برای همیشه حذف می‌شوند. این کار برگشت‌پذیر نیست.' });
+    if(!okc) return;
+    try { await srvFetch('DELETE', '/api/institutions/' + SRV.instId + '/fields/' + b.dataset.sfh + '?hard=1'); srvDropFieldsCache(); toast('فیلد کاملاً حذف شد.', 'ok'); srvFieldsSec(box); }
     catch(e){ toast(e.message, 'err'); }
   });
   const add = $('#srvFieldAdd'); if(add) add.onclick = ()=> srvFieldForm(null);
@@ -3095,9 +3108,21 @@ function renderSettings(){
     body.querySelector('#secNotif .sec-b').innerHTML =
       '<p class="hint-t" style="padding:10px 4px">'+icon('info',14)+' یادآور سررسید اقساط و تأیید پرداخت‌ها به‌صورت خودکار روی داشبورد و پنل اعلان‌ها نمایش داده می‌شود — مستقیم از دادهٔ زندهٔ سرور، بدون نیاز به پیکربندی.</p>';
     const uiB = body.querySelector('#secUi .sec-b');
-    uiB.innerHTML = '<div class="field"><label>تم نمایش</label><div class="field-row"><button class="btn btn-soft btn-sm" id="setThemeLight">'+icon('sun',14)+' روشن</button><button class="btn btn-soft btn-sm" id="setThemeDark">'+icon('moon',14)+' تیره</button></div><span class="help">فقط ترجیح همین مرورگر است و روی داده‌ها اثر ندارد.</span></div>';
+    const scMem = stampColor('member');
+    const scPay = stampColor('payment');
+    uiB.innerHTML = '<div class="field"><label>تم نمایش</label><div class="field-row"><button class="btn btn-soft btn-sm" id="setThemeLight">'+icon('sun',14)+' روشن</button><button class="btn btn-soft btn-sm" id="setThemeDark">'+icon('moon',14)+' تیره</button></div><span class="help">فقط ترجیح همین مرورگر است و روی داده‌ها اثر ندارد.</span></div>' +
+      '<div class="fields" style="margin-top:14px">' +
+        '<div class="field"><label>رنگ مُهر ثبت عضو</label><input id="setStampMem" type="color" value="'+esc(scMem)+'"></div>' +
+        '<div class="field"><label>رنگ مُهر ثبت پرداخت</label><input id="setStampPay" type="color" value="'+esc(scPay)+'"></div>' +
+      '</div><span class="help">رنگ مُهر تأیید بعد از ثبت عضو یا پرداخت.</span>';
     $('#setThemeLight').onclick = ()=>applyTheme('light', true);
     $('#setThemeDark').onclick = ()=>applyTheme('dark', true);
+    const saveStamp = ()=>{
+      try{ localStorage.setItem('hesabat-stamp-colors', JSON.stringify({ member: $('#setStampMem').value, payment: $('#setStampPay').value })); }catch(e){}
+      if(DB && DB.settings) DB.settings.stampColors = { member: $('#setStampMem').value, payment: $('#setStampPay').value };
+    };
+    $('#setStampMem').onchange = saveStamp;
+    $('#setStampPay').onchange = saveStamp;
   }
   else if(setTab === 'us'){
     body.innerHTML = sec('secUsers','users','کاربران مؤسسه','اعضای ثبت‌شده و سطح دسترسی آن‌ها در سرور');
@@ -3485,7 +3510,11 @@ async function submitOnboarding(){
     currency: onboardData.currency,
     feePercent: onboardData.feePercent,
     fundBalance: onboardData.fundBalance||0,
-    memberFields: (onboardData.memberFields||[]).map(label=>({label, type:'text', required: label==='نام'})),
+    memberFields: (onboardData.memberFields||[]).map(label=>{
+      const lbl = String(label||'');
+      const type = /موبایل|شماره تماس|کد\s*ملی|کدملی/.test(lbl) ? 'number' : (/تاریخ/.test(lbl) ? 'date' : 'text');
+      return {label: lbl, type, required: lbl==='نام' || lbl==='نام و نام خانوادگی'};
+    }),
     email: genInstitutionEmail(onboardData.institutionName||'inst', onboardData.nid||'')
   };
 
