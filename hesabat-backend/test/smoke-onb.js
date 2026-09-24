@@ -74,6 +74,8 @@ T('دکمه حذف کامل کنار آرشیو', src.includes('حذف کامل'
 T('رنگ مُهر در ظاهر', src.includes('setStampMem') && src.includes('setStampPay') && src.includes('type=\"color\"'));
 T('فیلتر قدیمی‌ترین اعضا', src.includes('قدیمی‌ترین') && src.includes('value=\"oldest\"') && src.includes('srvMemSort'));
 T('همبرگر سایدبار را کامل می‌بندد', src.includes("sb.classList.toggle('off')") && src.includes('hesabat-sb-off'));
+T('افزودن گروهی صفحه مستقل', src.includes("arg==='bulk'") && src.includes('function renderSrvBulkImport') && src.includes('#/app/members/bulk'));
+T('بدون ویزارد دموی OCR', !src.includes('function bulkImportWizard(') && !src.includes('function tessLoad('));
 
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

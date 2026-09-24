@@ -61,7 +61,11 @@ r.post('/', asyncH(async (req, res) => {
 
 r.get('/:id', requireInstitution, asyncH(async (req, res) => {
   const inst = await withTenant(req.user, req.institutionId, async c => {
-    return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
+    try {
+      return (await c.query("select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at,coalesce(plan_type,'free') as plan_type,coalesce(import_templates,'[]'::jsonb) as import_templates from institutions where id=$1", [req.institutionId])).rows[0];
+    } catch(_) {
+      return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
+    }
   });
   if (!inst) return res.status(404).json({ error: 'مؤسسه پیدا نشد.' });
   res.json({ institution: inst });

@@ -890,3 +890,11 @@ body.theme-dark .var-it .vn{background:var(--card);}
 .pq-row.wait .pq-tick{color:var(--ink-2);font-weight:400}
 .pq-over{display:flex;align-items:center;gap:6px;margin-top:8px;padding:9px 11px;border-radius:10px;background:rgba(179,54,43,.08);color:var(--red);font-size:.78rem;font-weight:600}
 .pq-total{background:var(--card-2);font-weight:700;border-radius:8px}
+.bulk-ol{margin:0 0 14px;padding-inline-start:22px;line-height:1.9;font-size:.88rem;color:var(--ink-2)}
+.bulk-ol li{margin:0 0 4px}
+.bulk-drop{border:1.5px dashed var(--line);border-radius:14px;padding:28px 16px;text-align:center;cursor:pointer;color:var(--ink-2);background:var(--card-2)}
+.bulk-drop.on{border-color:var(--green-deep);background:rgba(28,110,49,.06)}
+.bulk-row.st-invalid td{background:rgba(179,54,43,.06)}
+.bulk-row.st-duplicate td{background:rgba(217,138,27,.07)}
+.bulk-row.st-incomplete td{background:rgba(20,53,31,.03)}
+#bulkTbl input{width:100%;min-width:90px;font-size:.82rem;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card)}

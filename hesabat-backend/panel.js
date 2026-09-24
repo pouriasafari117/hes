@@ -1359,7 +1359,7 @@ async function renderSrvMembersPage(){
 
   $('#srvAddMember').onclick = ()=> srvMemberForm(null);
   const bulk = $('#srvBulkBtn');
-  if(bulk) bulk.onclick = ()=> toast('افزودن گروهی به‌زودی از فایل اکسل — فعلاً تکی اضافه کنید.','info');
+  if(bulk) bulk.onclick = ()=> { location.hash = '#/app/members/bulk'; };
 
   await srvLoadMembers();
 }
@@ -3081,11 +3081,183 @@ async function renderSrvFinSec(body, canEdit, disAttr){
   };
 }
 
+async function renderSrvBulkImport(){
+  const main = $('#main');
+  let plan = 'free';
+  let templates = [];
+  try{
+    const inst = await srvFetch('GET','/api/institutions/'+SRV.instId);
+    plan = String((inst.institution&&inst.institution.plan_type)||'free');
+    if(Array.isArray(inst.institution&&inst.institution.import_templates)) templates = inst.institution.import_templates;
+  }catch(e){}
+  try{
+    const t = await srvFetch('GET','/api/institutions/'+SRV.instId+'/members/bulk/templates');
+    if(Array.isArray(t.templates)) templates = t.templates;
+  }catch(e){}
+  const paid = plan==='paid';
+  const activeTpls = templates.filter(t=>t && t.active!==false);
+  let selTpl = activeTpls.length===1 ? activeTpls[0].id : '';
+  let preview = null;
+
+  function stFa(s){ return ({ok:'معتبر',incomplete:'ناقص',invalid:'نامعتبر',duplicate:'تکراری'})[s]||s; }
+  function stBadge(s){
+    const cls = s==='ok'?'b-green':(s==='duplicate'?'b-amber':(s==='incomplete'?'b-gray':'b-red'));
+    return '<span class="badge '+cls+'">'+stFa(s)+'</span>';
+  }
+
+  function lensGuide(){
+    return '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>'+icon('info',16)+' راهنمای Google Lens</h3></div><div class="card-b">'+
+      '<ol class="bulk-ol">'+
+      '<li>تصویر لیست اعضا را آماده کنید.</li>'+
+      '<li>روی «باز کردن Google Lens» کلیک کنید.</li>'+
+      '<li>تصویر را در Google Lens وارد کنید.</li>'+
+      '<li>متن استخراج‌شده را انتخاب و Copy کنید.</li>'+
+      '<li>به همین صفحه برگردید.</li>'+
+      '<li>متن را در کادر «اطلاعات اعضا» Paste کنید.</li>'+
+      '<li>روی «پردازش اطلاعات» کلیک کنید.</li>'+
+      '</ol>'+
+      '<a class="btn btn-solid btn-sm" href="https://lens.google.com/" target="_blank" rel="noopener">'+icon('search',14)+' باز کردن Google Lens</a>'+
+      '</div></div>';
+  }
+
+  function paint(){
+    const counts = (preview&&preview.counts)||{ok:0,incomplete:0,invalid:0,duplicate:0};
+    const fields = (preview&&preview.fields)||[];
+    main.innerHTML =
+      '<div class="page-head"><div><h1>افزودن گروهی اعضا</h1><div class="ph-sub">'+(paid?'پلن پولی — بارگذاری تصویر و OCR':'پلن رایگان — Google Lens و چسباندن متن')+'</div></div>'+
+      '<div class="ph-actions"><a class="btn btn-ghost btn-sm" href="#/app/members">'+icon('arrowL',14)+' بازگشت به اعضا</a></div></div>'+
+      (paid
+        ? '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>بارگذاری تصویر</h3><span class="hint-t">پردازش تصویر به Provider OCR وابسته است و مستقیم در دیتابیس ثبت نمی‌شود.</span></div><div class="card-b">'+
+          (activeTpls.length?'<div class="field"><label>قالب مؤسسه</label><select id="bulkTpl">'+activeTpls.map(t=>'<option value="'+esc(t.id)+'"'+(selTpl===t.id?' selected':'')+'>'+esc(t.name)+(t.note?' — '+esc(t.note):'')+'</option>').join('')+'<option value=""'+(selTpl?'':' selected')+'>بدون قالب</option></select></div>':'<p class="hint-t">قالبی تعریف نشده — می‌توانید بعداً در همین صفحه قالب بسازید.</p>')+
+          '<div class="bulk-drop" id="bulkDrop"><input type="file" id="bulkFile" accept="image/*" hidden><p>'+icon('upload',22)+'<br>تصویر را بکشید یا کلیک کنید</p></div>'+
+          '<div id="bulkImgPrev" style="margin-top:10px"></div>'+
+          '<div class="field-row" style="gap:8px;margin-top:10px"><button class="btn btn-solid btn-sm" id="bulkOcr">'+icon('search',14)+' پردازش تصویر</button></div>'+
+          '<p class="hint-t" id="bulkOcrMsg" style="margin-top:8px"></p>'+
+          '<div class="field" style="margin-top:12px"><label>یا متن استخراج‌شده (اختیاری)</label><textarea id="bulkText" rows="6" placeholder="اگر OCR در دسترس نبود، متن را اینجا بچسبانید"></textarea></div>'+
+          '</div></div>'
+        : lensGuide()+
+          '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>اطلاعات اعضا</h3><span class="hint-t">متن کپی‌شده از Google Lens را اینجا بچسبانید. سیستم ساختار را تشخیص می‌دهد.</span></div><div class="card-b">'+
+          '<textarea id="bulkText" rows="10" placeholder="نام	کد ملی	موبایل&#10;نمونه نام	0012345678	09121234567"></textarea>'+
+          '</div></div>'
+      )+
+      '<div class="field-row" style="gap:8px;margin-bottom:14px"><button class="btn btn-solid" id="bulkParse">'+icon('check',15)+' پردازش اطلاعات</button></div>'+
+      '<div id="bulkPrevBox">'+(preview? renderPrev(preview, fields, counts):'')+'</div>'+
+      (paid? '<div class="card tight" style="margin-top:16px"><div class="card-h"><h3>قالب اختصاصی مؤسسه</h3></div><div class="card-b">'+
+        '<div class="fields"><div class="field"><label>نام قالب</label><input id="tplName" placeholder="مثلاً لیست ماهانه"></div>'+
+        '<div class="field"><label>توضیح</label><input id="tplNote" placeholder="اختیاری"></div></div>'+
+        '<button class="btn btn-soft btn-sm" id="tplSave">'+icon('plus',13)+' ذخیره قالب ساده</button>'+
+        '<p class="hint-t" style="margin-top:8px">قالب فقط برای تفسیر ستون‌هاست و داده را ثبت نمی‌کند.</p></div></div>':'');
+
+    const drop = $('#bulkDrop'), file = $('#bulkFile');
+    if(drop && file){
+      drop.onclick = ()=> file.click();
+      drop.ondragover = e=>{ e.preventDefault(); drop.classList.add('on'); };
+      drop.ondragleave = ()=> drop.classList.remove('on');
+      drop.ondrop = e=>{ e.preventDefault(); drop.classList.remove('on'); if(e.dataTransfer.files[0]) showImg(e.dataTransfer.files[0]); };
+      file.onchange = ()=>{ if(file.files[0]) showImg(file.files[0]); };
+    }
+    function showImg(f){
+      const url = URL.createObjectURL(f);
+      window.__bulkFile = f;
+      const box = $('#bulkImgPrev');
+      if(box) box.innerHTML = '<img src="'+url+'" alt="" style="max-width:100%;max-height:180px;border-radius:12px;border:1px solid var(--line)">';
+    }
+    const ocrBtn = $('#bulkOcr');
+    if(ocrBtn) ocrBtn.onclick = async ()=>{
+      const msg = $('#bulkOcrMsg');
+      if(msg) msg.textContent = 'در حال ارسال به Provider OCR…';
+      try{
+        await srvFetch('POST','/api/institutions/'+SRV.instId+'/members/bulk/ocr', { mime: (window.__bulkFile&&window.__bulkFile.type)||'image/jpeg' });
+      }catch(e){
+        if(msg) msg.textContent = e.message;
+        toast(e.message,'warn');
+      }
+    };
+    const tplSel = $('#bulkTpl'); if(tplSel) tplSel.onchange = ()=>{ selTpl = tplSel.value; };
+    const parseBtn = $('#bulkParse');
+    if(parseBtn) parseBtn.onclick = async ()=>{
+      const text = ($('#bulkText')&&$('#bulkText').value)||'';
+      if(!text.trim()){ toast('متنی برای پردازش نیست.','warn'); return; }
+      parseBtn.disabled = true;
+      try{
+        const tpl = activeTpls.find(t=>t.id===selTpl) || null;
+        preview = await srvFetch('POST','/api/institutions/'+SRV.instId+'/members/bulk/preview', { text, template: tpl });
+        paint();
+      }catch(e){ toast(e.message,'err'); parseBtn.disabled=false; }
+    };
+    const saveTpl = $('#tplSave');
+    if(saveTpl) saveTpl.onclick = async ()=>{
+      const name = ($('#tplName')&&$('#tplName').value||'').trim();
+      if(!name){ toast('نام قالب الزامی است.','err'); return; }
+      try{
+        const r = await srvFetch('POST','/api/institutions/'+SRV.instId+'/members/bulk/templates', { name, note: ($('#tplNote')&&$('#tplNote').value)||'', columns:[] });
+        templates = r.templates||templates; toast('قالب ذخیره شد.','ok'); paint();
+      }catch(e){ toast(e.message,'err'); }
+    };
+    bindPrev();
+  }
+
+  function renderPrev(p, fields, counts){
+    if(!p.total) return '<div class="alert a-warn"><span class="al-ic">'+icon('warn',16)+'</span><div>ردیفی استخراج نشد. متن را بررسی کنید.</div></div>';
+    return '<div class="card tight"><div class="card-h"><h3>پیش‌نمایش</h3><span class="hint-t">'+
+      faDigits(counts.ok||0)+' قابل ثبت · '+faDigits(counts.invalid||0)+' نامعتبر · '+faDigits(counts.incomplete||0)+' ناقص · '+faDigits(counts.duplicate||0)+' تکراری</span></div><div class="card-b">'+
+      '<div class="tbl-wrap"><table class="tbl" id="bulkTbl"><thead><tr><th></th>'+fields.map(f=>'<th>'+esc(f.label)+(f.is_required?' *':'')+'</th>').join('')+'<th>وضعیت</th><th></th></tr></thead><tbody>'+
+      p.rows.map(r=>'<tr data-i="'+r.i+'" class="bulk-row st-'+r.status+'"><td>'+faDigits(r.i+1)+'</td>'+
+        fields.map(f=>'<td><input data-k="'+esc(f.key)+'" value="'+esc(r.values[f.key]||'')+'"></td>').join('')+
+        '<td>'+stBadge(r.status)+(r.errors&&r.errors.length?'<div class="hint-t">'+esc(r.errors.map(e=>e.msg).join('؛ '))+'</div>':'')+'</td>'+
+        '<td><button class="btn btn-soft btn-xs" data-del="'+r.i+'">حذف</button></td></tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="field-row" style="gap:8px;margin-top:14px;justify-content:flex-end">'+
+        '<button class="btn btn-ghost btn-sm" id="bulkRe">'+icon('refresh',13)+' بازپردازش جدول</button>'+
+        '<button class="btn btn-solid" id="bulkGo">'+icon('check',15)+' ثبت '+faDigits(counts.ok||0)+' عضو معتبر</button>'+
+      '</div></div></div>';
+  }
+
+  function readTableRows(){
+    const rows = [];
+    $$('#bulkTbl tbody tr').forEach(tr=>{
+      const values = {};
+      tr.querySelectorAll('input[data-k]').forEach(inp=>{ values[inp.dataset.k]=inp.value; });
+      rows.push({ values });
+    });
+    return rows;
+  }
+  function bindPrev(){
+    $$('#bulkTbl [data-del]').forEach(b=> b.onclick = ()=>{ b.closest('tr').remove(); });
+    const re = $('#bulkRe');
+    if(re) re.onclick = async ()=>{
+      try{
+        preview = await srvFetch('POST','/api/institutions/'+SRV.instId+'/members/bulk/preview', { rows: readTableRows() });
+        paint();
+      }catch(e){ toast(e.message,'err'); }
+    };
+    const go = $('#bulkGo');
+    if(go) go.onclick = async ()=>{
+      const okc = await askConfirm({ title:'ثبت گروهی', ok:'ثبت شود',
+        text:'فقط رکوردهای معتبر ثبت می‌شوند. نامعتبرها و تکراری‌ها رد می‌شوند.' });
+      if(!okc) return;
+      go.disabled = true;
+      try{
+        const r = await srvFetch('POST','/api/institutions/'+SRV.instId+'/members/bulk', { rows: readTableRows() });
+        main.innerHTML = '<div class="page-head"><div><h1>نتیجه افزودن گروهی</h1></div><div class="ph-actions"><a class="btn btn-solid btn-sm" href="#/app/members">بازگشت به اعضا</a></div></div>'+
+          '<div class="card tight"><div class="card-b"><div class="kv-list">'+
+          '<div class="kv"><span class="k">ثبت‌شده با موفقیت</span><span class="v">'+faDigits(r.created||0)+'</span></div>'+
+          '<div class="kv"><span class="k">ناموفق</span><span class="v">'+faDigits(r.failed||0)+'</span></div>'+
+          '<div class="kv"><span class="k">تکراری (رد شده)</span><span class="v">'+faDigits(r.duplicate||0)+'</span></div>'+
+          '<div class="kv"><span class="k">نیازمند بررسی</span><span class="v">'+faDigits(r.review||0)+'</span></div>'+
+          '</div></div></div>';
+        toast(faDigits(r.created||0)+' عضو ثبت شد.','ok');
+      }catch(e){ toast(e.message,'err'); go.disabled=false; }
+    };
+  }
+  paint();
+}
+
 /* ═══════ روتر صفحات — فقط‌سرور ═══════
    حالت دمویی دیگر وجود ندارد؛ همهٔ صفحات مستقیم به رندرگرهای سرور (API + PostgreSQL) وصل‌اند. */
 const PAGES = {
   dashboard: function(){ return renderSrvDashboard(); },
-  members:   function(arg){ if(arg && !isNaN(parseInt(arg,10))) return renderSrvMemberProfile(arg); return renderSrvMembersPage(); },
+  members:   function(arg){ if(arg==='bulk') return renderSrvBulkImport(); if(arg && !isNaN(parseInt(arg,10))) return renderSrvMemberProfile(arg); return renderSrvMembersPage(); },
   loans:     function(arg){ if(arg && !isNaN(parseInt(arg,10))) return srvLoanDetail(arg); return renderSrvLoansPage(); },
   funds:     function(arg){ return renderSrvFundsPage(arg||'funds'); },
   accounts:  function(){ return renderSrvFundsPage('accounts'); },

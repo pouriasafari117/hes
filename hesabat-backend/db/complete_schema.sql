@@ -68,6 +68,8 @@ alter table institutions add column if not exists icon text;
 alter table institutions add column if not exists bot_email text;
 alter table institutions add column if not exists bot_active boolean default true;
 alter table institutions add column if not exists fund_balance bigint not null default 0;
+alter table institutions add column if not exists plan_type text not null default 'free';
+alter table institutions add column if not exists import_templates jsonb not null default '[]';
 
 create table if not exists institution_members (
   user_id        bigint not null references users(id) on delete cascade,

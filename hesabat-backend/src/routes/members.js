@@ -2,6 +2,8 @@ const express = require('express');
 const { withTenant } = require('../db');
 const { asyncH, requireAuth, requireInstitution } = require('../mw');
 const { validateValues } = require('../validate');
+const bulk = require('../bulk');
+const { extractTextFromImage } = require('../ocr/provider');
 
 const r = express.Router({ mergeParams: true });
 r.use(requireAuth, requireInstitution);
@@ -64,6 +66,141 @@ r.get('/', asyncH(async (req, res) => {
     return { rows, total, page, pageSize };
   });
   res.json(out);
+}));
+
+async function existingNidSet(c, iid, fields){
+  const nidF = fields.find(f => bulk.fieldKind(f)==='nid');
+  if(!nidF) return new Set();
+  const q = await c.query(
+    `select v.value from member_field_values v
+     where v.institution_id=$1 and v.field_id=$2`, [iid, nidF.id]);
+  const set = new Set();
+  q.rows.forEach(r => { const n = bulk.normalizeNid(r.value); if(n) set.add(n); });
+  return set;
+}
+
+/* POST /bulk/preview — متن یا ردیف‌ها → Normalize/Validate بدون ثبت */
+r.post('/bulk/preview', asyncH(async (req, res) => {
+  const b = req.body || {};
+  const out = await withTenant(req.user, req.institutionId, async c => {
+    const fields = await getActiveFields(c, req.institutionId);
+    let rawRows = [];
+    if(Array.isArray(b.rows) && b.rows.length){
+      rawRows = b.rows.map(x => (x && x.values) ? x.values : (x || {}));
+    } else {
+      rawRows = bulk.parseMemberText(b.text || '', fields, b.template || null);
+    }
+    const existing = await existingNidSet(c, req.institutionId, fields);
+    const rows = bulk.previewRows(fields, rawRows, existing);
+    const counts = { ok:0, incomplete:0, invalid:0, duplicate:0 };
+    rows.forEach(rw => { counts[rw.status] = (counts[rw.status]||0)+1; });
+    return { fields: fields.map(f=>({key:f.key,label:f.label,type:f.type,is_required:f.is_required})), rows, counts, total: rows.length };
+  });
+  res.json(out);
+}));
+
+/* POST /bulk — فقط ردیف‌های تأییدشده؛ هر رکورد مستقل */
+r.post('/bulk', asyncH(async (req, res) => {
+  const list = Array.isArray((req.body||{}).rows) ? req.body.rows : [];
+  if(!list.length) return res.status(400).json({ error: 'ردیفی برای ثبت ارسال نشده.' });
+  const out = await withTenant(req.user, req.institutionId, async c => {
+    const fields = await getActiveFields(c, req.institutionId);
+    const existing = await existingNidSet(c, req.institutionId, fields);
+    const classified = bulk.previewRows(fields, list.map(x => (x && x.values) ? x.values : (x||{})), existing);
+    const created = [];
+    const failed = [];
+    const skipped = [];
+    function genMemberNo(vals){
+      const nid = vals.nid || vals.nationalId || vals.national_id || '';
+      const nidPart = String(nid).replace(/\D/g,'').slice(-6) || '';
+      const rand = Date.now().toString().slice(-4) + Math.floor(Math.random()*90+10);
+      if(nidPart) return ('M-' + nidPart + rand.slice(-4));
+      return ('M-' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random()*100).toString().padStart(2,'0'));
+    }
+    const byKey = new Map(fields.map(f => [f.key, f]));
+    for(const rw of classified){
+      if(rw.status !== 'ok'){
+        skipped.push({ i:rw.i, status:rw.status, errors:rw.errors });
+        continue;
+      }
+      try {
+        const memberNo = genMemberNo(rw.values);
+        const mq = await c.query(
+          'insert into members (institution_id, member_no) values ($1,$2) returning id, status, member_no, created_at',
+          [req.institutionId, memberNo]);
+        const member = mq.rows[0];
+        for(const [k, val] of Object.entries(rw.values)){
+          const def = byKey.get(k);
+          if(!def) continue;
+          if(val === '' && !def.is_required) continue;
+          await c.query(
+            'insert into member_field_values (member_id, field_id, institution_id, value) values ($1,$2,$3,$4)',
+            [member.id, def.id, req.institutionId, val]);
+        }
+        const nidF = fields.find(f => bulk.fieldKind(f)==='nid');
+        if(nidF && rw.values[nidF.key]) existing.add(rw.values[nidF.key]);
+        created.push({ i:rw.i, id: member.id, member_no: member.member_no });
+      } catch(e){
+        failed.push({ i:rw.i, error: e.message });
+      }
+    }
+    return {
+      created: created.length,
+      failed: failed.length,
+      skipped: skipped.length,
+      duplicate: skipped.filter(x=>x.status==='duplicate').length,
+      review: skipped.filter(x=>x.status!=='duplicate').length,
+      details: { created, failed, skipped }
+    };
+  });
+  res.status(201).json(out);
+}));
+
+/* POST /bulk/ocr — تصویر → متن خام (بدون ثبت) */
+r.post('/bulk/ocr', asyncH(async (req, res) => {
+  try {
+    const text = await extractTextFromImage(req.body && req.body.image, req.body && req.body.mime);
+    res.json({ text });
+  } catch(e){
+    const code = e.code === 'OCR_UNAVAILABLE' ? 501 : 400;
+    res.status(code).json({ error: e.message, code: e.code || 'OCR' });
+  }
+}));
+
+r.get('/bulk/templates', asyncH(async (req, res) => {
+  const rows = await withTenant(req.user, req.institutionId, async c => {
+    try {
+      const q = await c.query("select coalesce(import_templates, '[]'::jsonb) as t from institutions where id=$1", [req.institutionId]);
+      const arr = q.rows[0] && q.rows[0].t;
+      return Array.isArray(arr) ? arr : [];
+    } catch(_){ return []; }
+  });
+  res.json({ templates: rows });
+}));
+
+r.post('/bulk/templates', asyncH(async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name||'').trim();
+  if(!name) return res.status(400).json({ error: 'نام قالب الزامی است.' });
+  const tpl = {
+    id: 't'+Date.now().toString(36),
+    name,
+    note: String(b.note||'').trim(),
+    active: b.active !== false,
+    columns: Array.isArray(b.columns) ? b.columns : [],
+    created_at: new Date().toISOString()
+  };
+  const templates = await withTenant(req.user, req.institutionId, async c => {
+    let arr = [];
+    try {
+      const q = await c.query("select coalesce(import_templates, '[]'::jsonb) as t from institutions where id=$1", [req.institutionId]);
+      arr = Array.isArray(q.rows[0] && q.rows[0].t) ? q.rows[0].t : [];
+    } catch(_){ arr = []; }
+    arr.push(tpl);
+    await c.query('update institutions set import_templates=$1::jsonb, updated_at=now() where id=$2', [JSON.stringify(arr), req.institutionId]);
+    return arr;
+  });
+  res.status(201).json({ template: tpl, templates });
 }));
 
 /* GET /api/institutions/:id/members/:memberId */
