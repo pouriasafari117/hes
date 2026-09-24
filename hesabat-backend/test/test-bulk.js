@@ -28,5 +28,14 @@ const block = 'علی محمدی\n0074251638\n09121234567';
 const br = b.parseMemberText(block, fields);
 T('parse بلوک', br.length>=1 && br[0].nationalId);
 
+const dsFields = [
+  {key:'name', label:'نام', type:'text', is_required:true},
+  {key:'mobile', label:'شماره تماس', type:'mobile', is_required:true},
+  {key:'father', label:'نام پدر', type:'text', is_required:false},
+];
+const ds = b.parseMemberText('علی صفری  0938656585  علی\nرضا احمدی  09120000000  محمد', dsFields);
+T('دو فاصله: هر خط یک نفر به ترتیب فیلدها', ds.length===2 && ds[0].name==='علی صفری' && ds[0].mobile==='0938656585' && ds[0].father==='علی');
+T('دو فاصله نفر دوم', ds[1].name==='رضا احمدی' && ds[1].father==='محمد');
+
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

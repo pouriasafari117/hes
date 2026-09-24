@@ -3105,16 +3105,23 @@ async function renderSrvBulkImport(){
     return '<span class="badge '+cls+'">'+stFa(s)+'</span>';
   }
 
+  function fieldOrderHint(){
+    const labs = (instFields||[]).map(f=>f.label).filter(Boolean);
+    if(!labs.length) return 'ترتیب فیلدها همان ترتیب فرم «افزودن عضو» در تنظیمات این مؤسسه است.';
+    return 'ترتیب این مؤسسه: <b>'+labs.map(esc).join('</b> ← <b>')+'</b>';
+  }
   function lensGuide(){
-    return '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>'+icon('info',16)+' راهنمای Google Lens</h3></div><div class="card-b">'+
+    const labs = (instFields||[]).map(f=>f.label).filter(Boolean);
+    const sample = labs.length ? labs.map((l,i)=> i===0?'نمونه نام':(i===1?'09121234567':'نمونه')).join('  ') : 'نام کامل  09121234567  نام پدر';
+    return '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>'+icon('info',16)+' نحوهٔ ورود متن</h3></div><div class="card-b">'+
+      '<p class="hint-t" style="margin-bottom:10px">هر خط یک عضو است. مقدار فیلدها را <b>به همان ترتیبی که در فرم افزودن عضو آمده</b> بنویسید و بین هر دو فیلد <b>دو فاصله</b> بگذارید. فاصلهٔ داخل نام (مثلاً علی صفری) یک فاصله است و مشکلی ندارد.</p>'+
+      '<p style="font-size:.88rem;margin-bottom:10px">'+fieldOrderHint()+'</p>'+
+      '<p class="hint-t" style="margin-bottom:12px">نمونه:<br><code dir="rtl" style="display:block;margin-top:6px;padding:8px 10px;background:var(--card-2);border-radius:8px">'+esc(sample)+'</code></p>'+
       '<ol class="bulk-ol">'+
-      '<li>تصویر لیست اعضا را آماده کنید.</li>'+
-      '<li>روی «باز کردن Google Lens» کلیک کنید.</li>'+
-      '<li>تصویر را در Google Lens وارد کنید.</li>'+
-      '<li>متن استخراج‌شده را انتخاب و Copy کنید.</li>'+
-      '<li>به همین صفحه برگردید.</li>'+
-      '<li>متن را در کادر «اطلاعات اعضا» Paste کنید.</li>'+
-      '<li>روی «پردازش اطلاعات» کلیک کنید.</li>'+
+      '<li>تصویر یا فهرست اعضا را آماده کنید.</li>'+
+      '<li>روی «باز کردن Google Lens» بزنید، متن را بگیرید و کپی کنید.</li>'+
+      '<li>متن را طوری مرتب کنید که هر نفر یک خط باشد و فیلدها با دو فاصله جدا شوند.</li>'+
+      '<li>در کادر زیر Paste کنید و «پردازش اطلاعات» را بزنید.</li>'+
       '</ol>'+
       '<a class="btn btn-solid btn-sm" href="https://lens.google.com/" target="_blank" rel="noopener">'+icon('search',14)+' باز کردن Google Lens</a>'+
       '</div></div>';
@@ -3136,8 +3143,8 @@ async function renderSrvBulkImport(){
           '<div class="field" style="margin-top:12px"><label>یا متن استخراج‌شده (اختیاری)</label><textarea id="bulkText" rows="6" placeholder="اگر OCR در دسترس نبود، متن را اینجا بچسبانید"></textarea></div>'+
           '</div></div>'
         : lensGuide()+
-          '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>اطلاعات اعضا</h3><span class="hint-t">متن کپی‌شده از Google Lens را اینجا بچسبانید. سیستم ساختار را تشخیص می‌دهد.</span></div><div class="card-b">'+
-          '<textarea id="bulkText" rows="10" placeholder="نام	کد ملی	موبایل&#10;نمونه نام	0012345678	09121234567"></textarea>'+
+          '<div class="card tight" style="margin-bottom:14px"><div class="card-h"><h3>اطلاعات اعضا</h3><span class="hint-t">هر خط یک نفر — بین فیلدها دو فاصله — ترتیب = فیلدهای تنظیمات</span></div><div class="card-b">'+
+          '<textarea id="bulkText" rows="10" placeholder="علی صفری  09121234567  علی"></textarea>'+
           '</div></div>'
       )+
       '<div class="field-row" style="gap:8px;margin-bottom:14px"><button class="btn btn-solid" id="bulkParse">'+icon('check',15)+' پردازش اطلاعات</button></div>'+

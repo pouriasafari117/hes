@@ -116,9 +116,20 @@ function parseMemberText(text, fields, template){
   if(template && Array.isArray(template.columns) && template.columns.length){
     const keys = template.columns.map(c => c.key);
     return lines.map(ln => {
-      const cells = splitLine(ln);
+      const cells = / {2,}/.test(ln) ? ln.split(/ {2,}/).map(strip) : splitLine(ln);
       const values = {};
       keys.forEach((k,i)=>{ if(k && cells[i]!=null) values[k]=cells[i]; });
+      return values;
+    }).filter(v => Object.values(v).some(x => strip(x)));
+  }
+
+  /* قالب اصلی: هر خط یک نفر؛ فیلدها به ترتیب تعریف مؤسسه؛ جداکننده = دو فاصله یا بیشتر */
+  const dsLines = lines.filter(l => / {2,}/.test(l));
+  if(dsLines.length && dsLines.length >= Math.ceil(lines.length * 0.5)){
+    return lines.map(ln => {
+      const cells = ln.split(/ {2,}/).map(strip);
+      const values = {};
+      fields.forEach((f,i)=>{ if(cells[i]) values[f.key]=cells[i]; });
       return values;
     }).filter(v => Object.values(v).some(x => strip(x)));
   }
