@@ -670,7 +670,8 @@ function renderShell(page){
     (n.key==='members' && overdueCount() ? '<span class="cnt warn">'+faDigits(overdueCount())+'</span>' : '') +
     '</button>').join('');
   nav.querySelectorAll('[data-go]').forEach(b => b.onclick = ()=>{ location.hash = '#/app/' + b.dataset.go; document.body.classList.remove('sb-open'); });
-  $('#orgName').textContent = DB.settings.institution.name;
+  const orgNm = (typeof SRV!=='undefined' && SRV.instName) || (DB.settings.institution && DB.settings.institution.name) || '';
+  $('#orgName').textContent = orgNm || 'مؤسسه';
   if(SESSION){
     $('#profName').textContent = SESSION.name;
     $('#profRole').textContent = ROLE_FA[SESSION.role] || SESSION.role;
@@ -3085,18 +3086,8 @@ async function renderSrvBulkImport(){
   const main = $('#main');
   let plan = 'free';
   let templates = [];
-  try{
-    const inst = await srvFetch('GET','/api/institutions/'+SRV.instId);
-    plan = String((inst.institution&&inst.institution.plan_type)||'free');
-    if(Array.isArray(inst.institution&&inst.institution.import_templates)) templates = inst.institution.import_templates;
-  }catch(e){}
-  try{
-    const t = await srvFetch('GET','/api/institutions/'+SRV.instId+'/members/bulk/templates');
-    if(Array.isArray(t.templates)) templates = t.templates;
-  }catch(e){}
-  const paid = plan==='paid';
-  const activeTpls = templates.filter(t=>t && t.active!==false);
-  let selTpl = activeTpls.length===1 ? activeTpls[0].id : '';
+  let instFields = [];
+  let selTpl = '';
   let preview = null;
 
   function stFa(s){ return ({ok:'معتبر',incomplete:'ناقص',invalid:'نامعتبر',duplicate:'تکراری'})[s]||s; }
@@ -3128,6 +3119,9 @@ async function renderSrvBulkImport(){
   }
 
   function paint(){
+    const paid = plan==='paid';
+    const activeTpls = templates.filter(t=>t && t.active!==false);
+    if(!selTpl && activeTpls.length===1) selTpl = activeTpls[0].id;
     const counts = (preview&&preview.counts)||{ok:0,incomplete:0,invalid:0,duplicate:0};
     const fields = (preview&&preview.fields)||[];
     main.innerHTML =
@@ -3257,7 +3251,18 @@ async function renderSrvBulkImport(){
       }catch(e){ toast(e.message,'err'); go.disabled=false; }
     };
   }
-  paint();
+  try { paint(); } catch(e){ renderError(e); return; }
+  try{
+    const inst = await srvFetch('GET','/api/institutions/'+SRV.instId);
+    plan = String((inst.institution&&inst.institution.plan_type)||'free');
+    if(Array.isArray(inst.institution&&inst.institution.import_templates)) templates = inst.institution.import_templates;
+  }catch(e){}
+  try{
+    const t = await srvFetch('GET','/api/institutions/'+SRV.instId+'/members/bulk/templates');
+    if(Array.isArray(t.templates)) templates = t.templates;
+  }catch(e){}
+  try{ instFields = await srvLoadFields(true) || []; }catch(e){ instFields=[]; }
+  try { paint(); } catch(e){ renderError(e); }
 }
 
 /* ═══════ روتر صفحات — فقط‌سرور ═══════

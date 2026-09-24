@@ -150,10 +150,8 @@ body.sb-open .sb-backdrop{opacity:1; pointer-events:auto}
 .hamb{display:inline-flex; border:1px solid var(--line); background:var(--card); border-radius:10px; padding:8px; cursor:pointer; color:var(--ink)}
 .sidebar.off{width:0!important; min-width:0; overflow:hidden; opacity:0; pointer-events:none; border:0; padding:0}
 .org-chip{display:inline-flex; align-items:center; gap:9px; background:var(--card); border:1px solid var(--line);
-  border-radius:999px; padding:7px 15px 7px 9px; font-size:.85rem; font-weight:700; color:var(--ink); max-width:280px}
-.org-chip .org-dot{width:9px;height:9px;border-radius:50%;background:var(--green-deep);flex:none;position:relative}
-.org-chip .org-dot::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--green-deep);opacity:.5;animation:pulse 2.2s ease-out infinite}
-.org-chip .tx{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  border-radius:999px; padding:7px 16px; font-size:.85rem; font-weight:700; color:var(--ink); max-width:min(420px,46vw)}
+.org-chip .tx{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:none}
 .qsearch{position:relative; margin-inline-start:auto; width:min(340px,34vw)}
 .qsearch input{width:100%; font-family:var(--font-ui); font-size:.88rem; color:var(--ink);
   background:var(--card); border:1.5px solid var(--line); border-radius:999px; padding:9px 40px 9px 14px; outline:none; transition:border-color .15s, box-shadow .15s}
