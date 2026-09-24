@@ -40,7 +40,7 @@ r.get('/', asyncH(async (req, res) => {
       `select i.id, i.loan_id, i.due_date::text as due_date, i.amount, i.status, i.paid_at,
               row_number() over (partition by i.loan_id order by i.due_date asc, i.id asc)::int as no,
               l.member_id, l.amount as loan_amount, l.fee_percent, l.status as loan_status, m.member_no,
-              (select v.value from member_field_values v join field_definitions d on d.id=v.field_definition_id
+              (select v.value from member_field_values v join field_definitions d on d.id=v.field_id
                where v.member_id=l.member_id order by d.sort_order, d.id limit 1) as member_name,
               case when i.status='paid' then 'paid'
                    when i.due_date <  current_date then 'overdue'

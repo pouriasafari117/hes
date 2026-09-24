@@ -22,7 +22,7 @@ r.get('/', asyncH(async (req, res) => {
     args.push(pageSize, (page-1)*pageSize);
     const rows = (await c.query(
       `select p.*, l.amount as loan_amount, i.due_date::text as ins_due, m.member_no,
-              (select v.value from member_field_values v join field_definitions d on d.id=v.field_definition_id
+              (select v.value from member_field_values v join field_definitions d on d.id=v.field_id
                where v.member_id=p.member_id order by d.sort_order, d.id limit 1) as member_name,
               ((select count(*) from installments x where x.loan_id=p.loan_id and x.due_date <= i.due_date)) as ins_no
        from payments p
