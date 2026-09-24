@@ -240,8 +240,30 @@ try{
         rgba(251,247,234,0)   74%);
     }
     .nav-links { display: none; }
-    .copy { max-width: 100%; margin-top: clamp(16px,4vh,38px); }
-    .sub { font-size: .96rem; }
+    .copy {
+      max-width: 100%;
+      margin-top: clamp(16px,4vh,38px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 12px;
+      row-gap: 10px;
+      align-items: start;
+    }
+    .eyebrow { grid-column: 1 / -1; }
+    h1 {
+      grid-column: 1;
+      margin: 0;
+      font-size: clamp(1.35rem, 6.2vw, 2rem);
+      line-height: 1.25;
+    }
+    .sub {
+      grid-column: 2;
+      max-width: none;
+      margin: 0;
+      font-size: .78rem;
+      line-height: 1.65;
+    }
+    .ctas, .stats { grid-column: 1 / -1; }
     .ctas .btn { padding: 12px 18px; font-size: .93rem; }
     .hint { font-size: .78rem; padding: 9px 13px; }
   }
