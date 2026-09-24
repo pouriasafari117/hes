@@ -13,18 +13,15 @@ T('obEstDate: num-inp', src.split('id="obEstDate"')[1] && /num-inp/.test(src.spl
 T('obInstCount عدد آزاد تا ۱۲۰', src.includes('id="obInstCount" type="number" min="1" max="120"'));
 T('help تقویم شمسی', src.includes('تقویم شمسی باز می‌شود'));
 
-// ۲) تعداد اقساط آزاد
-T('lfMonths سلکت نیست (دمو)', !/<select id="lfMonths"/.test(src) && /id="lfMonths" type="number"[^>]*max="120"/.test(src));
-T('lfMonths input listener', src.includes("el('#lfMonths').addEventListener('input', suggest)"));
+// ۲) تعداد اقساط آزاد (فرم وام سرور — فرم دمو حذف شده)
+T('بدون فرم وام دمو (lfMonths حذف)', !src.includes('id="lfMonths"') && !src.includes('function loanForm('));
 T('slfCnt سلکت نیست (سرور)', /id="slfCnt" type="number"[^>]*max="120"/.test(src) && !/<select id="slfCnt"/.test(src));
 T('slfCnt input listener', src.includes("el('#slfCnt').addEventListener('input', updateSum)"));
-T('setLdMonths ورودی آزاد', /id="setLdMonths" class="num-inp" type="number"[^>]*max="120"/.test(src));
-T('ولیدیشن ۱ تا ۱۲۰ در سابمیت دمو', src.includes("clampNum(Math.round(+el('#lfMonths').value || 0), 1, 120)"));
 T('ولیدیشن ۱ تا ۱۲۰ در سابمیت سرور', src.includes('cntN < 1 || cntN > 120'));
 
 // ۳) سینک تنظیمات سرور
 T('renderSrvFinSec تعریف شده', /async function renderSrvFinSec\(/.test(src));
-T('renderFinSec به سرور منشعب می‌شود', src.includes('if(srvFin) return renderSrvFinSec(body, canEdit, disAttr, s);'));
+T('بدون فرم مالی دمو (renderFinSec حذف)', !src.includes('function renderFinSec(') && !src.includes('id="setLdMonths"'));
 T('PATCH settings سروری', src.includes("await srvFetch('PATCH', '/api/institutions/'+SRV.instId, payload)"));
 
 // ۴) تاریخچه وام در مشاهده عضو (سرور)
@@ -56,8 +53,20 @@ const aSrc = fs.readFileSync(__dirname+'/../src/routes/auth.js','utf8');
 T('بدون ساخت خودکار فیلد پیش‌فرض در GET /fields', !/defaults\s*=/.test(fSrc));
 T('بدون ساخت خودکار فیلد پیش‌فرض در ثبت عضو', !/defaults\s*=/.test(mSrc));
 T('register-v2 دقیقاً همان فیلدهای انتخاب‌شده را می‌سازد', aSrc.includes('fieldsToCreate') && /texttt|labelToKey/.test(aSrc));
-T('در تنظیمات CSV فقط در گزارش/تراکنش است', !src.includes('id="mCsv"') && !src.includes('id="lCsv"') && src.includes('id="tCsv"') && src.includes('id="srvTxnCsv"'));
+T('CSV فقط در گزارش/تراکنش است (دکمه‌های دمو حذف)', !src.includes('id="mCsv"') && !src.includes('id="lCsv"') && !src.includes('id="tCsv"') && src.includes('id="srvTxnCsv"'));
 T('بدون میانبرها در کارت هشدارها', !src.includes('dashShorts'));
+
+// ۹) فقط‌سرور: هیچ خواندن/نوشتن داده‌ای از حافظهٔ محلی (دمو) باقی نمانده
+T('loadDb بدون خواندن localStorage', !/function loadDb\(\)\{[\s\S]{0,200}localStorage\.getItem\(DB_KEY\)/.test(src));
+T('بدون seedDb/دادهٔ نمونه', !src.includes('function seedDb(') && !src.includes('علی محمدی'));
+T('saveDb بدون ذخیرهٔ محلی', !/function saveDb\(\)\{[\s\S]{0,160}localStorage\.setItem\(DB_KEY/.test(src));
+T('بدون ورود دمو', !src.includes('حالت دمو: جستجو بر اساس شماره تماس') && !src.includes('doDemoCreate') && !src.includes('obForceDemo'));
+T('بدون صفحات دمو', !src.includes('function renderMembersPage(') && !src.includes('function renderLoans(') && !src.includes('function renderFunds(') && !src.includes('function renderTxnsTab(') && !src.includes('function pageDashboard('));
+T('روتر فقط‌سرور', src.includes('const PAGES = {') && src.includes('dashboard: function(){ return renderSrvDashboard(); }'));
+T('تنظیمات فقط‌سرور (با کاربران + ممیزی)', src.includes('function renderSrvUsersSec(') && src.includes('function renderSrvDataSec(') && src.includes('PostgreSQL)'));
+T('سینک تنظیمات از سرور', src.includes('async function srvSyncInstSettings('));
+T('بدون جستجوی سریع دمو', !src.includes('function bindQuickSearch(') && !src.includes('qInput'));
+T('رواداری رمز دمو حذف شده', !src.includes('admin / 1234') && !src.includes('حساب‌های نمایشی'));
 
 console.log(bad? 'FAIL '+bad : 'ALL-PASS '+n);
 process.exit(bad?1:0);

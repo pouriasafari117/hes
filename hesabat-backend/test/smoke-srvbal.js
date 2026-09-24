@@ -46,7 +46,7 @@ const AUDITS = { rows:[{ id:2, action:'fund_balance', old_value:'0', new_value:'
      return {};
    };
    const box2=document.createElement('div'); document.body.appendChild(box2);
-   renderFinSec(box2);
+   renderSrvFinSec(box2, true, '');
  `);
  await sleep(600);
  const bal = d.querySelector('#setSrvBal');

@@ -22,7 +22,7 @@ const T=(n,c)=>{ if(!c) bad.push(n); console.log((c?'✔':'✘')+' '+n); };
      throw new Error('unstubbed '+m+' '+p);
    };
    const box=document.createElement('div'); document.body.appendChild(box);
-   renderFinSec(box);
+   renderSrvFinSec(box, true, '');
  `);
  await sleep(400);
  T('فیلد اقساط از مؤسسه پر', !!d.querySelector('#setSrvMonths'));
