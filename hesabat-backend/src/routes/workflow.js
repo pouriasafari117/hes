@@ -23,17 +23,22 @@ async function applyFieldValues(c, iid, memberId, values){
 r.get('/requests', asyncH(async (req, res) => {
   const status = String(req.query.status||'').trim();
   const type = String(req.query.type||'').trim();
-  const rows = await withTenant(req.user, req.institutionId, async c => {
-    const where = ['r.institution_id=$1'];
-    const args = [req.institutionId];
-    if(['pending','approved','rejected','cancelled'].includes(status)){ args.push(status); where.push(`r.status=$${args.length}`); }
-    if(type){ args.push(type); where.push(`r.type=$${args.length}`); }
-    const q = await c.query(
-      `select r.*, u.name as user_name, u.phone, u.nid
-       from requests r join users u on u.id=r.user_id
-       where ${where.join(' and ')} order by r.created_at desc limit 300`, args);
-    return q.rows;
-  });
+  let rows = [];
+  try {
+    rows = await withTenant(req.user, req.institutionId, async c => {
+      const where = ['r.institution_id=$1'];
+      const args = [req.institutionId];
+      if(['pending','approved','rejected','cancelled'].includes(status)){ args.push(status); where.push(`r.status=$${args.length}`); }
+      if(type){ args.push(type); where.push(`r.type=$${args.length}`); }
+      const q = await c.query(
+        `select r.*, u.name as user_name, u.phone, u.nid
+         from requests r left join users u on u.id=r.user_id
+         where ${where.join(' and ')} order by r.created_at desc limit 300`, args);
+      return q.rows;
+    });
+  } catch (e) {
+    if (e.code !== '42P01') throw e;
+  }
   res.json({ requests: rows });
 }));
 

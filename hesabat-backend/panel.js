@@ -3937,7 +3937,7 @@ function openUpgradeModal(){
     .catch(e=> toast(e.message||'خطا'));
 }
 async function renderMgrRequests(){
-  const app = $('#appMain');
+  const app = $('#main');
   app.innerHTML = '<div class="page-head"><h2>درخواست‌های عضویت</h2></div><div id="reqBox" class="card">در حال بارگذاری…</div>';
   try{
     const j = await api('/institutions/'+encodeURIComponent(SRV.instId)+'/requests');
@@ -3951,7 +3951,7 @@ async function renderMgrRequests(){
   }catch(e){ document.getElementById('reqBox').textContent = e.message||'خطا'; }
 }
 async function renderUserMe(){
-  const app = $('#appMain');
+  const app = $('#main');
   app.innerHTML = '<div class="page-head"><h2>پرونده من</h2></div><div id="meBox" class="card">در حال بارگذاری…</div>';
   try{
     const j = await api('/portal/me');
@@ -3968,7 +3968,7 @@ async function renderUserMe(){
   }catch(e){ document.getElementById('meBox').textContent = e.message||'خطا'; }
 }
 async function renderUserJoin(){
-  const app = $('#appMain');
+  const app = $('#main');
   app.innerHTML = '<div class="page-head"><h2>عضویت در مؤسسه</h2></div><div class="card fields">'+
     '<div class="field full"><label>شناسه مؤسسه</label><input id="joinCode" placeholder="کد عمومی یا ایمیل ربات"></div>'+
     '<div class="field"><label>نام</label><input id="joinName" value="'+esc((SESSION&&SESSION.name)||'')+'"></div>'+
@@ -3982,7 +3982,7 @@ async function renderUserJoin(){
   };
 }
 async function renderUserRequests(){
-  const app = $('#appMain');
+  const app = $('#main');
   app.innerHTML = '<div class="page-head"><h2>درخواست‌های من</h2></div><div id="urBox" class="card">…</div>';
   try{
     const j = await api('/portal/requests');
@@ -3991,7 +3991,7 @@ async function renderUserRequests(){
   }catch(e){ document.getElementById('urBox').textContent = e.message; }
 }
 async function renderUserNotifs(){
-  const app = $('#appMain');
+  const app = $('#main');
   app.innerHTML = '<div class="page-head"><h2>اعلان‌ها</h2></div><div id="unBox" class="card">…</div>';
   try{
     const j = await api('/portal/notifications');

@@ -61,9 +61,13 @@ r.post('/', asyncH(async (req, res) => {
 
 r.get('/:id', requireInstitution, asyncH(async (req, res) => {
   const inst = await withTenant(req.user, req.institutionId, async c => {
+    await c.query('SAVEPOINT sp_inst');
     try {
-      return (await c.query("select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at,coalesce(plan_type,'free') as plan_type,plan_upgraded_at,coalesce(public_code, bot_email) as public_code,bot_email,coalesce(import_templates,'[]'::jsonb) as import_templates from institutions where id=$1", [req.institutionId])).rows[0];
+      const row = (await c.query("select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at,coalesce(plan_type,'free') as plan_type,plan_upgraded_at,coalesce(public_code, bot_email) as public_code,bot_email,coalesce(import_templates,'[]'::jsonb) as import_templates from institutions where id=$1", [req.institutionId])).rows[0];
+      await c.query('RELEASE SAVEPOINT sp_inst');
+      return row;
     } catch(_) {
+      await c.query('ROLLBACK TO SAVEPOINT sp_inst');
       return (await c.query('select id,name,slug,status,established_at,address,installments_count,currency,fee_percent,installment_period,fund_balance,icon,created_at from institutions where id=$1', [req.institutionId])).rows[0];
     }
   });
