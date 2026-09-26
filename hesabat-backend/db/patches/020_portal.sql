@@ -5,6 +5,7 @@ alter table members add column if not exists user_id bigint references users(id)
 create unique index if not exists idx_members_user_inst
   on members(institution_id, user_id) where user_id is not null and deleted_at is null;
 
+alter table institutions add column if not exists plan_type text not null default 'free';
 alter table institutions add column if not exists plan_upgraded_at timestamptz;
 alter table institutions add column if not exists public_code text;
 update institutions
