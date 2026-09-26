@@ -644,7 +644,7 @@ function route(){
     setTimeout(()=>{
       const fn = PAGES[page];
       if(fn){ try{ fn(arg); }catch(err){ console.error(err); renderError(err); } }
-      else { main.innerHTML = emptyState({icon:'warn', title:'صفحه پیدا نشد', desc:'آدرس درخواستی معتبر نیست.', action:'<a class="btn btn-soft btn-sm" href="#/app/dashboard">بازگشت به داشبورد</a>'}); }
+      else { main.innerHTML = emptyState({icon:'info', title:'نتیجه‌ای پیدا نشد', desc:'برای این بخش موردی جهت نمایش نیست.', action:'<a class="btn btn-soft btn-sm" href="'+(typeof appHome==='function'?appHome():'#/app/dashboard')+'">بازگشت</a>'}); }
     }, 240);
     return;
   }
@@ -686,6 +686,13 @@ function renderShell(page){
   nav.querySelectorAll('[data-go]').forEach(b => b.onclick = ()=>{ location.hash = '#/app/' + b.dataset.go; document.body.classList.remove('sb-open'); });
   const orgNm = (typeof SRV!=='undefined' && SRV.instName) || (DB.settings.institution && DB.settings.institution.name) || '';
   $('#orgName').textContent = orgNm || 'مؤسسه';
+  const planEl = document.getElementById('orgPlan');
+  if(planEl){
+    const pt = (typeof SRV!=='undefined' && (SRV.planType||SRV.plan_type)) || 'free';
+    const isPro = String(pt).toLowerCase()==='pro';
+    planEl.innerHTML = '<i class="org-dot"></i> '+(isPro?'Pro':'Free');
+    planEl.title = isPro ? 'پلن حرفه‌ای' : 'پلن رایگان';
+  }
   if(SESSION){
     $('#profName').textContent = SESSION.name;
     $('#profRole').textContent = ROLE_FA[SESSION.role] || SESSION.role;
@@ -1118,6 +1125,16 @@ async function srvFetch(method, path, body){
   }
   return j;
 }
+function api(path, opts){
+  const method = (opts && opts.method) || 'GET';
+  let body;
+  if(opts && opts.body != null){
+    if(typeof opts.body === 'string'){ try{ body = JSON.parse(opts.body); }catch(_){ body = opts.body; } }
+    else body = opts.body;
+  }
+  const p = path.charAt(0)==='/' ? path : '/'+path;
+  return srvFetch(method, '/api'+p, body);
+}
 async function srvLoadFields(force){
   if(!force && SRV_FIELDS) return SRV_FIELDS;
   const r = await srvFetch('GET', '/api/institutions/' + SRV.instId + '/fields');
@@ -1134,6 +1151,8 @@ async function srvSyncInstSettings(){
   const inst = r.institution || r;
   if(!inst) return;
   SRV.instName = inst.name || SRV.instName;
+  SRV.planType = inst.plan_type || inst.planType || SRV.planType || 'free';
+  srvSave();
   DB.settings.institution.name = inst.name || SRV.instName || '';
   DB.settings.institution.address = inst.address || '';
   DB.settings.institution.establishedAt = inst.established_at ? String(inst.established_at).slice(0,10) : '';
@@ -3926,76 +3945,129 @@ async function submitOnboarding(){
 
 
 
-function portalApi(path, opts){
-  return api(path, opts);
-}
+
 function openUpgradeModal(){
   const code = prompt('کد ارتقا به Pro را وارد کنید:');
-  if(!code) return;
-  api('/institutions/'+encodeURIComponent(SRV.instId)+'/upgrade', {method:'POST', body: JSON.stringify({code})})
-    .then(j=>{ toast((j&&j.ok)?'پلن Pro فعال شد.':'ناموفق'); if(j&&j.ok) renderSettings(); })
-    .catch(e=> toast(e.message||'خطا'));
+  if(code==null) return;
+  const c = String(code).trim();
+  if(!c){ toast('کد را وارد کنید.','warn'); return; }
+  srvFetch('POST', '/api/institutions/'+encodeURIComponent(SRV.instId)+'/upgrade', {code:c})
+    .then(j=>{
+      SRV.planType = (j&&j.plan) || 'pro';
+      srvSave();
+      toast('پلن Pro فعال شد.','ok');
+      try{ renderShell('settings'); }catch(_){}
+      renderSettings();
+    })
+    .catch(e=> toast(e.message||'ارتقا انجام نشد.','err'));
+}
+function statusFa(st){
+  return ({pending:'در انتظار', approved:'تأیید شده', rejected:'رد شده', cancelled:'لغو شده', active:'فعال'}[st]||st||'');
 }
 async function renderMgrRequests(){
   const app = $('#main');
-  app.innerHTML = '<div class="page-head"><h2>درخواست‌های عضویت</h2></div><div id="reqBox" class="card">در حال بارگذاری…</div>';
+  app.innerHTML = '<div class="page-head"><div><h1>درخواست‌ها</h1><div class="ph-sub">عضویت و بررسی درخواست‌های کاربران</div></div></div><div id="reqBox" class="card tight"><div class="card-b">در حال بارگذاری…</div></div>';
   try{
-    const j = await api('/institutions/'+encodeURIComponent(SRV.instId)+'/requests');
+    const j = await srvFetch('GET', '/api/institutions/'+encodeURIComponent(SRV.instId)+'/requests');
     const rows = (j&&j.requests)||[];
     const box = document.getElementById('reqBox');
-    if(!rows.length){ box.innerHTML = '<p class="muted">درخواستی نیست.</p>'; return; }
-    box.innerHTML = '<table class="tbl"><thead><tr><th>نام</th><th>موبایل</th><th>کد ملی</th><th></th></tr></thead><tbody>'+
-      rows.map(r=>'<tr><td>'+esc(r.full_name||'')+'</td><td>'+esc(r.mobile||'')+'</td><td>'+esc(r.national_id||'')+'</td><td><button class="btn btn-solid btn-sm" data-a="'+r.id+'">پذیرش</button> <button class="btn btn-ghost btn-sm" data-r="'+r.id+'">رد</button></td></tr>').join('')+'</tbody></table>';
-    box.querySelectorAll('[data-a]').forEach(b=> b.onclick = ()=> api('/institutions/'+SRV.instId+'/requests/'+b.dataset.a+'/approve',{method:'POST'}).then(()=>renderMgrRequests()).catch(e=>toast(e.message)));
-    box.querySelectorAll('[data-r]').forEach(b=> b.onclick = ()=> api('/institutions/'+SRV.instId+'/requests/'+b.dataset.r+'/reject',{method:'POST'}).then(()=>renderMgrRequests()).catch(e=>toast(e.message)));
-  }catch(e){ document.getElementById('reqBox').textContent = e.message||'خطا'; }
+    if(!rows.length){ box.innerHTML = '<div class="card-b"><p class="muted">نتیجه‌ای پیدا نشد.</p></div>'; return; }
+    box.innerHTML = '<div class="card-b" style="overflow:auto"><table class="tbl"><thead><tr><th>نام</th><th>موبایل</th><th>وضعیت</th><th></th></tr></thead><tbody>'+
+      rows.map(r=>{
+        const pl = r.payload||{};
+        const vals = pl.values||pl||{};
+        const nm = r.user_name || vals.full_name || vals.name || vals['نام'] || '—';
+        const ph = r.phone || vals.mobile || vals.phone || '';
+        return '<tr><td>'+esc(nm)+'</td><td>'+esc(ph)+'</td><td>'+esc(statusFa(r.status))+'</td><td>'+(r.status==='pending'?'<button class="btn btn-solid btn-sm" data-a="'+r.id+'">پذیرش</button> <button class="btn btn-ghost btn-sm" data-r="'+r.id+'">رد</button>':'')+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+    box.querySelectorAll('[data-a]').forEach(b=> b.onclick = ()=> srvFetch('POST','/api/institutions/'+SRV.instId+'/requests/'+b.dataset.a+'/approve',{}).then(()=>{ toast('پذیرفته شد.','ok'); renderMgrRequests(); }).catch(e=>toast(e.message,'err')));
+    box.querySelectorAll('[data-r]').forEach(b=> b.onclick = ()=> srvFetch('POST','/api/institutions/'+SRV.instId+'/requests/'+b.dataset.r+'/reject',{reason:'رد شد'}).then(()=>{ toast('رد شد.','ok'); renderMgrRequests(); }).catch(e=>toast(e.message,'err')));
+  }catch(e){
+    const box = document.getElementById('reqBox');
+    if(box) box.innerHTML = '<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p><p class="muted">'+esc(e.message||'')+'</p></div>';
+  }
 }
 async function renderUserMe(){
   const app = $('#main');
-  app.innerHTML = '<div class="page-head"><h2>پرونده من</h2></div><div id="meBox" class="card">در حال بارگذاری…</div>';
+  app.innerHTML = '<div class="page-head"><div><h1>پرونده من</h1></div></div><div id="meBox" class="card tight"><div class="card-b">در حال بارگذاری…</div></div>';
   try{
-    const j = await api('/portal/me');
+    const j = await srvFetch('GET','/api/portal/me');
     const m = (j&&j.memberships)||[];
     const box = document.getElementById('meBox');
-    if(!m.length){ box.innerHTML = '<p>هنوز عضو مؤسسه‌ای نیستید. از «عضویت در مؤسسه» درخواست بدهید.</p>'; return; }
-    const cur = m[0];
-    const fields = await api('/portal/fields?institutionId='+encodeURIComponent(cur.institution_id));
-    const prof = await api('/portal/profile?institutionId='+encodeURIComponent(cur.institution_id));
-    const fd = (fields&&fields.fields)||[];
-    const pv = (prof&&prof.values)||{};
-    box.innerHTML = '<p><b>'+esc(cur.institution_name||'')+'</b> — '+esc(cur.member_name||'')+'</p>'+
-      '<div class="fields">'+fd.map(f=>'<div class="field"><label>'+esc(f.label||f.key)+'</label><div>'+esc(String(pv[f.key]??'—'))+'</div></div>').join('')+'</div>';
-  }catch(e){ document.getElementById('meBox').textContent = e.message||'خطا'; }
+    if(!m.length){ box.innerHTML = '<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p><p class="muted">هنوز عضو مؤسسه‌ای نیستید. از «عضویت در مؤسسه» درخواست بدهید.</p></div>'; return; }
+    const cur = m.find(x=>x.status==='active') || m[0];
+    let fd=[], prof={};
+    try{ const f = await srvFetch('GET','/api/portal/fields?institution_id='+encodeURIComponent(cur.institution_id)); fd = f.fields||[]; }catch(_){}
+    try{ prof = await srvFetch('GET','/api/portal/profile?institution_id='+encodeURIComponent(cur.institution_id)); }catch(_){}
+    const member = (prof&&prof.member)||{};
+    const pv = member.values||{};
+    box.innerHTML = '<div class="card-b"><p><b>'+esc(cur.institution_name||'')+'</b> — '+esc(statusFa(cur.status))+'</p>'+
+      (fd.length? '<div class="fields">'+fd.map(f=>'<div class="field"><label>'+esc(f.label||f.key)+'</label><div>'+esc(String(pv[f.key]??'—'))+'</div></div>').join('')+'</div>' : '<p class="muted">نتیجه‌ای پیدا نشد.</p>')+'</div>';
+  }catch(e){
+    const box=document.getElementById('meBox');
+    if(box) box.innerHTML = '<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p><p class="muted">'+esc(e.message||'')+'</p></div>';
+  }
+}
+function joinFieldInput(f){
+  const req = f.is_required ? ' <span class="req">*</span>' : '';
+  const t = (f.type==='number'||f.type==='mobile'||f.type==='nid') ? ' class="num-inp" inputmode="numeric"' : '';
+  return '<div class="field"><label>'+esc(f.label||f.key)+req+'</label><input id="jf_'+esc(f.key)+'"'+t+'></div>';
 }
 async function renderUserJoin(){
   const app = $('#main');
-  app.innerHTML = '<div class="page-head"><h2>عضویت در مؤسسه</h2></div><div class="card fields">'+
-    '<div class="field full"><label>شناسه مؤسسه</label><input id="joinCode" placeholder="کد عمومی یا ایمیل ربات"></div>'+
-    '<div class="field"><label>نام</label><input id="joinName" value="'+esc((SESSION&&SESSION.name)||'')+'"></div>'+
-    '<div class="field"><label>موبایل</label><input id="joinMob" class="num-inp"></div>'+
-    '<div class="field"><label>کد ملی</label><input id="joinNid" class="num-inp"></div>'+
-    '<button class="btn btn-solid" id="joinBtn">ارسال درخواست</button></div>';
-  document.getElementById('joinBtn').onclick = ()=>{
-    api('/portal/join',{method:'POST', body: JSON.stringify({code: $('#joinCode').value, fullName: $('#joinName').value, mobile: $('#joinMob').value, nationalId: $('#joinNid').value})})
-      .then(()=>{ toast('درخواست ارسال شد.'); location.hash='#/app/ureq'; })
-      .catch(e=> toast(e.message||'خطا'));
+  app.innerHTML = '<div class="page-head"><div><h1>عضویت در مؤسسه</h1><div class="ph-sub">شناسه مؤسسه را وارد کنید تا فرم همان مؤسسه باز شود</div></div></div>'+
+    '<div class="card tight"><div class="card-b fields" id="joinStep">'+
+    '<div class="field full"><label>شناسه مؤسسه</label><input id="joinCode" placeholder="کد عمومی، اسلاگ یا ایمیل ربات"></div>'+
+    '<button type="button" class="btn btn-solid" id="joinFind">ادامه</button></div></div>';
+  document.getElementById('joinFind').onclick = async ()=>{
+    const code = ($('#joinCode').value||'').trim();
+    if(!code){ toast('شناسه مؤسسه را وارد کنید.','warn'); return; }
+    const btn = document.getElementById('joinFind');
+    btn.disabled = true;
+    try{
+      const lu = await srvFetch('GET','/api/portal/lookup?code='+encodeURIComponent(code));
+      const inst = lu.institution||{};
+      const fl = await srvFetch('GET','/api/portal/fields?institution_id='+encodeURIComponent(inst.id));
+      const fields = fl.fields||[];
+      const step = document.getElementById('joinStep');
+      step.innerHTML = '<p>مؤسسه: <b>'+esc(inst.name||'')+'</b> — پلن '+esc((inst.plan_type||'free')==='pro'?'Pro':'Free')+'</p>'+
+        (fields.length? '<div class="fields">'+fields.map(joinFieldInput).join('')+'</div>' : '<p class="muted">این مؤسسه فیلد سفارشی ندارد؛ درخواست با مشخصات حساب شما ارسال می‌شود.</p>')+
+        '<button type="button" class="btn btn-solid" id="joinSend">ارسال درخواست</button> <button type="button" class="btn btn-ghost" id="joinBack">بازگشت</button>';
+      document.getElementById('joinBack').onclick = ()=> renderUserJoin();
+      document.getElementById('joinSend').onclick = async ()=>{
+        const values = {};
+        fields.forEach(f=>{ const el=document.getElementById('jf_'+f.key); values[f.key]= el? el.value : ''; });
+        try{
+          await srvFetch('POST','/api/portal/memberships', { code: code, values: values });
+          toast('درخواست عضویت ارسال شد.','ok');
+          location.hash='#/app/ureq';
+        }catch(e){ toast(e.message||'ارسال نشد.','err'); }
+      };
+    }catch(e){
+      toast(e.status===404 ? 'نتیجه‌ای پیدا نشد.' : (e.message||'جستجو ناموفق بود.'),'err');
+      btn.disabled = false;
+    }
   };
 }
 async function renderUserRequests(){
   const app = $('#main');
-  app.innerHTML = '<div class="page-head"><h2>درخواست‌های من</h2></div><div id="urBox" class="card">…</div>';
+  app.innerHTML = '<div class="page-head"><div><h1>درخواست‌های من</h1></div></div><div id="urBox" class="card tight"><div class="card-b">در حال بارگذاری…</div></div>';
   try{
-    const j = await api('/portal/requests');
+    const j = await srvFetch('GET','/api/portal/requests');
     const rows = (j&&j.requests)||[];
-    document.getElementById('urBox').innerHTML = rows.length ? '<ul>'+rows.map(r=>'<li>'+esc(r.institution_name||r.institution_id)+' — '+esc(r.status)+'</li>').join('')+'</ul>' : '<p>درخواستی نیست.</p>';
-  }catch(e){ document.getElementById('urBox').textContent = e.message; }
+    const box=document.getElementById('urBox');
+    if(!rows.length){ box.innerHTML='<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p></div>'; return; }
+    box.innerHTML = '<div class="card-b"><ul>'+rows.map(r=>'<li>'+esc(r.institution_name||'')+' — '+esc(statusFa(r.status))+'</li>').join('')+'</ul></div>';
+  }catch(e){ const box=document.getElementById('urBox'); if(box) box.innerHTML='<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p></div>'; }
 }
 async function renderUserNotifs(){
   const app = $('#main');
-  app.innerHTML = '<div class="page-head"><h2>اعلان‌ها</h2></div><div id="unBox" class="card">…</div>';
+  app.innerHTML = '<div class="page-head"><div><h1>اعلان‌ها</h1></div></div><div id="unBox" class="card tight"><div class="card-b">در حال بارگذاری…</div></div>';
   try{
-    const j = await api('/portal/notifications');
+    const j = await srvFetch('GET','/api/portal/notifications');
     const rows = (j&&j.notifications)||[];
-    document.getElementById('unBox').innerHTML = rows.length ? '<ul>'+rows.map(r=>'<li>'+esc(r.title||'')+' — '+esc(r.body||'')+'</li>').join('')+'</ul>' : '<p>اعلانی نیست.</p>';
-  }catch(e){ document.getElementById('unBox').textContent = e.message; }
+    const box=document.getElementById('unBox');
+    if(!rows.length){ box.innerHTML='<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p></div>'; return; }
+    box.innerHTML = '<div class="card-b"><ul>'+rows.map(r=>'<li><b>'+esc(r.title||'')+'</b> — '+esc(r.body||'')+'</li>').join('')+'</ul></div>';
+  }catch(e){ const box=document.getElementById('unBox'); if(box) box.innerHTML='<div class="card-b"><p>نتیجه‌ای پیدا نشد.</p></div>'; }
 }

@@ -32,12 +32,12 @@ r.get('/me', asyncH(async (req, res) => {
 
 r.get('/lookup', asyncH(async (req, res) => {
   const inst = await instByCode(req.query.code);
-  if(!inst) return res.status(404).json({ error: 'مؤسسه‌ای با این شناسه پیدا نشد.' });
+  if(!inst) return res.status(404).json({ error: 'نتیجه‌ای پیدا نشد.' });
   res.json({ institution: { id: inst.id, name: inst.name, public_code: inst.public_code, plan_type: inst.plan_type } });
 }));
 
 r.get('/fields', asyncH(async (req, res) => {
-  const iid = parseInt(req.query.institution_id, 10);
+  const iid = parseInt(req.query.institution_id || req.query.institutionId, 10);
   if(!iid) return res.status(400).json({ error: 'مؤسسه الزامی است.' });
   const q = await pool.query('select fn_portal_fields($1) as j', [iid]);
   const fields = (q.rows[0] && q.rows[0].j) || [];
@@ -46,7 +46,7 @@ r.get('/fields', asyncH(async (req, res) => {
 
 r.post('/memberships', asyncH(async (req, res) => {
   const inst = await instByCode(req.body.code || req.body.email || req.body.public_code);
-  if(!inst) return res.status(404).json({ error: 'مؤسسه‌ای با این شناسه پیدا نشد.' });
+  if(!inst) return res.status(404).json({ error: 'نتیجه‌ای پیدا نشد.' });
   if(String(inst.plan_type||'free') !== 'pro')
     return res.status(403).json({ error: 'این مؤسسه هنوز پلن حرفه‌ای ندارد.' });
   const mem = await pool.query(
@@ -113,7 +113,7 @@ r.post('/notifications/read-all', asyncH(async (req, res) => {
 }));
 
 r.get('/profile', asyncH(async (req, res) => {
-  const iid = parseInt(req.query.institution_id, 10);
+  const iid = parseInt(req.query.institution_id || req.query.institutionId, 10);
   if(!iid) return res.status(400).json({ error: 'مؤسسه الزامی است.' });
   const q = await pool.query('select fn_portal_profile($1,$2) as j', [req.user.id, iid]);
   const j = q.rows[0] && q.rows[0].j;

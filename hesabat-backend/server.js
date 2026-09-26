@@ -155,7 +155,7 @@ app.get('/', (req, res) => {
   return res.redirect('/Panel.html');
 });
 
-app.use((req, res) => res.status(404).json({ error: 'مسیر پیدا نشد.' }));
+app.use((req, res) => res.status(404).json({ error: 'نتیجه‌ای پیدا نشد.' }));
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'خطای داخلی سرور.' });
