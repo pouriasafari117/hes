@@ -26,8 +26,13 @@ r.post('/register', asyncH(async (req, res) => {
 /* register-v2 - نسخه نهایی بدون هیچ ستون en - مستقیم SQL */
 r.post('/register-v2', asyncH(async (req, res) => {
   const b = req.body || {};
-  const firstName = (b.firstName || '').trim();
-  const lastName = (b.lastName || '').trim();
+  let firstName = (b.firstName || '').trim();
+  let lastName = (b.lastName || '').trim();
+  if ((!firstName || !lastName) && (b.name || '').trim()) {
+    const parts = String(b.name).trim().split(/\s+/);
+    lastName = lastName || (parts.length > 1 ? parts.pop() : parts[0]);
+    firstName = firstName || (parts.join(' ') || lastName);
+  }
   const phone = faToEnDigits((b.phone || '').trim());
   const nid = faToEnDigits((b.nid || '').trim());
   const fatherName = (b.fatherName || '').trim();
@@ -74,11 +79,17 @@ r.post('/register-v2', asyncH(async (req, res) => {
       institutionEmail = slugBase + nid + '@hes.com';
       const fundBalance = Math.max(0, parseInt(faToEnDigits(String(b.fundBalance == null ? 0 : b.fundBalance)).replace(/[^0-9-]/g,'')) || 0);
       const iq = await pool.query(
-        `insert into institutions(name, slug, owner_id, established_at, address, installments_count, currency, fee_percent, installment_period, fund_balance, bot_email, bot_active)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) returning id`,
-        [instName, slug, uid, establishedAt, b.address || '', parseInt(b.installmentsCount)||12, b.currency||'تومان', parseFloat(b.feePercent)||4, b.installmentPeriod||'monthly', fundBalance, institutionEmail]
+        'select fn_create_institution_v2($1,$2,$3,$4,$5,$6,$7,$8,$9) as id',
+        [uid, instName, slug, establishedAt, b.address || '', parseInt(b.installmentsCount)||12, b.currency||'تومان', parseFloat(b.feePercent)||4, b.installmentPeriod||'monthly']
       );
       institutionId = iq.rows[0].id;
+      try {
+        await pool.query('update institutions set fund_balance=$1, bot_email=coalesce(bot_email,$2), public_code=coalesce(public_code,$2) where id=$3',
+          [fundBalance, institutionEmail, institutionId]);
+      } catch(_) {
+        try { await pool.query('update institutions set fund_balance=$1, bot_email=coalesce(bot_email,$2) where id=$3', [fundBalance, institutionEmail, institutionId]); }
+        catch(e2){ console.warn('inst extra update', e2.message); }
+      }
       try {
         await pool.query('insert into institution_audit(institution_id,user_id,action,old_value,new_value,note) values($1,$2,$3,$4,$5,$6)',
           [institutionId, uid, 'fund_balance', '0', String(fundBalance), 'موجودی اولیه هنگام ساخت مؤسسه']);
@@ -133,9 +144,9 @@ r.post('/register-v2', asyncH(async (req, res) => {
       }
     } catch (e) {
       console.error('create institution v2 failed', e);
-      // اگر مؤسسه ساخته نشد، کاربر را نگه دار ولی خطا را لاگ کن - برای دیباگ
-      // institutionId null می‌ماند ولی ثبت‌نام موفق است
+      return res.status(500).json({ error: 'حساب ساخته شد ولی مؤسسه ثبت نشد: ' + (e.message || '') });
     }
+    if (!institutionId) return res.status(500).json({ error: 'مؤسسه ساخته نشد.' });
   }
 
   if (roleType === 'user' && b.institutionName) {
@@ -188,10 +199,15 @@ r.post('/login', asyncH(async (req, res) => {
 
 r.get('/me', requireAuth, asyncH(async (req, res) => {
   const uq = await pool.query('select id, name, first_name, last_name, phone, nid, father_name, birth_date, role_type, email from users where id=$1', [req.user.id]);
-  const list = await pool.query(
-    `select i.id, i.name, i.slug, i.status, im.role from institution_members im join institutions i on i.id=im.institution_id where im.user_id=$1 order by i.id`,
-    [req.user.id]
-  );
+  let list;
+  try {
+    list = await pool.query('select * from fn_my_institutions($1)', [req.user.id]);
+  } catch (_) {
+    list = await pool.query(
+      `select i.id, i.name, i.slug, i.status, im.role from institution_members im join institutions i on i.id=im.institution_id where im.user_id=$1 order by i.id`,
+      [req.user.id]
+    );
+  }
   res.json({ user: uq.rows[0] || req.user, institutions: list.rows });
 }));
 

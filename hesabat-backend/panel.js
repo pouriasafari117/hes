@@ -318,7 +318,12 @@ function initTheme(){
 }
 
 /* ── دسترسی‌ها ── */
-const ROLE_FA = {admin:'مدیر', operator:'اپراتور', accountant:'حسابدار', viewer:'مشاهده‌گر'};
+const ROLE_FA = {admin:'مدیر', operator:'اپراتور', accountant:'حسابدار', viewer:'کاربر', user:'کاربر'};
+function isUserRole(){
+  const rt = (SESSION&&SESSION.roleType) || (typeof SRV!=='undefined' && SRV.user && (SRV.user.roleType||SRV.user.role_type)) || '';
+  return rt === 'user' || (SESSION&&SESSION.role==='viewer');
+}
+function appHome(){ return isUserRole() ? '#/app/me' : '#/app/dashboard'; }
 const PERM_FA = {memberAdd:'افزودن عضو', memberEdit:'ویرایش عضو', loanAdd:'ثبت وام', paymentAdd:'ثبت پرداخت', txnAdd:'ثبت تراکنش', reportExport:'خروجی گزارش', userManage:'مدیریت کاربران', settingsEdit:'ویرایش تنظیمات'};
 const ROLE_PERMS = {
   admin:    {memberAdd:1,memberEdit:1,loanAdd:1,paymentAdd:1,txnAdd:1,reportExport:1,userManage:1,settingsEdit:1},
@@ -622,7 +627,7 @@ function route(){
   if(h === '#/' || h === '#' || h === ''){ showView('login'); return; }
   if(h === '#/login'){
     const srv = getSrv();
-    if(SESSION || (srv && srv.token)){ location.hash = '#/app/dashboard'; return; }
+    if(SESSION || (srv && srv.token)){ location.hash = (typeof appHome==='function'?appHome():'#/app/dashboard'); return; }
     showView('login'); return;
   }
   if(h.indexOf('#/app/') === 0){
@@ -651,20 +656,29 @@ function renderError(err){
 window.addEventListener('hashchange', route);
 
 /* ── ناوبری سایدبار ── */
-const NAV = [
+const NAV_MGR = [
   {key:'dashboard', label:'داشبورد', ic:'dash'},
   {key:'members', label:'اعضا و اقساط', ic:'users'},
   {key:'loans', label:'وام‌ها', ic:'loan'},
+  {key:'requests', label:'درخواست‌ها', ic:'info'},
   {key:'reports', label:'گزارش‌ها و تراکنش‌ها', ic:'chart'},
   {key:'settings', label:'تنظیمات', ic:'gear'}
 ];
+const NAV_USER = [
+  {key:'me', label:'پرونده من', ic:'user'},
+  {key:'join', label:'عضویت در مؤسسه', ic:'users'},
+  {key:'ureq', label:'درخواست‌های من', ic:'info'},
+  {key:'unotif', label:'اعلان‌ها', ic:'info'}
+];
+const NAV = NAV_MGR;
 const PAGE_ALIAS = {installments:'members', txns:'reports', users:'settings'};
 let SRV_OD_COUNT = 0; /* با آمار سرور در داشبورد به‌روز می‌شود */
 function overdueCount(){ return SRV_OD_COUNT||0; }
 function renderShell(page){
   const active = PAGE_ALIAS[page] || page;
   const nav = $('#sbNav');
-  nav.innerHTML = NAV.map(n =>
+  const NAV_NOW = (typeof isUserRole==='function' && isUserRole()) ? NAV_USER : NAV_MGR;
+  nav.innerHTML = NAV_NOW.map(n =>
     '<button class="sb-item'+(active===n.key?' on':'')+'" data-go="'+n.key+'">' +
     icon(n.ic,19) + '<span class="lbl">'+n.label+'</span>' +
     (n.key==='members' && overdueCount() ? '<span class="cnt warn">'+faDigits(overdueCount())+'</span>' : '') +
@@ -1025,7 +1039,7 @@ function bindLogin(){
         try{ await srvSyncInstSettings(); }catch(_){}
         alertBox.innerHTML = '<div class="alert a-ok"><span class="al-ic">'+icon('check',17)+'</span><div><b>ورود موفق (سرور).</b> در حال انتقال…</div></div>';
         toast('خوش آمدید '+j.user.name+' 🌿','ok');
-        setTimeout(()=>{ location.hash = '#/app/dashboard'; }, 500);
+        setTimeout(()=>{ location.hash = (j.user && (j.user.roleType==='user'||j.user.role_type==='user')) ? '#/app/me' : '#/app/dashboard'; }, 500);
         return;
       }
     } catch(err){
@@ -3023,6 +3037,7 @@ async function renderSrvFinSec(body, canEdit, disAttr){
       '<div class="field"><label>پیش‌فرض تعداد اقساط <small>(هر عددی — ۱ تا ۱۲۰)</small></label><input id="setSrvMonths" class="num-inp" type="number" inputmode="numeric" min="1" max="120" value="'+esc(String(inst.installments_count||12))+'"'+disAttr+'><span class="help">همان «تعداد اقساط پیش‌فرض» آنبردینگ.</span></div>' +
       '<div class="field"><label>دوره اقساط</label><select id="setSrvPeriod"'+disAttr+'>'+perOpts.map(o=>'<option value="'+o[0]+'"'+(per===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select><span class="help">همان «دوره اقساط» آنبردینگ.</span></div>' +
       '<div class="field full"><label>نام مؤسسه</label><input id="setSrvName" value="'+esc(inst.name||'')+'"'+disAttr+'></div>' +
+      '<div class="field full"><label>پلن فعلی</label><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b>'+esc((inst.plan_type||'free')==='pro'?'Pro':'Free')+'</b>'+((inst.plan_type||'free')!=='pro'?'<button type="button" class="btn btn-solid btn-sm" id="btnUpgradePro">ارتقا به Pro</button>':'<span class="badge b-green">حرفه‌ای</span>')+'<span class="help" dir="ltr">شناسه: '+esc(inst.public_code||inst.bot_email||'')+'</span></div></div>' +
       '<div class="field"><label>تاریخ تأسیس</label><span class="t-jd"><input id="setSrvEst"'+disAttr+'></span><span class="help">همان «تاریخ تأسیس» آنبردینگ.</span></div>' +
       '<div class="field"><label>موجودی صندوق <small>('+CUR()+')</small></label><input id="setSrvBal" class="t-money" data-cur="'+esc(String(inst.fund_balance!=null?inst.fund_balance:0))+'"'+disAttr+'><span class="help">همان «موجودی صندوق» آنبردینگ — هر کم/زیاد شدنش با توضیح در دفتر تغییرات لاگ می‌شود.</span></div>' +
       '<div class="field full" id="setSrvBalNoteWrap" style="display:none"><label>توضیح تغییر موجودی <span class="req">*</span></label><textarea id="setSrvBalNote" rows="2" placeholder="مثلاً واریز سرمایهٔ اولیه یا اصلاح مقدار اشتباه"></textarea></div>' +
@@ -3037,6 +3052,8 @@ async function renderSrvFinSec(body, canEdit, disAttr){
     }
     const estInp = $('#setSrvEst');
     if(estInp && typeof attachJDate==='function'){ attachJDate(estInp); if(inst.established_at && typeof setJd==='function') setJd(estInp, String(inst.established_at).slice(0,10)); }
+    const upb = document.getElementById('btnUpgradePro');
+    if(upb) upb.onclick = ()=> openUpgradeModal();
     (async()=>{
       const wEl = $('#srvBalLogWrap'); if(!wEl) return;
       try{
@@ -3292,7 +3309,12 @@ const PAGES = {
   accounts:  function(){ return renderSrvFundsPage('accounts'); },
   reports:   function(){ return renderSrvReportsPage(); },
   txns:      function(){ return renderSrvTxnsPage(); },
-  settings:  function(){ renderSettings(); }
+  settings:  function(){ renderSettings(); },
+  requests:  function(){ return renderMgrRequests(); },
+  me:        function(){ return renderUserMe(); },
+  join:      function(){ return renderUserJoin(); },
+  ureq:      function(){ return renderUserRequests(); },
+  unotif:    function(){ return renderUserNotifs(); }
 };
 
 /* ═══════ تنظیمات — فقط‌سرور ═══════
@@ -3514,7 +3536,7 @@ if (typeof window !== 'undefined') { window.renderOnboarding = renderOnboarding;
 function onboardingHtml(){
   const roleBtn = (role, label, ic) => 
     '<button class="role-btn ' + (onboardRole===role ? 'on' : '') + '" data-role="' + role + '">' +
-    icon(ic,18) + '<span><b>' + label + '</b><small>' + (role==='manager' ? 'ایجاد مؤسسه جدید' : 'عضویت در مؤسسه موجود') + '</small></span></button>';
+    icon(ic,18) + '<span><b>' + label + '</b><small>' + (role==='manager' ? 'برای مدیر مؤسسه جدید' : 'برای ورود به عنوان کاربر') + '</small></span></button>';
 
   let stepHtml = '';
   if (onboardRole === 'manager') {
@@ -3562,12 +3584,9 @@ function onboardingHtml(){
       stepHtml = `
         <div class="onb-step"><span class="sn">۱</span><div><h4>مشخصات فردی</h4><p>اطلاعات هویتی شما</p></div></div>
         <div class="fields">
-          <div class="field"><label>نام <span class="req">*</span></label><input id="obFirstName" value="${esc(onboardData.firstName||'')}" placeholder="مثلاً علی"></div>
-          <div class="field"><label>نام خانوادگی <span class="req">*</span></label><input id="obLastName" value="${esc(onboardData.lastName||'')}" placeholder="مثلاً رضایی"></div>
-          <div class="field"><label>شماره تماس <span class="req">*</span></label><input id="obPhone" class="num-inp" inputmode="numeric" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
+          <div class="field full"><label>نام و نام خانوادگی <span class="req">*</span></label><input id="obFullName" value="${esc(onboardData.fullName||((onboardData.firstName||'')+' '+(onboardData.lastName||'')).trim())}" placeholder="مثلاً کریم محمدی"></div>
+          <div class="field"><label>شماره موبایل <span class="req">*</span></label><input id="obPhone" class="num-inp" inputmode="numeric" value="${esc(onboardData.phone||'')}" placeholder="09121234567" maxlength="11"></div>
           <div class="field"><label>کد ملی <span class="req">*</span></label><input id="obNid" class="num-inp" inputmode="numeric" value="${esc(onboardData.nid||'')}" placeholder="10 رقم" maxlength="10"></div>
-          <div class="field"><label>نام پدر</label><input id="obFather" value="${esc(onboardData.fatherName||'')}" placeholder="مثلاً حسین"></div>
-          <div class="field"><label>تاریخ تولد</label><input id="obBirth" class="num-inp" inputmode="numeric" value="${esc(onboardData.birthDate||'')}" placeholder="۱۳۷۰/۰۵/۰۲" data-jdate><span class="help">تقویم شمسی باز می‌شود.</span></div>
         </div>
       `;
     } else {
@@ -3581,7 +3600,7 @@ function onboardingHtml(){
     }
   }
 
-  const totalSteps = onboardRole==='manager' ? 3 : 2;
+  const totalSteps = onboardRole==='manager' ? 3 : 1;
   return `
     <a href="Hesabat.html" class="login-back">${icon('arrowL',14)} بازگشت به صفحه اصلی</a>
     <div class="login-card" style="max-width:640px">
@@ -3590,8 +3609,8 @@ function onboardingHtml(){
       <p class="login-sub">نقش خود را انتخاب کنید</p>
       
       <div class="role-sel">
-        ${roleBtn('manager','مدیر مؤسسه','bank')}
-        ${roleBtn('user','متقاضی وام / کاربر','user')}
+        ${roleBtn('manager','حساب مؤسسه','bank')}
+        ${roleBtn('user','حساب کاربری','user')}
       </div>
 
       <div class="steps-line">
@@ -3643,7 +3662,7 @@ function bindOnboarding(){
   if (next) next.onclick = async ()=>{
     if (!validateOnboardStep()) return;
     saveOnboardStep();
-    const totalSteps = onboardRole==='manager'?3:2;
+    const totalSteps = onboardRole==='manager'?3:1;
     if (onboardStep < totalSteps) {
       onboardStep++;
       const wrap=document.querySelector('.login-wrap');
@@ -3666,8 +3685,15 @@ function bindOnboarding(){
 function saveOnboardStep(){
   const g = id => { const el=document.getElementById(id); return el ? el.value.trim() : ''; };
   if (onboardStep===1) {
-    onboardData.firstName = g('obFirstName');
-    onboardData.lastName = g('obLastName');
+    if (document.getElementById('obFullName')) {
+      onboardData.fullName = g('obFullName');
+      const parts = (onboardData.fullName||'').trim().split(/\s+/);
+      onboardData.lastName = parts.length>1 ? parts.pop() : (parts[0]||'');
+      onboardData.firstName = parts.join(' ') || onboardData.lastName;
+    } else {
+      onboardData.firstName = g('obFirstName');
+      onboardData.lastName = g('obLastName');
+    }
     onboardData.phone = g('obPhone');
     onboardData.nid = g('obNid');
     onboardData.fatherName = g('obFather');
@@ -3693,7 +3719,9 @@ function validateOnboardStep(){
   const g = id => { const el=document.getElementById(id); return el ? el.value.trim() : ''; };
   let err = '';
   if (onboardStep===1) {
-    if (!g('obFirstName') || g('obFirstName').length<2) err = 'نام را کامل وارد کنید.';
+    if (onboardRole==='user') {
+      if (!g('obFullName') || g('obFullName').length<3) err = 'نام و نام خانوادگی را کامل وارد کنید.';
+    } else if (!g('obFirstName') || g('obFirstName').length<2) err = 'نام را کامل وارد کنید.';
     else if (!g('obLastName') || g('obLastName').length<2) err = 'نام خانوادگی را کامل وارد کنید.';
     else if (!/^09\d{9}$/.test(faToEn(g('obPhone')))) err = 'شماره تماس باید 11 رقم و با 09 شروع شود.';
     else if (!/^\d{10}$/.test(faToEn(g('obNid')))) err = 'کد ملی باید 10 رقم باشد.';
@@ -3714,6 +3742,7 @@ async function submitOnboarding(){
 
   // ساخت payload برای API
   const payload = {
+    name: onboardData.fullName || ((onboardData.firstName||'')+' '+(onboardData.lastName||'')).trim(),
     firstName: onboardData.firstName,
     lastName: onboardData.lastName,
     phone: onboardData.phone,
@@ -3750,6 +3779,9 @@ async function submitOnboarding(){
       SRV.user = res.user;
       SRV.instId = res.institutionId || null;
       SRV.instName = onboardData.institutionName || '';
+      if (onboardRole==='manager' && !SRV.instId) {
+        throw Object.assign(new Error('مؤسسه روی سرور ساخته نشد.'), {status:500});
+      }
       SRV.on = true;
       try { localStorage.setItem(SRV_KEY, JSON.stringify(SRV)); } catch(e){}
       // SESSION را هم بساز تا روتر اجازه ورود بدهد — فیکس باگ ورود
@@ -3765,7 +3797,7 @@ async function submitOnboarding(){
       if (alertBox) alertBox.innerHTML = `<div class="alert a-ok"><span class="al-ic">${icon('check',16)}</span><div>✅ حساب در <b>Postgres</b> ساخته شد! ایمیل ربات: <b dir="ltr">${esc(res.institutionEmail||payload.email)}</b><br><small>در حال ورود...</small></div></div>`;
       try{ localStorage.setItem(SES_KEY, JSON.stringify(SESSION)); }catch(e){}
       setTimeout(()=>{ 
-        location.hash = '#/app/dashboard';
+        location.hash = (onboardRole==='user') ? '#/app/me' : '#/app/dashboard';
         // یک رفرش کافیست، SESSION از قبل ذخیره شده
         setTimeout(()=>{ location.reload(); }, 350);
       }, 400);
@@ -3892,3 +3924,78 @@ async function submitOnboarding(){
   setTimeout(tryOnboardDirect, 1500);
 })();
 
+
+
+function portalApi(path, opts){
+  return api(path, opts);
+}
+function openUpgradeModal(){
+  const code = prompt('کد ارتقا به Pro را وارد کنید:');
+  if(!code) return;
+  api('/institutions/'+encodeURIComponent(SRV.instId)+'/upgrade', {method:'POST', body: JSON.stringify({code})})
+    .then(j=>{ toast((j&&j.ok)?'پلن Pro فعال شد.':'ناموفق'); if(j&&j.ok) renderSettings(); })
+    .catch(e=> toast(e.message||'خطا'));
+}
+async function renderMgrRequests(){
+  const app = $('#appMain');
+  app.innerHTML = '<div class="page-head"><h2>درخواست‌های عضویت</h2></div><div id="reqBox" class="card">در حال بارگذاری…</div>';
+  try{
+    const j = await api('/institutions/'+encodeURIComponent(SRV.instId)+'/requests');
+    const rows = (j&&j.requests)||[];
+    const box = document.getElementById('reqBox');
+    if(!rows.length){ box.innerHTML = '<p class="muted">درخواستی نیست.</p>'; return; }
+    box.innerHTML = '<table class="tbl"><thead><tr><th>نام</th><th>موبایل</th><th>کد ملی</th><th></th></tr></thead><tbody>'+
+      rows.map(r=>'<tr><td>'+esc(r.full_name||'')+'</td><td>'+esc(r.mobile||'')+'</td><td>'+esc(r.national_id||'')+'</td><td><button class="btn btn-solid btn-sm" data-a="'+r.id+'">پذیرش</button> <button class="btn btn-ghost btn-sm" data-r="'+r.id+'">رد</button></td></tr>').join('')+'</tbody></table>';
+    box.querySelectorAll('[data-a]').forEach(b=> b.onclick = ()=> api('/institutions/'+SRV.instId+'/requests/'+b.dataset.a+'/approve',{method:'POST'}).then(()=>renderMgrRequests()).catch(e=>toast(e.message)));
+    box.querySelectorAll('[data-r]').forEach(b=> b.onclick = ()=> api('/institutions/'+SRV.instId+'/requests/'+b.dataset.r+'/reject',{method:'POST'}).then(()=>renderMgrRequests()).catch(e=>toast(e.message)));
+  }catch(e){ document.getElementById('reqBox').textContent = e.message||'خطا'; }
+}
+async function renderUserMe(){
+  const app = $('#appMain');
+  app.innerHTML = '<div class="page-head"><h2>پرونده من</h2></div><div id="meBox" class="card">در حال بارگذاری…</div>';
+  try{
+    const j = await api('/portal/me');
+    const m = (j&&j.memberships)||[];
+    const box = document.getElementById('meBox');
+    if(!m.length){ box.innerHTML = '<p>هنوز عضو مؤسسه‌ای نیستید. از «عضویت در مؤسسه» درخواست بدهید.</p>'; return; }
+    const cur = m[0];
+    const fields = await api('/portal/fields?institutionId='+encodeURIComponent(cur.institution_id));
+    const prof = await api('/portal/profile?institutionId='+encodeURIComponent(cur.institution_id));
+    const fd = (fields&&fields.fields)||[];
+    const pv = (prof&&prof.values)||{};
+    box.innerHTML = '<p><b>'+esc(cur.institution_name||'')+'</b> — '+esc(cur.member_name||'')+'</p>'+
+      '<div class="fields">'+fd.map(f=>'<div class="field"><label>'+esc(f.label||f.key)+'</label><div>'+esc(String(pv[f.key]??'—'))+'</div></div>').join('')+'</div>';
+  }catch(e){ document.getElementById('meBox').textContent = e.message||'خطا'; }
+}
+async function renderUserJoin(){
+  const app = $('#appMain');
+  app.innerHTML = '<div class="page-head"><h2>عضویت در مؤسسه</h2></div><div class="card fields">'+
+    '<div class="field full"><label>شناسه مؤسسه</label><input id="joinCode" placeholder="کد عمومی یا ایمیل ربات"></div>'+
+    '<div class="field"><label>نام</label><input id="joinName" value="'+esc((SESSION&&SESSION.name)||'')+'"></div>'+
+    '<div class="field"><label>موبایل</label><input id="joinMob" class="num-inp"></div>'+
+    '<div class="field"><label>کد ملی</label><input id="joinNid" class="num-inp"></div>'+
+    '<button class="btn btn-solid" id="joinBtn">ارسال درخواست</button></div>';
+  document.getElementById('joinBtn').onclick = ()=>{
+    api('/portal/join',{method:'POST', body: JSON.stringify({code: $('#joinCode').value, fullName: $('#joinName').value, mobile: $('#joinMob').value, nationalId: $('#joinNid').value})})
+      .then(()=>{ toast('درخواست ارسال شد.'); location.hash='#/app/ureq'; })
+      .catch(e=> toast(e.message||'خطا'));
+  };
+}
+async function renderUserRequests(){
+  const app = $('#appMain');
+  app.innerHTML = '<div class="page-head"><h2>درخواست‌های من</h2></div><div id="urBox" class="card">…</div>';
+  try{
+    const j = await api('/portal/requests');
+    const rows = (j&&j.requests)||[];
+    document.getElementById('urBox').innerHTML = rows.length ? '<ul>'+rows.map(r=>'<li>'+esc(r.institution_name||r.institution_id)+' — '+esc(r.status)+'</li>').join('')+'</ul>' : '<p>درخواستی نیست.</p>';
+  }catch(e){ document.getElementById('urBox').textContent = e.message; }
+}
+async function renderUserNotifs(){
+  const app = $('#appMain');
+  app.innerHTML = '<div class="page-head"><h2>اعلان‌ها</h2></div><div id="unBox" class="card">…</div>';
+  try{
+    const j = await api('/portal/notifications');
+    const rows = (j&&j.notifications)||[];
+    document.getElementById('unBox').innerHTML = rows.length ? '<ul>'+rows.map(r=>'<li>'+esc(r.title||'')+' — '+esc(r.body||'')+'</li>').join('')+'</ul>' : '<p>اعلانی نیست.</p>';
+  }catch(e){ document.getElementById('unBox').textContent = e.message; }
+}

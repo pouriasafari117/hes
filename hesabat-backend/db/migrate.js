@@ -30,6 +30,11 @@ async function runFile(client, filename){
     await runFile(c, 'schema.supabase.sql');
     await runFile(c, 'delete_institution.sql');
   }
+  const patchDir = path.join(__dirname, 'patches');
+  if (fs.existsSync(patchDir)) {
+    const patches = fs.readdirSync(patchDir).filter(f => f.endsWith('.sql')).sort();
+    for (const f of patches) await runFile(c, path.join('patches', f));
+  }
   console.log('all migrations applied ✔');
   await c.end();
 })().catch(e => { console.error('migration failed:', e.message, e.code, e.detail); console.error(e.stack?.slice(0,2000)); process.exit(1); });

@@ -22,7 +22,7 @@ function verifyPassword(pass, stored) {
 }
 
 function signToken(user) {
-  return jwt.sign({ uid: user.id, name: user.name, email: user.email }, SECRET, { expiresIn: EXPIRES });
+  return jwt.sign({ uid: user.id, name: user.name, email: user.email, role_type: user.role_type || user.roleType || 'user' }, SECRET, { expiresIn: EXPIRES });
 }
 
 function verifyToken(token) {

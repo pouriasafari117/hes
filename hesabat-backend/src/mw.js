@@ -11,7 +11,7 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'توکن ارسال نشده است.' });
   const payload = verifyToken(token);
   if (!payload) return res.status(401).json({ error: 'توکن نامعتبر یا منقضی است.' });
-  req.user = { id: payload.uid, name: payload.name, email: payload.email };
+  req.user = { id: payload.uid, name: payload.name, email: payload.email, role_type: payload.role_type || 'user' };
   next();
 }
 
