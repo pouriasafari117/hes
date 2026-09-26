@@ -1,11 +1,5 @@
--- ═══════════════════════════════════════════════════════════════
--- Hesabat — تنها اسکریپت لازم برای سوپابیسِ فعلی (idempotent)
--- داده و جداول وام/عضو/صندوق را پاک نمی‌کند.
--- اسکیمای کامل قدیمی را دوباره اجرا نکنید.
--- ═══════════════════════════════════════════════════════════════
-
--- لایه کاربر/درخواست/اعلان — بدون بازنویسی جداول فعلی
--- membership جدا ساخته نمی‌شود: pending در requests، عضو فعال = members.user_id
+-- اگر complete_schema.sql (نسخه ادغام‌شده) را همین الان زدید، این فایل لازم نیست.
+-- اگر قبلاً اسکیمای قدیمی را زده‌اید و نمی‌خواهید complete را تکرار کنید، همین فایل کافی است.
 
 alter table members add column if not exists user_id bigint references users(id) on delete set null;
 create unique index if not exists idx_members_user_inst
@@ -165,3 +159,6 @@ do $$ begin grant execute on function fn_portal_profile(bigint,bigint) to hesaba
 do $$ begin grant execute on function fn_portal_fields(bigint) to hesabat_app; exception when others then null; end $$;
 do $$ begin grant execute on function fn_portal_my_memberships(bigint) to hesabat_app; exception when others then null; end $$;
 do $$ begin grant execute on function fn_my_institutions(bigint) to hesabat_app; exception when others then null; end $$;
+
+do $$ begin grant select on users to hesabat_app; exception when others then null; end $$;
+do $$ begin grant select, insert, update, delete on requests, notifications to hesabat_app; exception when others then null; end $$;
